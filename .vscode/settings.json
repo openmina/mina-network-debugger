@@ -1,0 +1,26 @@
+{
+    "cSpell.words": [
+        "bpfel",
+        "builtins",
+        "Cdebuginfo",
+        "consts",
+        "ebpf",
+        "EINPROGRESS",
+        "execve",
+        "execveat",
+        "ktime",
+        "nonminimal",
+        "pids",
+        "recvfrom",
+        "repr",
+        "ringbuf",
+        "rustc",
+        "sendto",
+        "SIGTERM",
+        "syscall",
+        "syscalls",
+        "tgid",
+        "tracepoint",
+        "typenum"
+    ]
+}

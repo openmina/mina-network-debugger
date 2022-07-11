@@ -1,0 +1,44 @@
+[package]
+name = "bpf-recorder"
+version = "0.1.0"
+authors = ["Vladislav Melnik <vladislav.melnik@viablesystems.io>"]
+edition = "2021"
+rust-version = "1.58.1"
+license = "MIT"
+
+[lib]
+name = "bpf_recorder"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bpf-recorder-kern"
+path = "src/main.rs"
+required-features = ["kern"]
+
+[[bin]]
+name = "bpf-recorder"
+path = "src/main.rs"
+required-features = ["user"]
+
+[dependencies]
+ebpf-kern = { git = "https://github.com/vlad9486/ebpf-tools", optional = true }
+typenum = { version = "1.15", optional = true }
+ebpf-user = { git = "https://github.com/vlad9486/ebpf-tools", optional = true }
+sudo = { version = "0.6", optional = true }
+signal-hook = { version = "0.3.13", optional = true }
+log = { version = "0.4", optional = true }
+env_logger = { version = "0.9.0", default-features = false, optional = true }
+hex = { version = "0.4.3", optional = true }
+
+[features]
+default = ["user"]
+kern = ["ebpf-kern/macros", "typenum"]
+user = [
+    "ebpf-user/macros",
+    "sudo",
+    "signal-hook",
+    "log",
+    "env_logger",
+    "hex",
+]
+client = []
