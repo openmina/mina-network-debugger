@@ -1,0 +1,11 @@
+[package]
+name = "mina-recorder"
+version = "0.1.0"
+authors = ["Vladislav Melnik <vladislav.melnik@viablesystems.io>"]
+edition = "2021"
+rust-version = "1.58.1"
+license = "MIT"
+
+[dependencies]
+log = { version = "0.4.17" }
+hex = { version = "0.4.3" }

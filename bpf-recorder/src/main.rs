@@ -15,12 +15,14 @@ use ebpf_user as ebpf;
 ebpf::license!("GPL");
 
 // 1 GiB
+#[cfg(feature = "user")]
 const RING_BUFFER_SIZE: usize = 0x40000000;
 
 #[cfg(any(feature = "kern", feature = "user"))]
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
+    // WARNING: the literal here should match the constant `RING_BUFFER_SIZE`
     #[ringbuf(size = 0x40000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
@@ -335,7 +337,6 @@ impl App {
                     event.set_ok(ret as _)
                 }
             }
-            _ => return Ok(()),
         };
         send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr)
     }
@@ -465,8 +466,6 @@ impl App {
 
 #[cfg(feature = "user")]
 fn main() {
-    use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
-    use ebpf::{Skeleton, kind::AppItem};
     use std::{
         collections::BTreeMap,
         sync::{
@@ -474,7 +473,10 @@ fn main() {
             Arc,
         },
     };
+
+    use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
     use bpf_ring_buffer::RingBuffer;
+    use ebpf::{kind::AppItem, Skeleton};
 
     let env = env_logger::Env::default().default_filter_or("info");
     env_logger::init_from_env(env);
@@ -495,7 +497,7 @@ fn main() {
     skeleton
         .load()
         .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
-    let (skeleton,mut app) = skeleton
+    let (skeleton, mut app) = skeleton
         .attach()
         .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
     log::info!("attached bpf module");
@@ -508,36 +510,41 @@ fn main() {
 
     const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
+    let mut recorder = mina_recorder::P2pRecorder::default();
     while !terminating.load(Ordering::Relaxed) {
         let events = rb.read_blocking::<SnifferEvent>(&terminating).unwrap();
         for event in events {
-            match &event.variant {
+            match event.variant {
                 SnifferEventVariant::Error(_, _) => (),
                 SnifferEventVariant::OutgoingConnection(addr) => {
                     if addr.port() == P2P_PORT {
-                        p2p_cns.insert((event.pid, event.fd), *addr);
-                        log::info!("connect {addr}");
+                        if let Some(old) = p2p_cns.insert((event.pid, event.fd), addr) {
+                            recorder.on_disconnect(event.pid, old)
+                        }
+                        recorder.on_connect(false, event.pid, addr);
                     }
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     if addr.port() == P2P_PORT {
-                        p2p_cns.insert((event.pid, event.fd), *addr);
-                        log::info!("accept {addr}");
+                        if let Some(old) = p2p_cns.insert((event.pid, event.fd), addr) {
+                            recorder.on_disconnect(event.pid, old)
+                        }
+                        recorder.on_connect(true, event.pid, addr);
                     }
                 }
                 SnifferEventVariant::Disconnected => {
                     if let Some(addr) = p2p_cns.remove(&(event.pid, event.fd)) {
-                        log::info!("disconnect {addr}");
+                        recorder.on_disconnect(event.pid, addr);
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
                     if let Some(addr) = p2p_cns.get(&(event.pid, event.fd)) {
-                        log::info!("{addr} -> {}, {}", data.len(), hex::encode(data));
+                        recorder.on_data(true, event.pid, *addr, data);
                     }
                 }
                 SnifferEventVariant::OutgoingData(data) => {
                     if let Some(addr) = p2p_cns.get(&(event.pid, event.fd)) {
-                        log::info!("{addr} <- {}, {}", data.len(), hex::encode(data));
+                        recorder.on_data(false, event.pid, *addr, data);
                     }
                 }
             }

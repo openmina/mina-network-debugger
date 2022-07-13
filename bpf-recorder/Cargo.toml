@@ -32,6 +32,7 @@ hex = { version = "0.4.3", optional = true }
 
 # local
 bpf-ring-buffer = { version = "=0.1.0", path = "../bpf-ring-buffer", optional = true }
+mina-recorder = { path = "../mina-recorder", optional = true }
 
 [features]
 default = ["user"]
@@ -44,5 +45,6 @@ user = [
     "env_logger",
     "hex",
     "bpf-ring-buffer",
+    "mina-recorder",
 ]
 client = []

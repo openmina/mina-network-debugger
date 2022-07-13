@@ -1,5 +1,6 @@
 use core::{mem, ptr};
-use typenum::{Bit, Unsigned, Shleft};
+
+use typenum::{Bit, Shleft, Unsigned};
 
 use bpf_recorder::Event;
 

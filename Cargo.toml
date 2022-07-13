@@ -1,2 +1,6 @@
 [workspace]
-members = ["bpf-recorder", "bpf-ring-buffer"]
+members = [
+    "bpf-recorder",
+    "bpf-ring-buffer",
+    "mina-recorder",
+]

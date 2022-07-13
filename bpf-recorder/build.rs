@@ -49,6 +49,6 @@ fn build_bpf() {
     );
     println!("cargo:rerun-if-changed=src/main.rs");
     println!("cargo:rerun-if-changed=src/lib.rs");
-    println!("cargo:rerun-if-changed=src/event.rs");
+    println!("cargo:rerun-if-changed=src/context.rs");
     println!("cargo:rerun-if-changed=src/send.rs");
 }

@@ -1,10 +1,10 @@
 use std::{
-    fmt,
-    io,
-    ptr, slice, mem,
-    sync::atomic::{Ordering, AtomicUsize, AtomicBool},
+    fmt, io, mem,
     os::unix::io::AsRawFd,
+    ptr, slice,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
+
 use smallvec::SmallVec;
 
 pub trait RingBufferData
@@ -207,7 +207,7 @@ impl RingBuffer {
                     Ok(Some(data)) => {
                         vec.push(data);
                         read_total += s.len();
-                    },
+                    }
                     Err(error) => log::error!("rb parse data: {:?}", error),
                 }
             }
@@ -243,13 +243,13 @@ impl RingBuffer {
                     if fds.revents & libc::POLLIN != 0 {
                         break;
                     }
-                },
+                }
                 i32::MIN..=-1 => {
                     let error = io::Error::last_os_error();
                     if io::ErrorKind::Interrupted != error.kind() {
                         log::error!("ringbuf error: {:?}", error);
                     }
-                },
+                }
                 // poll should not return bigger then number of fds, we have 1
                 r @ 2..=i32::MAX => log::error!("ringbuf poll {}", r),
             }
@@ -272,7 +272,7 @@ impl RingBuffer {
                     if terminating.load(Ordering::Relaxed) {
                         break Ok(SmallVec::new());
                     }
-                },
+                }
                 x => break x,
             }
             tries += 1;

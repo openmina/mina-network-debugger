@@ -89,11 +89,11 @@ impl DataTag {
 
 #[cfg(feature = "user")]
 pub mod sniffer_event {
-    use std::net::{SocketAddr, IpAddr};
+    use std::net::{IpAddr, SocketAddr};
 
     use bpf_ring_buffer::RingBufferData;
 
-    use super::{Event, DataTag};
+    use super::{DataTag, Event};
 
     #[derive(Debug)]
     pub struct SnifferEvent {
@@ -125,7 +125,14 @@ pub mod sniffer_event {
                 return Err(ErrorSliceTooShort);
             }
             let event = Event::from_bytes(&slice[..32]);
-            let Event { fd, pid, ts0, ts1, tag, size } = event;
+            let Event {
+                fd,
+                pid,
+                ts0,
+                ts1,
+                tag,
+                size,
+            } = event;
             let ret = |variant| -> Result<Option<Self>, ErrorSliceTooShort> {
                 Ok(Some(SnifferEvent {
                     pid,
