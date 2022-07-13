@@ -1,0 +1,12 @@
+[package]
+name = "bpf-ring-buffer"
+version = "0.1.0"
+authors = ["Vladislav Melnik <vladislav.melnik@viablesystems.io>"]
+edition = "2021"
+rust-version = "1.58.1"
+license = "MIT"
+
+[dependencies]
+libc = "0.2"
+smallvec = "1.6"
+log = "0.4"

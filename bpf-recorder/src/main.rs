@@ -434,23 +434,27 @@ impl App {
 
 #[cfg(feature = "user")]
 fn main() {
-    use bpf_recorder::{Event, DataTag};
-    use ebpf::{RingBufferRegistry, Skeleton};
+    use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
+    use ebpf::{Skeleton, kind::AppItem};
     use std::{
-        io,
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc,
         },
-        time::Duration,
     };
+    use bpf_ring_buffer::RingBuffer;
 
     let env = env_logger::Env::default().default_filter_or("info");
     env_logger::init_from_env(env);
     sudo::escalate_if_needed().expect("failed to obtain superuser permission");
     let terminating = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&terminating))
-        .expect("cannot handle signals");
+    {
+        let terminating = terminating.clone();
+        ctrlc::set_handler(move || {
+            terminating.store(true, Ordering::Relaxed);
+        })
+        .expect("Error setting Ctrl-C handler");
+    }
 
     static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
 
@@ -459,59 +463,28 @@ fn main() {
     skeleton
         .load()
         .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
-    let (skeleton, app) = skeleton
+    let (skeleton,mut app) = skeleton
         .attach()
         .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
     log::info!("attached bpf module");
 
-    let mut rb = RingBufferRegistry::default();
-    let event_queue = app.event_queue;
-    let connections = app.connections;
-    rb.add(&event_queue, move |s| {
-        let event = Event::from_bytes(&s[..32]);
-        let Event { fd, pid, ts0, ts1, tag, size } = event;
-        let _ = (ts0, ts1);
-        if size < 0 {
-            log::warn!("{event:?}");
-            return;
-        }
-        let size = size as usize;
-        let data = &s[32..(32 + size)];
-        if let DataTag::Accept | DataTag::Connect = tag {
-            let socket_id = ((fd as u64) << 32) + (pid as u64);
-
-            let ty = u16::from_ne_bytes(data[..2].try_into().unwrap());
-            let port = u16::from_be_bytes(data[2..4].try_into().unwrap());
-            if (ty != 2 && ty != 10) || port == 53 || port == 80 || port == 0 {
-                match connections.remove(&socket_id.to_ne_bytes()) {
-                    Ok(()) => log::debug!("ignore connection {fd}:{pid}"),
-                    Err(code) => {
-                        log::trace!(
-                            "failed to ignore connection {fd}:{pid}, code {code}, error {}",
-                            io::Error::last_os_error(),
-                        );
-                    },
-                }
-            } else {
-                let incoming = matches!(tag, DataTag::Accept);
-                log::info!("{event:?}");
-                log::info!("incoming connection: {incoming}, port: {port}")
+    let fd = match app.event_queue.kind_mut() {
+        ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
+        _ => unreachable!(),
+    };
+    let mut rb = RingBuffer::new(fd, 0x8000000).unwrap();
+    while !terminating.load(Ordering::SeqCst) {
+        let events = rb.read_blocking::<SnifferEvent>(&terminating).unwrap();
+        for event in events {
+            match &event.variant {
+                SnifferEventVariant::Error(_, _) => (),
+                variant => {
+                    log::info!("{event}");
+                    log::info!("{variant}")
+                },
             }
-        } else if let DataTag::Read | DataTag::Write = tag {
-            log::info!("{event:?}");
-            log::info!("data: {}", hex::encode(data));
-        } else if let DataTag::Close = tag {
-            log::info!("{event:?}");
-        }
-    })
-    .unwrap();
-
-    while !terminating.load(Ordering::Relaxed) {
-        match rb.poll(Duration::from_millis(100)) {
-            Ok(_) => (),
-            Err(c) if c == -4 => break,
-            Err(c) => log::info!("error code: {c}"),
         }
     }
+    log::info!("terminated");
     drop(skeleton);
 }
