@@ -89,7 +89,7 @@ impl DataTag {
 
 #[cfg(feature = "user")]
 pub mod sniffer_event {
-    use std::{net::SocketAddr, fmt};
+    use std::net::{SocketAddr, IpAddr};
 
     use bpf_ring_buffer::RingBufferData;
 
@@ -112,26 +112,6 @@ pub mod sniffer_event {
         IncomingData(Vec<u8>),
         OutgoingData(Vec<u8>),
         Error(DataTag, i32),
-    }
-
-    impl fmt::Display for SnifferEventVariant {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                SnifferEventVariant::IncomingConnection(addr) => write!(f, "<-> accept {addr}"),
-                SnifferEventVariant::OutgoingConnection(addr) => write!(f, "<-> connect {addr}"),
-                SnifferEventVariant::Disconnected => write!(f, "<-x->"),
-                SnifferEventVariant::IncomingData(data) => write!(f, "<- {}", hex::encode(data)),
-                SnifferEventVariant::OutgoingData(data) => write!(f, "-> {}", hex::encode(data)),
-                SnifferEventVariant::Error(tag, code) => write!(f, "tag: {tag:?}, code: {code}"),
-            }
-        }
-    }
-
-    impl fmt::Display for SnifferEvent {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            let SnifferEvent { pid, fd, ts0, ts1, .. } = self;
-            write!(f, "{pid}:{fd}, {ts0} - {ts1}")
-        }
     }
 
     #[derive(Debug)]
@@ -164,19 +144,22 @@ pub mod sniffer_event {
             }
             let data = &slice[32..(32 + size)];
             if let DataTag::Accept | DataTag::Connect = tag {
-                let ty = u16::from_ne_bytes(data[..2].try_into().unwrap());
+                let address_family = u16::from_ne_bytes(data[0..2].try_into().unwrap());
                 let port = u16::from_be_bytes(data[2..4].try_into().unwrap());
-                if (ty != 2 && ty != 10) || port == 0 || port == 53 || port == 80 || port == 443 {
-                    // need only ipv4 (ty == 2) or ipv6 (ty == 10)
-                    // also, ignore some ports
-                    Ok(None)
-                } else {
-                    // TODO: real address
-                    let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
-                    match tag {
-                        DataTag::Accept => ret(SnifferEventVariant::IncomingConnection(addr)),
-                        _ => ret(SnifferEventVariant::OutgoingConnection(addr)),
+                let addr = match address_family {
+                    2 => {
+                        let ip = <[u8; 4]>::try_from(&data[4..8]).unwrap();
+                        SocketAddr::new(IpAddr::V4(ip.into()), port)
                     }
+                    10 => {
+                        let ip = <[u8; 16]>::try_from(&data[8..24]).unwrap();
+                        SocketAddr::new(IpAddr::V6(ip.into()), port)
+                    }
+                    _ => return Ok(None),
+                };
+                match tag {
+                    DataTag::Accept => ret(SnifferEventVariant::IncomingConnection(addr)),
+                    _ => ret(SnifferEventVariant::OutgoingConnection(addr)),
                 }
             } else if let DataTag::Read = tag {
                 ret(SnifferEventVariant::IncomingData(data.to_vec()))

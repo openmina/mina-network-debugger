@@ -14,11 +14,14 @@ use ebpf_user as ebpf;
 #[cfg(feature = "kern")]
 ebpf::license!("GPL");
 
+// 1 GiB
+const RING_BUFFER_SIZE: usize = 0x40000000;
+
 #[cfg(any(feature = "kern", feature = "user"))]
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
-    #[ringbuf(size = 0x8000000)]
+    #[ringbuf(size = 0x40000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
     #[hashmap(size = 0x1000)]
@@ -229,7 +232,32 @@ impl App {
 
     #[inline(never)]
     fn on_ret(&mut self, ret: i64, data: context::Variant, ts0: u64, ts1: u64) -> Result<(), i32> {
-        let x = unsafe { ebpf::helpers::get_current_pid_tgid() };
+        use ebpf::helpers;
+
+        const EAGAIN: i64 = -11;
+        if ret == EAGAIN {
+            return Ok(());
+        }
+
+        fn check_addr(ptr: *const u8) -> Result<(), i32> {
+            const AF_INET: u16 = 2;
+            const AF_INET6: u16 = 10;
+
+            let mut ty = 0u16;
+            let c = unsafe { helpers::probe_read_user((&mut ty) as *mut _ as _, 2, ptr as _) };
+            if c != 0 {
+                // cannot read first two bytes of the address
+                return Err(0);
+            }
+            if ty != AF_INET && ty != AF_INET6 {
+                // ignore everything else
+                return Err(0);
+            }
+
+            Ok(())
+        }
+
+        let x = unsafe { helpers::get_current_pid_tgid() };
         let pid = (x >> 32) as u32;
 
         let event = Event::new(pid, ts0, ts1);
@@ -252,6 +280,8 @@ impl App {
                 }
             }
             context::Variant::Connect { fd, addr_len, .. } => {
+                check_addr(ptr)?;
+
                 const EINPROGRESS: i64 = -115;
                 let event = event.set_tag_fd(DataTag::Connect, fd);
                 if ret < 0 && ret != EINPROGRESS {
@@ -274,6 +304,7 @@ impl App {
                 if ret < 0 {
                     event.set_err(ret)
                 } else {
+                    check_addr(ptr)?;
                     let socket_id = ((fd as u64) << 32) + (pid as u64);
                     self.connections
                         .insert(socket_id.to_ne_bytes(), 0x1_u32.to_ne_bytes())?;
@@ -437,6 +468,7 @@ fn main() {
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
     use ebpf::{Skeleton, kind::AppItem};
     use std::{
+        collections::BTreeMap,
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc,
@@ -472,16 +504,42 @@ fn main() {
         ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
         _ => unreachable!(),
     };
-    let mut rb = RingBuffer::new(fd, 0x8000000).unwrap();
-    while !terminating.load(Ordering::SeqCst) {
+    let mut rb = RingBuffer::new(fd, RING_BUFFER_SIZE).unwrap();
+
+    const P2P_PORT: u16 = 8302;
+    let mut p2p_cns = BTreeMap::new();
+    while !terminating.load(Ordering::Relaxed) {
         let events = rb.read_blocking::<SnifferEvent>(&terminating).unwrap();
         for event in events {
             match &event.variant {
                 SnifferEventVariant::Error(_, _) => (),
-                variant => {
-                    log::info!("{event}");
-                    log::info!("{variant}")
-                },
+                SnifferEventVariant::OutgoingConnection(addr) => {
+                    if addr.port() == P2P_PORT {
+                        p2p_cns.insert((event.pid, event.fd), *addr);
+                        log::info!("connect {addr}");
+                    }
+                }
+                SnifferEventVariant::IncomingConnection(addr) => {
+                    if addr.port() == P2P_PORT {
+                        p2p_cns.insert((event.pid, event.fd), *addr);
+                        log::info!("accept {addr}");
+                    }
+                }
+                SnifferEventVariant::Disconnected => {
+                    if let Some(addr) = p2p_cns.remove(&(event.pid, event.fd)) {
+                        log::info!("disconnect {addr}");
+                    }
+                }
+                SnifferEventVariant::IncomingData(data) => {
+                    if let Some(addr) = p2p_cns.get(&(event.pid, event.fd)) {
+                        log::info!("{addr} -> {}, {}", data.len(), hex::encode(data));
+                    }
+                }
+                SnifferEventVariant::OutgoingData(data) => {
+                    if let Some(addr) = p2p_cns.get(&(event.pid, event.fd)) {
+                        log::info!("{addr} <- {}, {}", data.len(), hex::encode(data));
+                    }
+                }
             }
         }
     }
