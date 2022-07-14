@@ -533,9 +533,9 @@ fn main() {
                         if addr.port() == P2P_PORT {
                             if let Some(old_addr) = p2p_cns.insert((alias.clone(), event.fd), addr)
                             {
-                                recorder.on_disconnect(alias.clone(), old_addr)
+                                recorder.on_disconnect(alias.clone(), old_addr, event.fd)
                             }
-                            recorder.on_connect(false, alias.clone(), addr);
+                            recorder.on_connect(false, alias.clone(), addr, event.fd);
                         }
                     }
                 }
@@ -543,30 +543,30 @@ fn main() {
                     if let Some(alias) = apps.get(&event.pid) {
                         if addr.port() == P2P_PORT {
                             if let Some(old) = p2p_cns.insert((alias.clone(), event.fd), addr) {
-                                recorder.on_disconnect(alias.clone(), old)
+                                recorder.on_disconnect(alias.clone(), old, event.fd)
                             }
-                            recorder.on_connect(true, alias.clone(), addr);
+                            recorder.on_connect(true, alias.clone(), addr, event.fd);
                         }
                     }
                 }
                 SnifferEventVariant::Disconnected => {
                     if let Some(alias) = apps.get(&event.pid) {
                         if let Some(addr) = p2p_cns.remove(&(alias.clone(), event.fd)) {
-                            recorder.on_disconnect(alias.clone(), addr);
+                            recorder.on_disconnect(alias.clone(), addr, event.fd);
                         }
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
                     if let Some(alias) = apps.get(&event.pid) {
                         if let Some(addr) = p2p_cns.get(&(alias.clone(), event.fd)) {
-                            recorder.on_data(true, alias.clone(), *addr, data);
+                            recorder.on_data(true, alias.clone(), *addr, event.fd, data);
                         }
                     }
                 }
                 SnifferEventVariant::OutgoingData(data) => {
                     if let Some(alias) = apps.get(&event.pid) {
                         if let Some(addr) = p2p_cns.get(&(alias.clone(), event.fd)) {
-                            recorder.on_data(false, alias.clone(), *addr, data);
+                            recorder.on_data(false, alias.clone(), *addr, event.fd, data);
                         }
                     }
                 }

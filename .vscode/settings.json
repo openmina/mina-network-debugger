@@ -10,6 +10,7 @@
         "execve",
         "execveat",
         "INET",
+        "keystream",
         "ktime",
         "libc",
         "Mina",

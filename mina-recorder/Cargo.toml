@@ -9,3 +9,6 @@ license = "MIT"
 [dependencies]
 log = { version = "0.4.17" }
 hex = { version = "0.4.3" }
+noop-waker = { version = "0.1.0" }
+salsa20 = { version = "0.10.2" }
+blake2 = { version = "0.10.4" }
