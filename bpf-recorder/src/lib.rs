@@ -64,6 +64,7 @@ pub enum DataTag {
     Accept,
     Write,
     Read,
+    Alias,
 }
 
 impl DataTag {
@@ -77,6 +78,7 @@ impl DataTag {
             DataTag::Accept,
             DataTag::Write,
             DataTag::Read,
+            DataTag::Alias,
         ];
         for v in values {
             if v as u32 == c {
@@ -106,6 +108,7 @@ pub mod sniffer_event {
 
     #[derive(Debug)]
     pub enum SnifferEventVariant {
+        NewApp(String),
         IncomingConnection(SocketAddr),
         OutgoingConnection(SocketAddr),
         Disconnected,
@@ -174,6 +177,10 @@ pub mod sniffer_event {
                 ret(SnifferEventVariant::OutgoingData(data.to_vec()))
             } else if let DataTag::Close = tag {
                 ret(SnifferEventVariant::Disconnected)
+            } else if let DataTag::Alias = tag {
+                ret(SnifferEventVariant::NewApp(
+                    String::from_utf8(data.to_vec()).unwrap(),
+                ))
             } else {
                 Ok(None)
             }

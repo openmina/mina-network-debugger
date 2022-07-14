@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId {
-    pub pid: u32,
+    pub alias: String,
     pub addr: SocketAddr,
 }
 

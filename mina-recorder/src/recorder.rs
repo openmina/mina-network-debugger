@@ -8,25 +8,29 @@ pub struct P2pRecorder {
 }
 
 impl P2pRecorder {
-    pub fn on_connect(&mut self, incoming: bool, pid: u32, addr: SocketAddr) {
-        let id = ConnectionId { pid, addr };
+    pub fn on_connect(&mut self, incoming: bool, alias: String, addr: SocketAddr) {
         if incoming {
-            log::info!("accept {id:?}");
+            log::info!("{alias} accept {addr}");
         } else {
-            log::info!("connect {id:?}");
+            log::info!("{alias} connect {addr}");
         }
+        let id = ConnectionId { alias, addr };
         self.cns.insert(id, Connection::default());
     }
 
-    pub fn on_disconnect(&mut self, pid: u32, addr: SocketAddr) {
-        let id = ConnectionId { pid, addr };
-        log::info!("disconnect {id:?}");
+    pub fn on_disconnect(&mut self, alias: String, addr: SocketAddr) {
+        log::info!("{alias} disconnect {addr}");
+        let id = ConnectionId { alias, addr };
         self.cns.remove(&id);
     }
 
-    pub fn on_data(&mut self, incoming: bool, pid: u32, addr: SocketAddr, bytes: Vec<u8>) {
-        let id = ConnectionId { pid, addr };
-        log::info!("{id:?} <- {}, {}", bytes.len(), hex::encode(&bytes));
+    pub fn on_data(&mut self, incoming: bool, alias: String, addr: SocketAddr, bytes: Vec<u8>) {
+        if incoming {
+            log::info!("{addr} -> {alias} {}, {}", bytes.len(), hex::encode(&bytes));
+        } else {
+            log::info!("{addr} <- {alias} {}, {}", bytes.len(), hex::encode(&bytes));
+        }
+        let id = ConnectionId { alias, addr };
         if let Some(cn) = self.cns.get_mut(&id) {
             cn.on_data(incoming, bytes);
         }

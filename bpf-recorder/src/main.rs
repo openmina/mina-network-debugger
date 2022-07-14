@@ -100,7 +100,7 @@ impl App {
 
     #[allow(clippy::nonminimal_bool)]
     #[inline(never)]
-    fn check_env_entry(&mut self, entry: *const u8) -> Result<(), i32> {
+    fn check_env_entry(&mut self, entry: *const u8) -> Result<u32, i32> {
         use ebpf::helpers;
 
         let mut str_bytes = self.event_queue.reserve(0x200)?;
@@ -127,7 +127,7 @@ impl App {
 
         str_bytes.discard();
         if prefix {
-            Ok(())
+            Ok((c - 10) as u32)
         } else {
             Err(0)
         }
@@ -157,10 +157,17 @@ impl App {
                 break;
             }
 
-            if let Ok(()) = self.check_env_entry(entry) {
+            if let Ok(len) = self.check_env_entry(entry) {
                 env_str.discard();
                 let x = unsafe { helpers::get_current_pid_tgid() };
                 let pid = (x >> 32) as u32;
+
+                let ts = unsafe { helpers::ktime_get_ns() };
+                let event = Event::new(pid, ts, ts);
+                let event = event.set_tag_fd(DataTag::Alias, 0).set_ok(len as u64);
+                let name = unsafe { entry.offset(10) };
+                send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, name)?;
+
                 return self
                     .pid
                     .insert(pid.to_ne_bytes(), 0x_ffff_ffff_u32.to_ne_bytes());
@@ -509,42 +516,58 @@ fn main() {
     let mut rb = RingBuffer::new(fd, RING_BUFFER_SIZE).unwrap();
 
     const P2P_PORT: u16 = 8302;
+    let mut apps = BTreeMap::new();
     let mut p2p_cns = BTreeMap::new();
     let mut recorder = mina_recorder::P2pRecorder::default();
     while !terminating.load(Ordering::Relaxed) {
         let events = rb.read_blocking::<SnifferEvent>(&terminating).unwrap();
         for event in events {
             match event.variant {
+                SnifferEventVariant::NewApp(alias) => {
+                    log::info!("exec {alias} pid: {}", event.pid);
+                    apps.insert(event.pid, alias);
+                }
                 SnifferEventVariant::Error(_, _) => (),
                 SnifferEventVariant::OutgoingConnection(addr) => {
-                    if addr.port() == P2P_PORT {
-                        if let Some(old) = p2p_cns.insert((event.pid, event.fd), addr) {
-                            recorder.on_disconnect(event.pid, old)
+                    if let Some(alias) = apps.get(&event.pid) {
+                        if addr.port() == P2P_PORT {
+                            if let Some(old_addr) = p2p_cns.insert((alias.clone(), event.fd), addr)
+                            {
+                                recorder.on_disconnect(alias.clone(), old_addr)
+                            }
+                            recorder.on_connect(false, alias.clone(), addr);
                         }
-                        recorder.on_connect(false, event.pid, addr);
                     }
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
-                    if addr.port() == P2P_PORT {
-                        if let Some(old) = p2p_cns.insert((event.pid, event.fd), addr) {
-                            recorder.on_disconnect(event.pid, old)
+                    if let Some(alias) = apps.get(&event.pid) {
+                        if addr.port() == P2P_PORT {
+                            if let Some(old) = p2p_cns.insert((alias.clone(), event.fd), addr) {
+                                recorder.on_disconnect(alias.clone(), old)
+                            }
+                            recorder.on_connect(true, alias.clone(), addr);
                         }
-                        recorder.on_connect(true, event.pid, addr);
                     }
                 }
                 SnifferEventVariant::Disconnected => {
-                    if let Some(addr) = p2p_cns.remove(&(event.pid, event.fd)) {
-                        recorder.on_disconnect(event.pid, addr);
+                    if let Some(alias) = apps.get(&event.pid) {
+                        if let Some(addr) = p2p_cns.remove(&(alias.clone(), event.fd)) {
+                            recorder.on_disconnect(alias.clone(), addr);
+                        }
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
-                    if let Some(addr) = p2p_cns.get(&(event.pid, event.fd)) {
-                        recorder.on_data(true, event.pid, *addr, data);
+                    if let Some(alias) = apps.get(&event.pid) {
+                        if let Some(addr) = p2p_cns.get(&(alias.clone(), event.fd)) {
+                            recorder.on_data(true, alias.clone(), *addr, data);
+                        }
                     }
                 }
                 SnifferEventVariant::OutgoingData(data) => {
-                    if let Some(addr) = p2p_cns.get(&(event.pid, event.fd)) {
-                        recorder.on_data(false, event.pid, *addr, data);
+                    if let Some(alias) = apps.get(&event.pid) {
+                        if let Some(addr) = p2p_cns.get(&(alias.clone(), event.fd)) {
+                            recorder.on_data(false, alias.clone(), *addr, data);
+                        }
                     }
                 }
             }
