@@ -213,7 +213,6 @@ dependencies = [
  "blake2",
  "hex",
  "log",
- "noop-waker",
  "salsa20",
 ]
 
@@ -227,12 +226,6 @@ dependencies = [
  "cfg-if",
  "libc",
 ]
-
-[[package]]
-name = "noop-waker"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56902c3f29ce7afbecc1d088dfd2e3108033f3c02041c70788ed94280a3d5261"
 
 [[package]]
 name = "pkg-config"
