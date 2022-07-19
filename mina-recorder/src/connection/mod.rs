@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, collections::VecDeque};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId {
@@ -8,7 +8,13 @@ pub struct ConnectionId {
 }
 
 pub trait HandleData {
-    fn on_data(&mut self, id: ConnectionId, incoming: bool, bytes: Vec<u8>);
+    fn on_data(
+        &mut self,
+        id: ConnectionId,
+        incoming: bool,
+        bytes: Vec<u8>,
+        randomness: &VecDeque<[u8; 32]>,
+    );
 }
 
 pub mod pnet;

@@ -1,10 +1,14 @@
-use std::{collections::BTreeMap, net::SocketAddr};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    net::SocketAddr,
+};
 
 use super::connection::{ConnectionId, HandleData, pnet, multistream_select, noise};
 
 #[derive(Default)]
 pub struct P2pRecorder {
     cns: BTreeMap<ConnectionId, pnet::State<multistream_select::State<noise::State<()>>>>,
+    randomness: VecDeque<[u8; 32]>,
 }
 
 impl P2pRecorder {
@@ -34,7 +38,12 @@ impl P2pRecorder {
     ) {
         let id = ConnectionId { alias, addr, fd };
         if let Some(cn) = self.cns.get_mut(&id) {
-            cn.on_data(id, incoming, bytes);
+            cn.on_data(id, incoming, bytes, &self.randomness);
         }
+    }
+
+    pub fn on_randomness(&mut self, alias: String, bytes: [u8; 32]) {
+        log::info!("{alias} random: {}", hex::encode(bytes));
+        self.randomness.push_back(bytes);
     }
 }

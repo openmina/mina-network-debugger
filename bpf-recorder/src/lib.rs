@@ -65,6 +65,7 @@ pub enum DataTag {
     Write,
     Read,
     Alias,
+    Random,
 }
 
 impl DataTag {
@@ -79,6 +80,7 @@ impl DataTag {
             DataTag::Write,
             DataTag::Read,
             DataTag::Alias,
+            DataTag::Random,
         ];
         for v in values {
             if v as u32 == c {
@@ -114,6 +116,7 @@ pub mod sniffer_event {
         Disconnected,
         IncomingData(Vec<u8>),
         OutgoingData(Vec<u8>),
+        Random([u8; 32]),
         Error(DataTag, i32),
     }
 
@@ -181,6 +184,8 @@ pub mod sniffer_event {
                 ret(SnifferEventVariant::NewApp(
                     String::from_utf8(data.to_vec()).unwrap(),
                 ))
+            } else if let DataTag::Random = tag {
+                ret(SnifferEventVariant::Random(data.try_into().unwrap()))
             } else {
                 Ok(None)
             }

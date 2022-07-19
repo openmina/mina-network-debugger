@@ -48,6 +48,12 @@ pub enum Variant {
         data_ptr: u64,
         _pad: u64,
     },
+
+    GetRandom {
+        _fd: u32,
+        data_ptr: u64,
+        data_len: u64,
+    },
 }
 
 impl Variant {
@@ -61,6 +67,7 @@ impl Variant {
             Variant::Read { data_ptr, .. } => *data_ptr as *const u8,
             Variant::Send { data_ptr, .. } => *data_ptr as *const u8,
             Variant::Recv { data_ptr, .. } => *data_ptr as *const u8,
+            Variant::GetRandom { data_ptr, .. } => *data_ptr as *const u8,
         }
     }
 }

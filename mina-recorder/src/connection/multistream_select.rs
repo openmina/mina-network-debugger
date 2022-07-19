@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use super::{ConnectionId, HandleData};
 
 #[derive(Default)]
@@ -26,7 +28,13 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(&mut self, id: ConnectionId, incoming: bool, bytes: Vec<u8>) {
+    fn on_data(
+        &mut self,
+        id: ConnectionId,
+        incoming: bool,
+        bytes: Vec<u8>,
+        randomness: &VecDeque<[u8; 32]>,
+    ) {
         // log::info!("{addr} {fd} {arrow} {alias} \"{}\"", hex::encode(bytes));
 
         // WARNING: hack to see when noise handshake begins
@@ -56,7 +64,7 @@ where
                     self.outgoing_done = true;
                 }
             }
-            self.inner.on_data(id, incoming, bytes);
+            self.inner.on_data(id, incoming, bytes, randomness);
         }
     }
 }

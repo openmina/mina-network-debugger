@@ -67,6 +67,10 @@ pub struct App {
     pub enter_recvfrom: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_exit_recvfrom")]
     pub exit_recvfrom: ebpf::ProgRef,
+    #[prog("tracepoint/syscalls/sys_enter_getrandom")]
+    pub enter_getrandom: ebpf::ProgRef,
+    #[prog("tracepoint/syscalls/sys_exit_getrandom")]
+    pub exit_getrandom: ebpf::ProgRef,
 }
 
 #[cfg(feature = "kern")]
@@ -346,6 +350,9 @@ impl App {
                     event.set_ok(ret as _)
                 }
             }
+            context::Variant::GetRandom { data_len, .. } => {
+                event.set_tag_fd(DataTag::Random, 0).set_ok(data_len)
+            }
         };
         send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr)
     }
@@ -471,6 +478,25 @@ impl App {
     pub fn exit_recvfrom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         self.exit(ctx)
     }
+
+    #[inline(always)]
+    pub fn enter_getrandom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
+        let len = ctx.read_here::<u64>(0x18);
+        if len == 32 {
+            self.enter(context::Variant::GetRandom {
+                _fd: 0,
+                data_ptr: ctx.read_here::<u64>(0x10),
+                data_len: len,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    #[inline(always)]
+    pub fn exit_getrandom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
+        self.exit(ctx)
+    }
 }
 
 #[cfg(feature = "user")]
@@ -592,6 +618,11 @@ fn main() {
                                 hex::encode(data),
                             );
                         }
+                    }
+                }
+                SnifferEventVariant::Random(random) => {
+                    if let Some(alias) = apps.get(&event.pid) {
+                        recorder.on_randomness(alias.clone(), random);
                     }
                 }
             }
