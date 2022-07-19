@@ -19,6 +19,7 @@ type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 #[derive(Default)]
 pub struct State<Inner> {
     machine: Option<St>,
+    initiator_is_incoming: bool,
     inner: Inner,
 }
 
@@ -38,8 +39,8 @@ enum St {
         r_spk: MontgomeryPoint,
     },
     Transport {
-        sender: Cipher<C, 1, true>,
-        receiver: Cipher<C, 1, false>,
+        initiators_receiver: Cipher<C, 1, false>,
+        responders_receiver: Cipher<C, 1, false>,
     },
 }
 
@@ -92,11 +93,14 @@ impl<Inner> State<Inner> {
         let len = bytes.len();
         self.machine = match self.machine.take() {
             None => {
+                self.initiator_is_incoming = incoming;
+
                 let i_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
                 let i_esk = find_sk(&bytes[2..34], randomness).unwrap();
                 let st = SymmetricState::new("Noise_XX_25519_ChaChaPoly_SHA256")
                     .mix_hash(&[])
-                    .mix_hash(i_epk.as_bytes());
+                    .mix_hash(i_epk.as_bytes())
+                    .mix_hash(&[]);
                 range = 34..len;
                 Some(St::FirstMessage { st, i_epk, i_esk })
             }
@@ -113,7 +117,8 @@ impl<Inner> State<Inner> {
                     .decrypt(&mut r_spk_bytes, &tag)
                     .unwrap()
                     .mix_shared_secret({
-                        // let pk = libp2p_core::PublicKey::Ed25519(libp2p_core::identity::ed25519::PublicKey::decode(&r_spk_bytes).unwrap());
+                        // let b = MontgomeryPoint(r_spk_bytes).to_edwards(1).unwrap().compress().0;
+                        // let pk = libp2p_core::PublicKey::Ed25519(libp2p_core::identity::ed25519::PublicKey::decode(&b).unwrap());
                         // dbg!(libp2p_core::PeerId::from_public_key(&pk));
                         r_spk = MontgomeryPoint(r_spk_bytes);
                         (i_esk * r_spk).to_bytes()
@@ -142,33 +147,42 @@ impl<Inner> State<Inner> {
                     .decrypt(&mut i_spk_bytes, &tag)
                     .unwrap()
                     .mix_shared_secret({
+                        // let b = MontgomeryPoint(i_spk_bytes).to_edwards(0).unwrap().compress().0;
+                        // let pk = libp2p_core::PublicKey::Ed25519(libp2p_core::identity::ed25519::PublicKey::decode(&b).unwrap());
+                        // dbg!(libp2p_core::PeerId::from_public_key(&pk));
                         i_spk = MontgomeryPoint(i_spk_bytes);
                         (i_spk * r_esk).to_bytes()
                     })
                     .decrypt(&mut bytes[50..(len - 16)], &payload_tag)
                     .unwrap()
-                    .finish::<1, false>();
+                    .finish::<1, true>();
 
                 range = 50..(len - 16);
-                Some(St::Transport { sender, receiver })
+                Some(St::Transport {
+                    initiators_receiver: receiver,
+                    responders_receiver: sender.swap(),
+                })
             }
-            Some(St::Transport { sender, receiver }) => {
+            Some(St::Transport {
+                mut initiators_receiver,
+                mut responders_receiver,
+            }) => {
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
-                range = 2..(len - 16);
-                if incoming {
-                    let mut sender = sender.swap();
-                    sender
-                        .decrypt(&[], &mut bytes[2..(len - 16)], &payload_tag)
-                        .unwrap();
-                    let sender = sender.swap();
-                    Some(St::Transport { sender, receiver })
+                let receiver = if incoming == self.initiator_is_incoming {
+                    &mut initiators_receiver
                 } else {
-                    let mut receiver = receiver;
-                    receiver
-                        .decrypt(&[], &mut bytes[2..(len - 16)], &payload_tag)
-                        .unwrap();
-                    Some(St::Transport { sender, receiver })
+                    &mut responders_receiver
+                };
+                if let Err(_) = receiver.decrypt(&[], &mut bytes[2..(len - 16)], &payload_tag) {
+                    // TODO: investigate
+                    range = 0..len;
+                } else {
+                    range = 2..(len - 16);
                 }
+                Some(St::Transport {
+                    initiators_receiver,
+                    responders_receiver,
+                })
             }
         };
         bytes[range].to_vec()
@@ -177,6 +191,7 @@ impl<Inner> State<Inner> {
 
 #[cfg(test)]
 #[test]
+#[rustfmt::skip]
 fn noise() {
     let mut noise = State::<()>::default();
     let mut randomness = VecDeque::new();
