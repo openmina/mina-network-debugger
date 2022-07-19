@@ -95,7 +95,8 @@ impl<Inner> State<Inner> {
                     None
                 }
             })?;
-            randomness.remove(n);
+            let _ = (randomness, n);
+            // randomness.remove(n);
             Some(sk)
         }
 

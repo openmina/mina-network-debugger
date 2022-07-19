@@ -5,6 +5,7 @@
         "Cdebuginfo",
         "chacha",
         "consts",
+        "Deque",
         "EAGAIN",
         "ebpf",
         "EINPROGRESS",

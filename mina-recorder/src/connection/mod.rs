@@ -19,4 +19,5 @@ pub trait HandleData {
 
 pub mod pnet;
 pub mod multistream_select;
+pub mod chunk;
 pub mod noise;

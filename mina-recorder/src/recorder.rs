@@ -3,11 +3,14 @@ use std::{
     net::SocketAddr,
 };
 
-use super::connection::{ConnectionId, HandleData, pnet, multistream_select, noise};
+use super::connection::{ConnectionId, HandleData, pnet, multistream_select, chunk, noise};
+
+type Cn = pnet::State<multistream_select::State<Noise>>;
+type Noise = chunk::State<noise::State<()>>;
 
 #[derive(Default)]
 pub struct P2pRecorder {
-    cns: BTreeMap<ConnectionId, pnet::State<multistream_select::State<noise::State<()>>>>,
+    cns: BTreeMap<ConnectionId, Cn>,
     randomness: VecDeque<[u8; 32]>,
 }
 
