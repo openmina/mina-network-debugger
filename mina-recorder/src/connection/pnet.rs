@@ -43,7 +43,7 @@ where
         id: ConnectionId,
         incoming: bool,
         mut bytes: Vec<u8>,
-        randomness: &VecDeque<[u8; 32]>,
+        randomness: &mut VecDeque<[u8; 32]>,
     ) {
         let cipher = if incoming {
             &mut self.cipher_in

@@ -38,7 +38,7 @@ impl P2pRecorder {
     ) {
         let id = ConnectionId { alias, addr, fd };
         if let Some(cn) = self.cns.get_mut(&id) {
-            cn.on_data(id, incoming, bytes, &self.randomness);
+            cn.on_data(id, incoming, bytes, &mut self.randomness);
         }
     }
 

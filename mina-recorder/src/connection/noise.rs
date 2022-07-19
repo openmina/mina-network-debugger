@@ -20,6 +20,7 @@ type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 pub struct State<Inner> {
     machine: Option<St>,
     initiator_is_incoming: bool,
+    error: bool,
     inner: Inner,
 }
 
@@ -50,15 +51,22 @@ impl<Inner> HandleData for State<Inner> {
         id: ConnectionId,
         incoming: bool,
         bytes: Vec<u8>,
-        randomness: &VecDeque<[u8; 32]>,
+        randomness: &mut VecDeque<[u8; 32]>,
     ) {
-        let bytes = self.on_data_(incoming, bytes, randomness);
+        let (bytes, error) = if !self.error {
+            match self.on_data_(incoming, bytes, randomness) {
+                Ok(v) => (v, "ok"),
+                Err(v) => (v, "err"),
+            }
+        } else {
+            (bytes, "err")
+        };
 
         let ConnectionId { alias, addr, fd } = id;
         let arrow = if incoming { "->" } else { "<-" };
         let len = bytes.len();
         log::info!(
-            "{addr} {fd} {arrow} {alias} {len} \"{}\"",
+            "{addr} {fd} {arrow} {alias} {error}({len} \"{}\")",
             hex::encode(bytes)
         );
 
@@ -71,10 +79,10 @@ impl<Inner> State<Inner> {
         &mut self,
         incoming: bool,
         mut bytes: Vec<u8>,
-        randomness: &VecDeque<[u8; 32]>,
-    ) -> Vec<u8> {
-        fn find_sk(pk_bytes: &[u8], randomness: &VecDeque<[u8; 32]>) -> Option<Scalar> {
-            randomness.iter().rev().find_map(|rand| {
+        randomness: &mut VecDeque<[u8; 32]>,
+    ) -> Result<Vec<u8>, Vec<u8>> {
+        fn find_sk(pk_bytes: &[u8], randomness: &mut VecDeque<[u8; 32]>) -> Option<Scalar> {
+            let (n, sk) = randomness.iter().enumerate().rev().find_map(|(n, rand)| {
                 let mut sk_bytes = *rand;
                 sk_bytes[0] &= 248;
                 sk_bytes[31] &= 127;
@@ -82,11 +90,13 @@ impl<Inner> State<Inner> {
                 let sk = Scalar::from_bits(sk_bytes);
                 let pk = (&ED25519_BASEPOINT_TABLE * &sk).to_montgomery();
                 if pk.as_bytes() == pk_bytes {
-                    Some(sk)
+                    Some((n, sk))
                 } else {
                     None
                 }
-            })
+            })?;
+            randomness.remove(n);
+            Some(sk)
         }
 
         let range;
@@ -167,15 +177,22 @@ impl<Inner> State<Inner> {
                 mut initiators_receiver,
                 mut responders_receiver,
             }) => {
+                if len < 18 {
+                    self.error = true;
+                    return Err(bytes);
+                }
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
                 let receiver = if incoming == self.initiator_is_incoming {
                     &mut initiators_receiver
                 } else {
                     &mut responders_receiver
                 };
-                if let Err(_) = receiver.decrypt(&[], &mut bytes[2..(len - 16)], &payload_tag) {
-                    // TODO: investigate
-                    range = 0..len;
+                if receiver
+                    .decrypt(&[], &mut bytes[2..(len - 16)], &payload_tag)
+                    .is_err()
+                {
+                    self.error = true;
+                    return Err(bytes);
                 } else {
                     range = 2..(len - 16);
                 }
@@ -185,7 +202,7 @@ impl<Inner> State<Inner> {
                 })
             }
         };
-        bytes[range].to_vec()
+        Ok(bytes[range].to_vec())
     }
 }
 
@@ -198,8 +215,8 @@ fn noise() {
     randomness.push_back(hex::decode("d1f3bca173136dd555dd97262336ce644a76ec31d521d2befe87caec8678c1a7").unwrap().try_into().unwrap());
     randomness.push_back(hex::decode("1c283e25c80f64f2806d9e19da1a393873d40bdf3d903a3776e013c4fdd97cb3").unwrap().try_into().unwrap());
 
-    noise.on_data_(true, hex::decode("00209844288f8c8f0337dff411d66e0378d950fb7590f9f44d6df969fd59a18ab849").unwrap(), &randomness);
-    noise.on_data_(false, hex::decode("00c8c0e8867216784ce23e6ad97120c8bfa139941424d0aebcdfe14e339798af4a377f2a97c280a913fdf6a96b4b89c5471a7f4761bec49a557d734b65495eb87e1e00b707d561da835698fe08bab7962b0491751110e8a32a260605a64dbdc18f503958be161fe9546f3c0494c0714f6e57c3eca413cec2d20a483855b4958b96ee79e05f34fa63a74c758ebe9537f4e1c733a7a7ebcd9b1bcc47c2c882ffa361f6ebb404225b60a6bae8e7a6d479d6e1b5c5c1d858ca13dde8cbd285f5bb4d9805578553e3881d5a0d").unwrap(), &randomness);
-    noise.on_data_(true, hex::decode("00a8e3cfaddd47cf48db1b70b83c15dbdb32bdba21cca65f9f80fb2e7f93d7a82b1b71d6241952e1205d510afad46f8d6d23de1be013618cd79d4e87eec4761292393532e7952bddaeb6709dcb266f861f92ef0eabe282d318f813d11426ac6916240bfead8994c63f10b03f6e241c2b92495a1f63d728fb63ba78e468945f7da081761102465308523dbf50064be4251468abb99db7af8afd71b99100a2fb7a37773a8062d33cc2e1d9").unwrap(), &randomness);
-    noise.on_data_(true, hex::decode("00375cd2640426acf52810f89147cf5446f8b4bff334c9727c0a45abd220746b2e8b10d269ff28be87c8bb1d53e43e69922ff4b19760ef875d").unwrap(), &randomness);
+    noise.on_data_(true, hex::decode("00209844288f8c8f0337dff411d66e0378d950fb7590f9f44d6df969fd59a18ab849").unwrap(), &mut randomness).unwrap();
+    noise.on_data_(false, hex::decode("00c8c0e8867216784ce23e6ad97120c8bfa139941424d0aebcdfe14e339798af4a377f2a97c280a913fdf6a96b4b89c5471a7f4761bec49a557d734b65495eb87e1e00b707d561da835698fe08bab7962b0491751110e8a32a260605a64dbdc18f503958be161fe9546f3c0494c0714f6e57c3eca413cec2d20a483855b4958b96ee79e05f34fa63a74c758ebe9537f4e1c733a7a7ebcd9b1bcc47c2c882ffa361f6ebb404225b60a6bae8e7a6d479d6e1b5c5c1d858ca13dde8cbd285f5bb4d9805578553e3881d5a0d").unwrap(), &mut randomness).unwrap();
+    noise.on_data_(true, hex::decode("00a8e3cfaddd47cf48db1b70b83c15dbdb32bdba21cca65f9f80fb2e7f93d7a82b1b71d6241952e1205d510afad46f8d6d23de1be013618cd79d4e87eec4761292393532e7952bddaeb6709dcb266f861f92ef0eabe282d318f813d11426ac6916240bfead8994c63f10b03f6e241c2b92495a1f63d728fb63ba78e468945f7da081761102465308523dbf50064be4251468abb99db7af8afd71b99100a2fb7a37773a8062d33cc2e1d9").unwrap(), &mut randomness).unwrap();
+    noise.on_data_(true, hex::decode("00375cd2640426acf52810f89147cf5446f8b4bff334c9727c0a45abd220746b2e8b10d269ff28be87c8bb1d53e43e69922ff4b19760ef875d").unwrap(), &mut randomness).unwrap();
 }

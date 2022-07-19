@@ -33,7 +33,7 @@ where
         id: ConnectionId,
         incoming: bool,
         bytes: Vec<u8>,
-        randomness: &VecDeque<[u8; 32]>,
+        randomness: &mut VecDeque<[u8; 32]>,
     ) {
         // log::info!("{addr} {fd} {arrow} {alias} \"{}\"", hex::encode(bytes));
 
