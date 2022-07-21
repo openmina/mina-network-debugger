@@ -42,7 +42,7 @@ where
         &mut self,
         id: ConnectionId,
         incoming: bool,
-        mut bytes: Vec<u8>,
+        bytes: &mut [u8],
         randomness: &mut VecDeque<[u8; 32]>,
     ) {
         let cipher = if incoming {
@@ -51,7 +51,7 @@ where
             &mut self.cipher_out
         };
         if let Some(cipher) = cipher {
-            cipher.apply_keystream(&mut bytes);
+            cipher.apply_keystream(bytes);
             self.inner.on_data(id, incoming, bytes, randomness);
         } else {
             assert_eq!(bytes.len(), 24);

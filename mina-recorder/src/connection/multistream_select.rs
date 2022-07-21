@@ -32,7 +32,7 @@ where
         &mut self,
         id: ConnectionId,
         incoming: bool,
-        bytes: Vec<u8>,
+        bytes: &mut [u8],
         randomness: &mut VecDeque<[u8; 32]>,
     ) {
         // log::info!("{addr} {fd} {arrow} {alias} \"{}\"", hex::encode(bytes));
@@ -45,7 +45,7 @@ where
             let ConnectionId { alias, addr, fd } = id;
             let arrow = if incoming { "->" } else { "<-" };
 
-            self.accumulator.extend_from_slice(&bytes);
+            self.accumulator.extend_from_slice(bytes);
             let cursor = &mut self.accumulator.as_slice();
             while let Some(msg) = take_msg(cursor) {
                 if let Ok(s) = std::str::from_utf8(msg) {

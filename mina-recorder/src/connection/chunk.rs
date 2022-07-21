@@ -16,7 +16,7 @@ where
         &mut self,
         id: ConnectionId,
         incoming: bool,
-        bytes: Vec<u8>,
+        bytes: &mut [u8],
         randomness: &mut VecDeque<[u8; 32]>,
     ) {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
@@ -31,9 +31,9 @@ where
             if self.accumulator.len() >= 2 {
                 let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
                 if self.accumulator.len() >= 2 + len {
-                    let (chunk, remaining) = self.accumulator.split_at(2 + len);
+                    let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
                     self.inner
-                        .on_data(id.clone(), incoming, chunk.to_vec(), randomness);
+                        .on_data(id.clone(), incoming, chunk, randomness);
                     self.accumulator = remaining.to_vec();
                     continue;
                 }

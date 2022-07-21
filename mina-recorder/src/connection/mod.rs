@@ -12,7 +12,7 @@ pub trait HandleData {
         &mut self,
         id: ConnectionId,
         incoming: bool,
-        bytes: Vec<u8>,
+        bytes: &mut [u8],
         randomness: &mut VecDeque<[u8; 32]>,
     );
 }

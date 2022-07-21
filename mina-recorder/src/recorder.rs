@@ -37,11 +37,11 @@ impl P2pRecorder {
         alias: String,
         addr: SocketAddr,
         fd: u32,
-        bytes: Vec<u8>,
+        mut bytes: Vec<u8>,
     ) {
         let id = ConnectionId { alias, addr, fd };
         if let Some(cn) = self.cns.get_mut(&id) {
-            cn.on_data(id, incoming, bytes, &mut self.randomness);
+            cn.on_data(id, incoming, &mut bytes, &mut self.randomness);
         }
     }
 
