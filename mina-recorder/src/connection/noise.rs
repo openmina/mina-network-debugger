@@ -107,7 +107,13 @@ impl<Inner> State<Inner> {
                 self.initiator_is_incoming = incoming;
 
                 let i_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
-                let i_esk = find_sk(&bytes[2..34], randomness).unwrap();
+                let i_esk = match find_sk(&bytes[2..34], randomness) {
+                    Some(v) => v,
+                    None => {
+                        self.error = true;
+                        return Err(bytes);
+                    }
+                };
                 let st = SymmetricState::new("Noise_XX_25519_ChaChaPoly_SHA256")
                     .mix_hash(&[])
                     .mix_hash(i_epk.as_bytes())
@@ -117,7 +123,13 @@ impl<Inner> State<Inner> {
             }
             Some(St::FirstMessage { st, i_epk, i_esk }) => {
                 let r_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
-                let r_esk = find_sk(&bytes[2..34], randomness).unwrap();
+                let r_esk = match find_sk(&bytes[2..34], randomness) {
+                    Some(v) => v,
+                    None => {
+                        self.error = true;
+                        return Err(bytes);
+                    }
+                };
                 let mut r_spk_bytes: [u8; 32] = bytes[34..66].try_into().unwrap();
                 let tag = *GenericArray::from_slice(&bytes[66..82]);
                 let r_spk;
@@ -192,7 +204,6 @@ impl<Inner> State<Inner> {
                     .decrypt(&[], &mut bytes[2..(len - 16)], &payload_tag)
                     .is_err()
                 {
-                    self.error = true;
                     return Err(bytes);
                 } else {
                     range = 2..(len - 16);

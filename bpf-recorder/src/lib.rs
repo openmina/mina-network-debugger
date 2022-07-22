@@ -182,7 +182,7 @@ pub mod sniffer_event {
                 ret(SnifferEventVariant::Disconnected)
             } else if let DataTag::Alias = tag {
                 ret(SnifferEventVariant::NewApp(
-                    String::from_utf8(data.to_vec()).unwrap(),
+                    String::from_utf8(data[..(data.len() - 1)].to_vec()).unwrap(),
                 ))
             } else if let DataTag::Random = tag {
                 ret(SnifferEventVariant::Random(data.try_into().unwrap()))
