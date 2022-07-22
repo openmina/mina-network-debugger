@@ -12,7 +12,7 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use super::{ConnectionId, HandleData};
+use super::{ConnectionId, HandleData, logger::Raw};
 
 type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
@@ -45,7 +45,10 @@ enum St {
     },
 }
 
-impl<Inner> HandleData for State<Inner> {
+impl<Inner> HandleData for State<Inner>
+where
+    Inner: HandleData,
+{
     fn on_data(
         &mut self,
         id: ConnectionId,
@@ -53,24 +56,49 @@ impl<Inner> HandleData for State<Inner> {
         bytes: &mut [u8],
         randomness: &mut VecDeque<[u8; 32]>,
     ) {
-        let (bytes, error) = if !self.error {
+        enum Msg {
+            First,
+            Second,
+            Third,
+            Other,
+        }
+
+        let msg = match &self.machine {
+            None => Msg::First,
+            Some(St::FirstMessage { .. }) => Msg::Second,
+            Some(St::SecondMessage { .. }) => Msg::Third,
+            Some(_) => Msg::Other,
+        };
+        if !self.error {
             match self.on_data_(incoming, bytes, randomness) {
-                Ok(v) => (v, "ok"),
-                Err(v) => (v, "err"),
+                Ok(bytes) => {
+                    match msg {
+                        Msg::First => (),
+                        Msg::Second => {
+                            // TODO: impl Display for ConnectionId
+                            let ConnectionId { alias, addr, fd } = id;
+                            let arrow = if incoming { "->" } else { "<-" };
+                            log::info!(
+                                "{addr} {fd} {arrow} {alias} responders payload {}",
+                                hex::encode(bytes)
+                            );
+                        }
+                        Msg::Third => {
+                            let ConnectionId { alias, addr, fd } = id;
+                            let arrow = if incoming { "->" } else { "<-" };
+                            log::info!(
+                                "{addr} {fd} {arrow} {alias} initiators payload {}",
+                                hex::encode(bytes)
+                            );
+                        }
+                        Msg::Other => self.inner.on_data(id, incoming, bytes, randomness),
+                    }
+                }
+                Err(bytes) => Raw.on_data(id, incoming, bytes, randomness),
             }
         } else {
-            (bytes, "err")
-        };
-
-        let ConnectionId { alias, addr, fd } = id;
-        let arrow = if incoming { "->" } else { "<-" };
-        let len = bytes.len();
-        log::info!(
-            "{addr} {fd} {arrow} {alias} {error}({len} \"{}\")",
-            hex::encode(bytes)
-        );
-
-        let _ = &mut self.inner;
+            Raw.on_data(id, incoming, bytes, randomness)
+        }
     }
 }
 

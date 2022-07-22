@@ -21,3 +21,5 @@ pub mod pnet;
 pub mod multistream_select;
 pub mod chunk;
 pub mod noise;
+pub mod mplex;
+pub mod logger;

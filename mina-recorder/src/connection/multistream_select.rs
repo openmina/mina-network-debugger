@@ -35,13 +35,7 @@ where
         bytes: &mut [u8],
         randomness: &mut VecDeque<[u8; 32]>,
     ) {
-        // log::info!("{addr} {fd} {arrow} {alias} \"{}\"", hex::encode(bytes));
-
-        // WARNING: hack to see when noise handshake begins
-        let noise_prefix = bytes.starts_with(b"\x00");
-        if ((incoming && !self.incoming_done) || (!incoming && !self.outgoing_done))
-            && !noise_prefix
-        {
+        if (incoming && !self.incoming_done) || (!incoming && !self.outgoing_done) {
             let ConnectionId { alias, addr, fd } = id;
             let arrow = if incoming { "->" } else { "<-" };
 
@@ -51,19 +45,24 @@ where
                 if let Ok(s) = std::str::from_utf8(msg) {
                     let s = s.trim_end_matches('\n');
                     log::info!("{addr} {fd} {arrow} {alias} \"{s}\"");
+                    if s.starts_with("/multistream/") || s == "na" {
+                        continue;
+                    }
+                    if s.starts_with("/libp2p/simultaneous-connect") {
+                        // TODO: handle
+                        continue;
+                    }
+                    if incoming {
+                        self.incoming_done = true;
+                    } else {
+                        self.outgoing_done = true;
+                    }
                 } else {
                     log::error!(" .  unparsed message: {}", hex::encode(msg));
                 }
             }
             self.accumulator = (*cursor).to_vec();
         } else {
-            if noise_prefix {
-                if incoming {
-                    self.incoming_done = true;
-                } else {
-                    self.outgoing_done = true;
-                }
-            }
             self.inner.on_data(id, incoming, bytes, randomness);
         }
     }

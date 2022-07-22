@@ -26,14 +26,13 @@ where
             }
         }
 
-        self.accumulator.extend_from_slice(&bytes);
+        self.accumulator.extend_from_slice(bytes);
         loop {
             if self.accumulator.len() >= 2 {
                 let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
                 if self.accumulator.len() >= 2 + len {
                     let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
-                    self.inner
-                        .on_data(id.clone(), incoming, chunk, randomness);
+                    self.inner.on_data(id.clone(), incoming, chunk, randomness);
                     self.accumulator = remaining.to_vec();
                     continue;
                 }

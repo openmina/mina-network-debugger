@@ -11,6 +11,7 @@ log = { version = "0.4.17" }
 hex = { version = "0.4.3" }
 salsa20 = { version = "0.10.2" }
 blake2 = { version = "0.10.4" }
+unsigned-varint = { version = "0.7.1" }
 
 curve25519-dalek = { version = "3.2" }
 sha2 = { version = "0.10.2" }

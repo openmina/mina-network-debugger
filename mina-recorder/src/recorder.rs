@@ -3,10 +3,11 @@ use std::{
     net::SocketAddr,
 };
 
-use super::connection::{ConnectionId, HandleData, pnet, multistream_select, chunk, noise};
+use super::connection::{ConnectionId, HandleData, pnet, multistream_select, chunk, noise, mplex};
 
 type Cn = pnet::State<multistream_select::State<Noise>>;
-type Noise = chunk::State<noise::State<()>>;
+type Noise = chunk::State<noise::State<Encrypted>>;
+type Encrypted = multistream_select::State<mplex::State<()>>;
 
 #[derive(Default)]
 pub struct P2pRecorder {

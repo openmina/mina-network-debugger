@@ -18,6 +18,7 @@
         "libc",
         "Mina",
         "mmap",
+        "mplex",
         "multistream",
         "munmap",
         "nonminimal",

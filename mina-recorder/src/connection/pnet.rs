@@ -56,7 +56,7 @@ where
         } else {
             assert_eq!(bytes.len(), 24);
             let key = Self::shared_secret();
-            *cipher = Some(XSalsa20::new(&key, GenericArray::from_slice(&bytes)));
+            *cipher = Some(XSalsa20::new(&key, GenericArray::from_slice(bytes)));
         }
     }
 }
