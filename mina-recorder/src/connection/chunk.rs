@@ -1,6 +1,4 @@
-use std::collections::VecDeque;
-
-use super::{DirectedId, HandleData};
+use super::{DirectedId, HandleData, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
@@ -12,11 +10,11 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], randomness: &mut VecDeque<[u8; 32]>) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
-                return self.inner.on_data(id, bytes, randomness);
+                return self.inner.on_data(id, bytes, cx);
             }
         }
 
@@ -26,7 +24,7 @@ where
                 let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
                 if self.accumulator.len() >= 2 + len {
                     let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
-                    self.inner.on_data(id.clone(), chunk, randomness);
+                    self.inner.on_data(id.clone(), chunk, cx);
                     self.accumulator = remaining.to_vec();
                     continue;
                 }

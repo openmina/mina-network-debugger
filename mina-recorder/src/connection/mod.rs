@@ -1,4 +1,6 @@
-use std::{net::SocketAddr, collections::VecDeque, fmt};
+use std::{net::SocketAddr, fmt};
+
+use super::recorder::Cx;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId {
@@ -22,7 +24,7 @@ impl fmt::Display for DirectedId {
 }
 
 pub trait HandleData {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], randomness: &mut VecDeque<[u8; 32]>);
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx);
 }
 
 pub mod pnet;

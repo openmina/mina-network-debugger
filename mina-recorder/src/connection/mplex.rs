@@ -1,8 +1,6 @@
-use std::collections::VecDeque;
-
 use unsigned_varint::decode;
 
-use super::{DirectedId, HandleData};
+use super::{DirectedId, HandleData, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
@@ -41,7 +39,7 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], randomness: &mut VecDeque<[u8; 32]>) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) {
         let (v, remaining) = decode::u64(bytes).unwrap();
         let header = Header::new(v);
         let stream_id = v >> 3;
@@ -56,11 +54,11 @@ where
         // TODO:
         if offset + len == bytes.len() {
             self.inner
-                .on_data(id, &mut bytes[offset..(offset + len)], randomness)
+                .on_data(id, &mut bytes[offset..(offset + len)], cx)
         } else {
             self.inner
-                .on_data(id.clone(), &mut bytes[offset..(offset + len)], randomness);
-            self.on_data(id, &mut bytes[(offset + len)..], randomness);
+                .on_data(id.clone(), &mut bytes[offset..(offset + len)], cx);
+            self.on_data(id, &mut bytes[(offset + len)..], cx);
         }
     }
 }

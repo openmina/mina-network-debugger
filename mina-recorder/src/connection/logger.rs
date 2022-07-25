@@ -1,9 +1,7 @@
-use std::collections::VecDeque;
-
-use super::{DirectedId, HandleData};
+use super::{DirectedId, HandleData, Cx};
 
 impl HandleData for () {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _randomness: &mut VecDeque<[u8; 32]>) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx) {
         log::info!("{id} ({} \"{}\")", bytes.len(), hex::encode(bytes));
     }
 }
@@ -11,7 +9,7 @@ impl HandleData for () {
 pub struct Raw;
 
 impl HandleData for Raw {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _randomness: &mut VecDeque<[u8; 32]>) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx) {
         log::info!("{id} raw({} \"{}\")", bytes.len(), hex::encode(bytes));
     }
 }

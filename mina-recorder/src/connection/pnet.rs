@@ -1,12 +1,10 @@
-use std::collections::VecDeque;
-
 use salsa20::cipher::generic_array::{typenum, GenericArray};
 use salsa20::{
     cipher::{KeyIvInit as _, StreamCipher},
     XSalsa20,
 };
 
-use super::{DirectedId, HandleData};
+use super::{DirectedId, HandleData, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
@@ -38,7 +36,7 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], randomness: &mut VecDeque<[u8; 32]>) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) {
         let cipher = if id.incoming {
             &mut self.cipher_in
         } else {
@@ -46,7 +44,7 @@ where
         };
         if let Some(cipher) = cipher {
             cipher.apply_keystream(bytes);
-            self.inner.on_data(id, bytes, randomness);
+            self.inner.on_data(id, bytes, cx);
         } else {
             assert_eq!(bytes.len(), 24);
             let key = Self::shared_secret();

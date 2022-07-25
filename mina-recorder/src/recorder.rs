@@ -14,7 +14,22 @@ type Encrypted = multistream_select::State<mplex::State<()>>;
 #[derive(Default)]
 pub struct P2pRecorder {
     cns: BTreeMap<ConnectionId, Cn>,
+    cx: Cx,
+}
+
+#[derive(Default)]
+pub struct Cx {
     randomness: VecDeque<[u8; 32]>,
+}
+
+impl Cx {
+    pub fn push_randomness(&mut self, bytes: [u8; 32]) {
+        self.randomness.push_back(bytes);
+    }
+
+    pub fn iter_rand(&self) -> impl Iterator<Item = &[u8; 32]> + '_ {
+        self.randomness.iter().rev()
+    }
 }
 
 impl P2pRecorder {
@@ -45,12 +60,12 @@ impl P2pRecorder {
         let id = ConnectionId { alias, addr, fd };
         if let Some(cn) = self.cns.get_mut(&id) {
             let id = DirectedId { id, incoming };
-            cn.on_data(id, &mut bytes, &mut self.randomness);
+            cn.on_data(id, &mut bytes, &mut self.cx);
         }
     }
 
     pub fn on_randomness(&mut self, alias: String, bytes: [u8; 32]) {
         log::info!("{alias} random: {}", hex::encode(bytes));
-        self.randomness.push_back(bytes);
+        self.cx.push_randomness(bytes);
     }
 }
