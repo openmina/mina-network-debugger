@@ -12,7 +12,7 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use super::{ConnectionId, HandleData, logger::Raw};
+use super::{DirectedId, HandleData, logger::Raw};
 
 type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
@@ -49,13 +49,7 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(
-        &mut self,
-        id: ConnectionId,
-        incoming: bool,
-        bytes: &mut [u8],
-        randomness: &mut VecDeque<[u8; 32]>,
-    ) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], randomness: &mut VecDeque<[u8; 32]>) {
         enum Msg {
             First,
             Second,
@@ -70,34 +64,21 @@ where
             Some(_) => Msg::Other,
         };
         if !self.error {
-            match self.on_data_(incoming, bytes, randomness) {
-                Ok(bytes) => {
-                    match msg {
-                        Msg::First => (),
-                        Msg::Second => {
-                            // TODO: impl Display for ConnectionId
-                            let ConnectionId { alias, addr, fd } = id;
-                            let arrow = if incoming { "->" } else { "<-" };
-                            log::info!(
-                                "{addr} {fd} {arrow} {alias} responders payload {}",
-                                hex::encode(bytes)
-                            );
-                        }
-                        Msg::Third => {
-                            let ConnectionId { alias, addr, fd } = id;
-                            let arrow = if incoming { "->" } else { "<-" };
-                            log::info!(
-                                "{addr} {fd} {arrow} {alias} initiators payload {}",
-                                hex::encode(bytes)
-                            );
-                        }
-                        Msg::Other => self.inner.on_data(id, incoming, bytes, randomness),
+            match self.on_data_(id.incoming, bytes, randomness) {
+                Ok(bytes) => match msg {
+                    Msg::First => (),
+                    Msg::Second => {
+                        log::info!("{id} responders payload {}", hex::encode(bytes));
                     }
-                }
-                Err(bytes) => Raw.on_data(id, incoming, bytes, randomness),
+                    Msg::Third => {
+                        log::info!("{id} initiators payload {}", hex::encode(bytes));
+                    }
+                    Msg::Other => self.inner.on_data(id, bytes, randomness),
+                },
+                Err(bytes) => Raw.on_data(id, bytes, randomness),
             }
         } else {
-            Raw.on_data(id, incoming, bytes, randomness)
+            Raw.on_data(id, bytes, randomness)
         }
     }
 }

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use unsigned_varint::decode;
 
-use super::{ConnectionId, HandleData};
+use super::{DirectedId, HandleData};
 
 #[derive(Default)]
 pub struct State<Inner> {
@@ -41,13 +41,7 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(
-        &mut self,
-        id: ConnectionId,
-        incoming: bool,
-        bytes: &mut [u8],
-        randomness: &mut VecDeque<[u8; 32]>,
-    ) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], randomness: &mut VecDeque<[u8; 32]>) {
         let (v, remaining) = decode::u64(bytes).unwrap();
         let header = Header::new(v);
         let stream_id = v >> 3;
@@ -55,24 +49,18 @@ where
         let (len, remaining) = decode::usize(remaining).unwrap();
         let offset = remaining.as_ptr() as usize - bytes.as_ptr() as usize;
 
-        let ConnectionId { alias, addr, fd } = &id;
-        let arrow = if incoming { "->" } else { "<-" };
-        log::info!("{addr} {fd} {arrow} {alias} {header:?} stream id: {stream_id}");
+        log::info!("{id} {header:?} stream id: {stream_id}");
 
         // assert_eq!(offset + len, bytes.len());
 
         // TODO:
         if offset + len == bytes.len() {
             self.inner
-                .on_data(id, incoming, &mut bytes[offset..(offset + len)], randomness)
+                .on_data(id, &mut bytes[offset..(offset + len)], randomness)
         } else {
-            self.inner.on_data(
-                id.clone(),
-                incoming,
-                &mut bytes[offset..(offset + len)],
-                randomness,
-            );
-            self.on_data(id, incoming, &mut bytes[(offset + len)..], randomness);
+            self.inner
+                .on_data(id.clone(), &mut bytes[offset..(offset + len)], randomness);
+            self.on_data(id, &mut bytes[(offset + len)..], randomness);
         }
     }
 }

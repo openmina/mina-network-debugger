@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use super::{ConnectionId, HandleData};
+use super::{DirectedId, HandleData};
 
 #[derive(Default)]
 pub struct State<Inner> {
@@ -28,23 +28,14 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(
-        &mut self,
-        id: ConnectionId,
-        incoming: bool,
-        bytes: &mut [u8],
-        randomness: &mut VecDeque<[u8; 32]>,
-    ) {
-        if (incoming && !self.incoming_done) || (!incoming && !self.outgoing_done) {
-            let ConnectionId { alias, addr, fd } = id;
-            let arrow = if incoming { "->" } else { "<-" };
-
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], randomness: &mut VecDeque<[u8; 32]>) {
+        if (id.incoming && !self.incoming_done) || (!id.incoming && !self.outgoing_done) {
             self.accumulator.extend_from_slice(bytes);
             let cursor = &mut self.accumulator.as_slice();
             while let Some(msg) = take_msg(cursor) {
                 if let Ok(s) = std::str::from_utf8(msg) {
                     let s = s.trim_end_matches('\n');
-                    log::info!("{addr} {fd} {arrow} {alias} \"{s}\"");
+                    log::info!("{id} \"{s}\"");
                     if s.starts_with("/multistream/") || s == "na" {
                         continue;
                     }
@@ -52,7 +43,7 @@ where
                         // TODO: handle
                         continue;
                     }
-                    if incoming {
+                    if id.incoming {
                         self.incoming_done = true;
                     } else {
                         self.outgoing_done = true;
@@ -63,7 +54,7 @@ where
             }
             self.accumulator = (*cursor).to_vec();
         } else {
-            self.inner.on_data(id, incoming, bytes, randomness);
+            self.inner.on_data(id, bytes, randomness);
         }
     }
 }
