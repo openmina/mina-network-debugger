@@ -553,6 +553,7 @@ fn main() {
         for event in events {
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
+                    let alias = format!("{alias}_{}", event.pid);
                     log::info!("exec {alias} pid: {}", event.pid);
                     apps.insert(event.pid, alias);
                 }
@@ -573,7 +574,7 @@ fn main() {
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     if let Some(alias) = apps.get(&event.pid) {
-                        if addr.port() == P2P_PORT {
+                        if addr.port() == P2P_PORT || addr.port() >= 49152 {
                             if let Some(old) = p2p_cns.insert((alias.clone(), event.fd), addr) {
                                 log::warn!("new incoming connection on already allocated fd");
                                 recorder.on_disconnect(alias.clone(), old, event.fd)

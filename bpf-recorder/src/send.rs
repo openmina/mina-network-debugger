@@ -18,7 +18,7 @@ where
         if let Ok(mut buffer) = rb.reserve(S::U64 as usize + mem::size_of::<Event>()) {
             let p_buffer = buffer.as_mut().as_mut_ptr() as *mut Event;
 
-            let to_copy = (event.size as u32) & (S::U32 - 1);
+            let to_copy = (((event.size - 1) as u32) & (S::U32 - 1)) + 1;
             let result = unsafe {
                 if K::BOOL {
                     helpers::probe_read_kernel(
