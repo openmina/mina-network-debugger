@@ -115,20 +115,14 @@ where
     }
 }
 
-#[allow(dead_code)]
 enum St {
     FirstMessage {
         st: SymmetricState<C, ChainingKey<C>>,
-        i_epk: MontgomeryPoint,
         i_esk: Scalar,
     },
     SecondMessage {
         st: SymmetricState<C, Key<C, typenum::U1>>,
-        i_epk: MontgomeryPoint,
-        i_esk: Scalar,
-        r_epk: MontgomeryPoint,
         r_esk: Scalar,
-        r_spk: MontgomeryPoint,
     },
     Transport {
         initiators_receiver: Cipher<C, 1, false>,
@@ -224,9 +218,9 @@ impl<Inner> NoiseState<Inner> {
                     .mix_hash(i_epk.as_bytes())
                     .mix_hash(&[]);
                 range = 34..len;
-                Some(St::FirstMessage { st, i_epk, i_esk })
+                Some(St::FirstMessage { st, i_esk })
             }
-            Some(St::FirstMessage { st, i_epk, i_esk }) => {
+            Some(St::FirstMessage { st, i_esk }) => {
                 if bytes.len() < 98 {
                     self.error = true;
                     return Err(bytes);
@@ -260,16 +254,9 @@ impl<Inner> NoiseState<Inner> {
                     .unwrap();
 
                 range = 82..(len - 16);
-                Some(St::SecondMessage {
-                    st,
-                    i_epk,
-                    i_esk,
-                    r_epk,
-                    r_esk,
-                    r_spk,
-                })
+                Some(St::SecondMessage { st, r_esk })
             }
-            Some(St::SecondMessage { st, r_esk, .. }) => {
+            Some(St::SecondMessage { st, r_esk }) => {
                 if bytes.len() < 98 {
                     self.error = true;
                     return Err(bytes);
