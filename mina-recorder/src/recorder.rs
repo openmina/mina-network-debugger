@@ -3,12 +3,10 @@ use std::{
     net::SocketAddr,
 };
 
-use super::connection::{
-    ConnectionId, DirectedId, HandleData, pnet, multistream_select, chunk, noise, mplex,
-};
+use super::connection::{ConnectionId, DirectedId, HandleData, pnet, multistream_select, noise, mplex};
 
-type Cn = pnet::State<multistream_select::State<Noise>>;
-type Noise = chunk::State<noise::State<Encrypted>>;
+type Cn = pnet::State<Noise>;
+type Noise = multistream_select::State<noise::State<Encrypted>>;
 type Encrypted = multistream_select::State<mplex::State<()>>;
 
 #[derive(Default)]
@@ -60,7 +58,8 @@ impl P2pRecorder {
         let id = ConnectionId { alias, addr, fd };
         if let Some(cn) = self.cns.get_mut(&id) {
             let id = DirectedId { id, incoming };
-            cn.on_data(id, &mut bytes, &mut self.cx);
+            let output = cn.on_data(id.clone(), &mut bytes, &mut self.cx);
+            log::info!("{id} {output}");
         }
     }
 

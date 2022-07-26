@@ -24,12 +24,13 @@ impl fmt::Display for DirectedId {
 }
 
 pub trait HandleData {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx);
+    type Output;
+
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output;
 }
 
 pub mod pnet;
 pub mod multistream_select;
-pub mod chunk;
 pub mod noise;
 pub mod mplex;
 pub mod logger;

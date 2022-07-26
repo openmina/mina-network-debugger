@@ -1,3 +1,5 @@
+use std::fmt;
+
 use curve25519_dalek::{
     scalar::Scalar, constants::ED25519_BASEPOINT_TABLE, montgomery::MontgomeryPoint,
 };
@@ -10,16 +12,107 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use super::{DirectedId, HandleData, Cx, logger::Raw};
+use super::{DirectedId, HandleData, Cx};
 
 type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
+pub type State<Inner> = ChunkState<NoiseState<Inner>>;
+
 #[derive(Default)]
-pub struct State<Inner> {
+pub struct ChunkState<Inner> {
+    accumulator: Vec<u8>,
+    inner: Inner,
+}
+
+pub enum ChunkOutput<Inner> {
+    Accumulating,
+    Inner(Vec<Inner>),
+}
+
+impl<Inner> fmt::Display for ChunkOutput<Inner>
+where
+    Inner: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChunkOutput::Accumulating => write!(f, "accumulating..."),
+            ChunkOutput::Inner(inners) => {
+                f.write_str("(")?;
+                for inner in inners {
+                    f.write_str(&inner.to_string())?;
+                }
+                f.write_str(")")
+            }
+        }
+    }
+}
+
+impl<Inner> HandleData for ChunkState<Inner>
+where
+    Inner: HandleData,
+{
+    type Output = ChunkOutput<Inner::Output>;
+
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+        if self.accumulator.is_empty() && bytes.len() >= 2 {
+            let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
+            if bytes.len() == 2 + len {
+                let inner_out = self.inner.on_data(id, bytes, cx);
+                return ChunkOutput::Inner(vec![inner_out]);
+            }
+        }
+
+        self.accumulator.extend_from_slice(bytes);
+        let mut inner_outs = vec![];
+        loop {
+            if self.accumulator.len() >= 2 {
+                let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
+                if self.accumulator.len() >= 2 + len {
+                    let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
+                    let inner_out = self.inner.on_data(id.clone(), chunk, cx);
+                    inner_outs.push(inner_out);
+                    self.accumulator = remaining.to_vec();
+                    continue;
+                }
+            }
+            break;
+        }
+
+        if inner_outs.is_empty() {
+            ChunkOutput::Accumulating
+        } else {
+            ChunkOutput::Inner(inner_outs)
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct NoiseState<Inner> {
     machine: Option<St>,
     initiator_is_incoming: bool,
     error: bool,
     inner: Inner,
+}
+
+pub enum NoiseOutput<Inner> {
+    CannotDecrypt,
+    FirstMessage,
+    HandshakePayload(Vec<u8>),
+    Inner(Inner),
+}
+
+impl<Inner> fmt::Display for NoiseOutput<Inner>
+where
+    Inner: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NoiseOutput::CannotDecrypt => write!(f, "cannot decrypt"),
+            NoiseOutput::FirstMessage => write!(f, "first message"),
+            NoiseOutput::HandshakePayload(p) => write!(f, "handshake {}", hex::encode(p)),
+            NoiseOutput::Inner(inner) => write!(f, "{inner}"),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -43,11 +136,13 @@ enum St {
     },
 }
 
-impl<Inner> HandleData for State<Inner>
+impl<Inner> HandleData for NoiseState<Inner>
 where
     Inner: HandleData,
 {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) {
+    type Output = NoiseOutput<Inner::Output>;
+
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         enum Msg {
             First,
             Second,
@@ -64,24 +159,24 @@ where
         if !self.error {
             match self.on_data_(id.incoming, bytes, cx) {
                 Ok(bytes) => match msg {
-                    Msg::First => (),
-                    Msg::Second => {
-                        log::info!("{id} responders payload {}", hex::encode(bytes));
-                    }
-                    Msg::Third => {
-                        log::info!("{id} initiators payload {}", hex::encode(bytes));
-                    }
-                    Msg::Other => self.inner.on_data(id, bytes, cx),
+                    Msg::First => NoiseOutput::FirstMessage,
+                    Msg::Second => NoiseOutput::HandshakePayload(bytes.to_vec()),
+                    Msg::Third => NoiseOutput::HandshakePayload(bytes.to_vec()),
+                    Msg::Other => NoiseOutput::Inner(self.inner.on_data(id, bytes, cx)),
                 },
-                Err(bytes) => Raw.on_data(id, bytes, cx),
+                Err(_bytes) => {
+                    // Raw.on_data(id, bytes, cx);
+                    NoiseOutput::CannotDecrypt
+                }
             }
         } else {
-            Raw.on_data(id, bytes, cx)
+            // Raw.on_data(id, bytes, cx);
+            NoiseOutput::CannotDecrypt
         }
     }
 }
 
-impl<Inner> State<Inner> {
+impl<Inner> NoiseState<Inner> {
     fn on_data_<'a>(
         &mut self,
         incoming: bool,
@@ -243,7 +338,7 @@ impl<Inner> State<Inner> {
 #[test]
 #[rustfmt::skip]
 fn noise() {
-    let mut noise = State::<()>::default();
+    let mut noise = NoiseState::<()>::default();
     let mut cx = Cx::default();
     cx.push_randomness(hex::decode("d1f3bca173136dd555dd97262336ce644a76ec31d521d2befe87caec8678c1a7").unwrap().try_into().unwrap());
     cx.push_randomness(hex::decode("1c283e25c80f64f2806d9e19da1a393873d40bdf3d903a3776e013c4fdd97cb3").unwrap().try_into().unwrap());
