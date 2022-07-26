@@ -10,6 +10,7 @@ use super::{DirectedId, HandleData, Cx};
 pub struct State<Inner> {
     cipher_in: Option<XSalsa20>,
     cipher_out: Option<XSalsa20>,
+    skip: bool,
     inner: Inner,
 }
 
@@ -37,6 +38,10 @@ where
     Inner: HandleData,
 {
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) {
+        if self.skip {
+            return;
+        }
+
         let cipher = if id.incoming {
             &mut self.cipher_in
         } else {
@@ -45,8 +50,10 @@ where
         if let Some(cipher) = cipher {
             cipher.apply_keystream(bytes);
             self.inner.on_data(id, bytes, cx);
+        } else if bytes.len() != 24 {
+            self.skip = true;
+            log::info!("{id} skip({} \"{}\")", bytes.len(), hex::encode(bytes));
         } else {
-            assert_eq!(bytes.len(), 24);
             let key = Self::shared_secret();
             *cipher = Some(XSalsa20::new(&key, GenericArray::from_slice(bytes)));
         }

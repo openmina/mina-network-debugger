@@ -111,6 +111,11 @@ impl<Inner> State<Inner> {
             None => {
                 self.initiator_is_incoming = incoming;
 
+                if bytes.len() < 34 {
+                    self.error = true;
+                    return Err(bytes);
+                }
+
                 let i_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
                 let i_esk = match find_sk(&bytes[2..34], cx) {
                     Some(v) => v,
@@ -127,6 +132,11 @@ impl<Inner> State<Inner> {
                 Some(St::FirstMessage { st, i_epk, i_esk })
             }
             Some(St::FirstMessage { st, i_epk, i_esk }) => {
+                if bytes.len() < 98 {
+                    self.error = true;
+                    return Err(bytes);
+                }
+
                 let r_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
                 let r_esk = match find_sk(&bytes[2..34], cx) {
                     Some(v) => v,
@@ -165,6 +175,11 @@ impl<Inner> State<Inner> {
                 })
             }
             Some(St::SecondMessage { st, r_esk, .. }) => {
+                if bytes.len() < 98 {
+                    self.error = true;
+                    return Err(bytes);
+                }
+
                 let mut i_spk_bytes: [u8; 32] = bytes[2..34].try_into().unwrap();
                 let tag = *GenericArray::from_slice(&bytes[34..50]);
                 let i_spk;
@@ -199,6 +214,7 @@ impl<Inner> State<Inner> {
                     self.error = true;
                     return Err(bytes);
                 }
+
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
                 let receiver = if incoming == self.initiator_is_incoming {
                     &mut initiators_receiver
