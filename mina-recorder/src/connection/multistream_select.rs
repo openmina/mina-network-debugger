@@ -71,12 +71,12 @@ where
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
-        let accumulator = if id.incoming {
-            &mut self.accumulator_incoming
+        let (accumulator, done) = if id.incoming {
+            (&mut self.accumulator_incoming, &mut self.incoming_done)
         } else {
-            &mut self.accumulator_outgoing
+            (&mut self.accumulator_outgoing, &mut self.outgoing_done)
         };
-        if (id.incoming && !self.incoming_done) || (!id.incoming && !self.outgoing_done) {
+        if !*done {
             accumulator.extend_from_slice(bytes);
             let cursor = &mut accumulator.as_slice();
             let mut protocol = None;
@@ -91,14 +91,13 @@ where
                         continue;
                     }
                     protocol = Some(s.to_string());
-                    if id.incoming {
-                        self.incoming_done = true;
-                    } else {
-                        self.outgoing_done = true;
-                    }
+                    *done = true;
                     break;
                 } else {
-                    panic!(" .  unparsed message: {}", hex::encode(msg));
+                    // protocol = Some(hex::encode(msg));
+                    log::error!("{id} unparsed {}", hex::encode(msg));
+                    *done = true;
+                    break;
                 }
             }
             *accumulator = (*cursor).to_vec();

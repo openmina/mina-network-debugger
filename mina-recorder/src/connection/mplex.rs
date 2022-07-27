@@ -6,7 +6,13 @@ use super::{DirectedId, HandleData, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
-    inners: BTreeMap<u64, Inner>,
+    inners: BTreeMap<StreamId, Inner>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StreamId {
+    pub i: u64,
+    pub initiator_is_incoming: bool,
 }
 
 pub enum Body<Inner> {
@@ -51,7 +57,7 @@ where
 }
 
 pub struct Output<Inner> {
-    pub stream_id: u64,
+    pub stream_id: StreamId,
     pub body: Body<Inner>,
 }
 
@@ -90,7 +96,12 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Output { stream_id, body } = self;
-        write!(f, "stream_id: {stream_id}, body: {body}")
+        let StreamId {
+            i,
+            initiator_is_incoming,
+        } = stream_id;
+        let mark = if *initiator_is_incoming { "~" } else { "" };
+        write!(f, "stream_id: {mark}{i}, body: {body}")
     }
 }
 
@@ -103,7 +114,13 @@ where
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         let (v, remaining) = decode::u64(bytes).unwrap();
-        let stream_id = v >> 3;
+        let i = v >> 3;
+        let initiator = v % 2 == 0;
+        let initiator_is_incoming = initiator == id.incoming;
+        let stream_id = StreamId {
+            i,
+            initiator_is_incoming,
+        };
 
         let (len, remaining) = decode::usize(remaining).unwrap();
         let offset = remaining.as_ptr() as usize - bytes.as_ptr() as usize;
@@ -112,15 +129,16 @@ where
         assert_eq!(offset + len, bytes.len());
         let bytes = &mut bytes[offset..(offset + len)];
 
-        let initiator = v % 2 == 0;
         let body = match v & 7 {
             0 => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
             1 | 2 => {
-                let protocol = self.inners.entry(stream_id).or_default();
-                Body::Message {
-                    initiator,
-                    inner: protocol.on_data(id, bytes, cx).into_iter(),
-                }
+                let inner = self
+                    .inners
+                    .entry(stream_id)
+                    .or_default()
+                    .on_data(id, bytes, cx)
+                    .into_iter();
+                Body::Message { initiator, inner }
             }
             3 | 4 => {
                 self.inners.remove(&stream_id);
