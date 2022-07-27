@@ -1,9 +1,9 @@
-use std::{
-    collections::{BTreeMap, VecDeque},
-    net::SocketAddr,
-};
+use std::collections::{BTreeMap, VecDeque};
 
-use super::connection::{ConnectionId, DirectedId, HandleData, pnet, multistream_select, noise, mplex};
+use super::{
+    EventMetadata, ConnectionId, DirectedId,
+    connection::{HandleData, pnet, multistream_select, noise, mplex},
+};
 
 type Cn = pnet::State<Noise>;
 type Noise = multistream_select::State<noise::State<Encrypted>>;
@@ -32,33 +32,35 @@ impl Cx {
 }
 
 impl P2pRecorder {
-    pub fn on_connect(&mut self, incoming: bool, alias: String, addr: SocketAddr, fd: u32) {
+    pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata) {
+        let ConnectionId {
+            alias,
+            addr,
+            pid,
+            fd,
+        } = &metadata.id;
         if incoming {
-            log::info!("{alias} accept {addr} {fd}");
+            log::info!("{alias}_{pid} accept {addr} {fd}");
         } else {
-            log::info!("{alias} connect {addr} {fd}");
+            log::info!("{alias}_{pid} connect {addr} {fd}");
         }
-        let id = ConnectionId { alias, addr, fd };
-        self.cns.insert(id, Default::default());
+        self.cns.insert(metadata.id, Default::default());
     }
 
-    pub fn on_disconnect(&mut self, alias: String, addr: SocketAddr, fd: u32) {
-        log::info!("{alias} disconnect {addr} {fd}");
-        let id = ConnectionId { alias, addr, fd };
-        self.cns.remove(&id);
+    pub fn on_disconnect(&mut self, metadata: EventMetadata) {
+        let ConnectionId {
+            alias,
+            addr,
+            pid,
+            fd,
+        } = &metadata.id;
+        log::info!("{alias}_{pid} disconnect {addr} {fd}");
+        self.cns.remove(&metadata.id);
     }
 
-    pub fn on_data(
-        &mut self,
-        incoming: bool,
-        alias: String,
-        addr: SocketAddr,
-        fd: u32,
-        mut bytes: Vec<u8>,
-    ) {
-        let id = ConnectionId { alias, addr, fd };
-        if let Some(cn) = self.cns.get_mut(&id) {
-            let id = DirectedId { id, incoming };
+    pub fn on_data(&mut self, incoming: bool, metadata: EventMetadata, mut bytes: Vec<u8>) {
+        if let Some(cn) = self.cns.get_mut(&metadata.id) {
+            let id = DirectedId { metadata, incoming };
             let output = cn.on_data(id.clone(), &mut bytes, &mut self.cx);
             log::info!("{id} {output}");
         }

@@ -9,10 +9,11 @@ license = "MIT"
 [dependencies]
 log = { version = "0.4.17" }
 hex = { version = "0.4.3" }
-salsa20 = { version = "0.10.2" }
-blake2 = { version = "0.10.4" }
+time = { version = "0.3.11", features = ["formatting"] }
 unsigned-varint = { version = "0.7.1" }
 
+salsa20 = { version = "0.10.2" }
+blake2 = { version = "0.10.4" }
 curve25519-dalek = { version = "3.2" }
 sha2 = { version = "0.10.2" }
 chacha20poly1305 = { version = "0.9.1" }

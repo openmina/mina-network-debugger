@@ -1,27 +1,4 @@
-use std::{net::SocketAddr, fmt};
-
-use super::recorder::Cx;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ConnectionId {
-    pub alias: String,
-    pub addr: SocketAddr,
-    pub fd: u32,
-}
-
-#[derive(Clone)]
-pub struct DirectedId {
-    pub id: ConnectionId,
-    pub incoming: bool,
-}
-
-impl fmt::Display for DirectedId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ConnectionId { alias, addr, fd } = &self.id;
-        let arrow = if self.incoming { "->" } else { "<-" };
-        write!(f, "{addr} {fd} {arrow} {alias}")
-    }
-}
+use super::{recorder::Cx, DirectedId};
 
 pub trait HandleData {
     type Output;
