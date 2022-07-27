@@ -31,27 +31,9 @@ where
         match self {
             Body::Nothing => Ok(()),
             Body::NewStream(name) => write!(f, "new stream: \"{name}\""),
-            Body::Message { initiator, inner } => {
-                if *initiator {
-                    write!(f, "initiator: {inner}")
-                } else {
-                    write!(f, "responder: {inner}")
-                }
-            }
-            Body::Close { initiator } => {
-                if *initiator {
-                    write!(f, "close initiator")
-                } else {
-                    write!(f, "close responder")
-                }
-            }
-            Body::Reset { initiator } => {
-                if *initiator {
-                    write!(f, "reset initiator")
-                } else {
-                    write!(f, "reset responder")
-                }
-            }
+            Body::Message { inner, .. } => inner.fmt(f),
+            Body::Close { .. } => write!(f, "close"),
+            Body::Reset { .. } => write!(f, "reset"),
         }
     }
 }
@@ -101,7 +83,7 @@ where
             initiator_is_incoming,
         } = stream_id;
         let mark = if *initiator_is_incoming { "~" } else { "" };
-        write!(f, "stream_id: {mark}{i}, body: {body}")
+        write!(f, "stream_id: {mark}{i}, {body}")
     }
 }
 
