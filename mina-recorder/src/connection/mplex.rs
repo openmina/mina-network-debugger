@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, collections::BTreeMap};
 
 use unsigned_varint::decode;
 
@@ -6,7 +6,7 @@ use super::{DirectedId, HandleData, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
-    inner: Inner,
+    inners: BTreeMap<u64, Inner>,
 }
 
 pub enum Body<Inner> {
@@ -52,7 +52,7 @@ where
 
 impl<Inner> HandleData for State<Inner>
 where
-    Inner: HandleData,
+    Inner: HandleData + Default,
 {
     type Output = Output<Inner::Output>;
 
@@ -69,8 +69,14 @@ where
 
         let body = match v & 7 {
             0 => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
-            1 => Body::MessageReceiver(self.inner.on_data(id, bytes, cx)),
-            2 => Body::MessageInitiator(self.inner.on_data(id, bytes, cx)),
+            1 => {
+                let protocol = self.inners.entry(stream_id).or_default();
+                Body::MessageReceiver(protocol.on_data(id, bytes, cx))
+            }
+            2 => {
+                let protocol = self.inners.entry(stream_id).or_default();
+                Body::MessageInitiator(protocol.on_data(id, bytes, cx))
+            }
             3 => Body::CloseReceiver,
             4 => Body::CloseInitiator,
             5 => Body::ResetReceiver,

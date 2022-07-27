@@ -8,6 +8,7 @@ use super::connection::{ConnectionId, DirectedId, HandleData, pnet, multistream_
 type Cn = pnet::State<Noise>;
 type Noise = multistream_select::State<noise::State<Encrypted>>;
 type Encrypted = multistream_select::State<mplex::State<()>>;
+// type Inner = multistream_select::State<()>;
 
 #[derive(Default)]
 pub struct P2pRecorder {

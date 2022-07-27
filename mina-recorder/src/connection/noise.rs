@@ -40,6 +40,7 @@ where
                 f.write_str("(")?;
                 for inner in inners {
                     f.write_str(&inner.to_string())?;
+                    f.write_str(",")?;
                 }
                 f.write_str(")")
             }
