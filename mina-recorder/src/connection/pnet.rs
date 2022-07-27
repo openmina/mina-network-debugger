@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, mem};
 
 use salsa20::cipher::generic_array::{typenum, GenericArray};
 use salsa20::{
@@ -36,7 +36,7 @@ impl<Inner> State<Inner> {
 }
 
 pub enum Output<Inner> {
-    Skip,
+    Nothing,
     HaveNonce,
     Inner(Inner),
 }
@@ -47,9 +47,28 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Output::Skip => write!(f, "skip"),
+            Output::Nothing => Ok(()),
             Output::HaveNonce => write!(f, "24 byte nonce"),
-            Output::Inner(inner) => write!(f, "{inner}"),
+            Output::Inner(inner) => inner.fmt(f),
+        }
+    }
+}
+
+impl<Inner> Iterator for Output<Inner>
+where
+    Inner: Iterator,
+{
+    type Item = Output<Inner::Item>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match mem::replace(self, Output::Nothing) {
+            Output::Nothing => None,
+            Output::HaveNonce => Some(Output::HaveNonce),
+            Output::Inner(mut inner) => {
+                let inner_item = inner.next()?;
+                *self = Output::Inner(inner);
+                Some(Output::Inner(inner_item))
+            }
         }
     }
 }
@@ -57,12 +76,13 @@ where
 impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
+    Inner::Output: IntoIterator,
 {
-    type Output = Output<Inner::Output>;
+    type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if self.skip {
-            return Output::Skip;
+            return Output::Nothing;
         }
 
         let cipher = if id.incoming {
@@ -73,10 +93,10 @@ where
         if let Some(cipher) = cipher {
             cipher.apply_keystream(bytes);
             let inner_out = self.inner.on_data(id, bytes, cx);
-            Output::Inner(inner_out)
+            Output::Inner(inner_out.into_iter())
         } else if bytes.len() != 24 {
             self.skip = true;
-            Output::Skip
+            Output::Nothing
         } else {
             let key = Self::shared_secret();
             *cipher = Some(XSalsa20::new(&key, GenericArray::from_slice(bytes)));

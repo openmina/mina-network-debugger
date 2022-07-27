@@ -25,7 +25,7 @@ fn take_msg<'a>(cursor: &mut &'a [u8]) -> Option<&'a [u8]> {
 }
 
 pub enum Output<Inner> {
-    Accumulating,
+    Nothing,
     Protocol(String),
     Inner(Inner),
 }
@@ -36,9 +36,28 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Output::Accumulating => Ok(()),
+            Output::Nothing => Ok(()),
             Output::Protocol(p) => f.write_str(p),
-            Output::Inner(inner) => write!(f, "{inner}"),
+            Output::Inner(inner) => inner.fmt(f),
+        }
+    }
+}
+
+impl<Inner> Iterator for Output<Inner>
+where
+    Inner: Iterator,
+{
+    type Item = Output<Inner::Item>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match mem::replace(self, Output::Nothing) {
+            Output::Nothing => None,
+            Output::Protocol(p) => Some(Output::Protocol(p)),
+            Output::Inner(mut inner) => {
+                let inner_item = inner.next()?;
+                *self = Output::Inner(inner);
+                Some(Output::Inner(inner_item))
+            }
         }
     }
 }
@@ -46,8 +65,9 @@ where
 impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
+    Inner::Output: IntoIterator,
 {
-    type Output = Output<Inner::Output>;
+    type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if (id.incoming && !self.incoming_done) || (!id.incoming && !self.outgoing_done) {
@@ -77,7 +97,7 @@ where
             }
             self.accumulator = (*cursor).to_vec();
             match protocol {
-                None => Output::Accumulating,
+                None => Output::Nothing,
                 Some(p) => Output::Protocol(p),
             }
         } else {
@@ -88,7 +108,7 @@ where
                 total.extend_from_slice(bytes);
                 self.inner.on_data(id, &mut total, cx)
             };
-            Output::Inner(inner_out)
+            Output::Inner(inner_out.into_iter())
         }
     }
 }

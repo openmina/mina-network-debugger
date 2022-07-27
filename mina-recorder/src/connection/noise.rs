@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, mem};
 
 use curve25519_dalek::{
     scalar::Scalar, constants::ED25519_BASEPOINT_TABLE, montgomery::MontgomeryPoint,
@@ -25,8 +25,8 @@ pub struct ChunkState<Inner> {
 }
 
 pub enum ChunkOutput<Inner> {
-    Accumulating,
-    Inner(Vec<Inner>),
+    Nothing,
+    Inner(Inner),
 }
 
 impl<Inner> fmt::Display for ChunkOutput<Inner>
@@ -35,14 +35,25 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ChunkOutput::Accumulating => write!(f, "accumulating..."),
-            ChunkOutput::Inner(inners) => {
-                f.write_str("(")?;
-                for inner in inners {
-                    f.write_str(&inner.to_string())?;
-                    f.write_str(",")?;
-                }
-                f.write_str(")")
+            ChunkOutput::Nothing => Ok(()),
+            ChunkOutput::Inner(inner) => inner.fmt(f),
+        }
+    }
+}
+
+impl<Inner> Iterator for ChunkOutput<Inner>
+where
+    Inner: Iterator,
+{
+    type Item = ChunkOutput<Inner::Item>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match mem::replace(self, ChunkOutput::Nothing) {
+            ChunkOutput::Nothing => None,
+            ChunkOutput::Inner(mut inner) => {
+                let inner_item = inner.next()?;
+                *self = ChunkOutput::Inner(inner);
+                Some(ChunkOutput::Inner(inner_item))
             }
         }
     }
@@ -52,14 +63,14 @@ impl<Inner> HandleData for ChunkState<Inner>
 where
     Inner: HandleData,
 {
-    type Output = ChunkOutput<Inner::Output>;
+    type Output = ChunkOutput<<Vec<Inner::Output> as IntoIterator>::IntoIter>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
                 let inner_out = self.inner.on_data(id, bytes, cx);
-                return ChunkOutput::Inner(vec![inner_out]);
+                return ChunkOutput::Inner(vec![inner_out].into_iter());
             }
         }
 
@@ -80,9 +91,9 @@ where
         }
 
         if inner_outs.is_empty() {
-            ChunkOutput::Accumulating
+            ChunkOutput::Nothing
         } else {
-            ChunkOutput::Inner(inner_outs)
+            ChunkOutput::Inner(inner_outs.into_iter())
         }
     }
 }
@@ -109,9 +120,9 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NoiseOutput::CannotDecrypt => write!(f, "cannot decrypt"),
-            NoiseOutput::FirstMessage => write!(f, "first message"),
+            NoiseOutput::FirstMessage => write!(f, "handshake"),
             NoiseOutput::HandshakePayload(p) => write!(f, "handshake {}", hex::encode(p)),
-            NoiseOutput::Inner(inner) => write!(f, "{inner}"),
+            NoiseOutput::Inner(inner) => inner.fmt(f),
         }
     }
 }
@@ -134,8 +145,9 @@ enum St {
 impl<Inner> HandleData for NoiseState<Inner>
 where
     Inner: HandleData,
+    Inner::Output: IntoIterator,
 {
-    type Output = NoiseOutput<Inner::Output>;
+    type Output = NoiseOutput<<Inner::Output as IntoIterator>::IntoIter>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         enum Msg {
@@ -157,7 +169,7 @@ where
                     Msg::First => NoiseOutput::FirstMessage,
                     Msg::Second => NoiseOutput::HandshakePayload(bytes.to_vec()),
                     Msg::Third => NoiseOutput::HandshakePayload(bytes.to_vec()),
-                    Msg::Other => NoiseOutput::Inner(self.inner.on_data(id, bytes, cx)),
+                    Msg::Other => NoiseOutput::Inner(self.inner.on_data(id, bytes, cx).into_iter()),
                 },
                 Err(_bytes) => {
                     // Raw.on_data(id, bytes, cx);

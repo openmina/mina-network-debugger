@@ -1,9 +1,31 @@
+use std::fmt;
+
 use super::{DirectedId, HandleData, Cx};
 
+pub struct Output(Option<String>);
+
+impl fmt::Display for Output {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.as_ref().unwrap().fmt(f)
+    }
+}
+
+impl Iterator for Output {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.take()
+    }
+}
+
 impl HandleData for () {
-    type Output = String;
+    type Output = Output;
 
     fn on_data(&mut self, _id: DirectedId, bytes: &mut [u8], _cx: &mut Cx) -> Self::Output {
-        format!("({} \"{}\")", bytes.len(), hex::encode(bytes))
+        Output(Some(format!(
+            "({} \"{}\")",
+            bytes.len(),
+            hex::encode(bytes)
+        )))
     }
 }

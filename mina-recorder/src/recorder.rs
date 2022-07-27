@@ -7,8 +7,8 @@ use super::{
 
 type Cn = pnet::State<Noise>;
 type Noise = multistream_select::State<noise::State<Encrypted>>;
-type Encrypted = multistream_select::State<mplex::State<()>>;
-// type Inner = multistream_select::State<()>;
+type Encrypted = multistream_select::State<mplex::State<Inner>>;
+type Inner = multistream_select::State<()>;
 
 #[derive(Default)]
 pub struct P2pRecorder {
@@ -62,7 +62,9 @@ impl P2pRecorder {
         if let Some(cn) = self.cns.get_mut(&metadata.id) {
             let id = DirectedId { metadata, incoming };
             let output = cn.on_data(id.clone(), &mut bytes, &mut self.cx);
-            log::info!("{id} {output}");
+            for item in output {
+                log::info!("{id} {item}");
+            }
         }
     }
 

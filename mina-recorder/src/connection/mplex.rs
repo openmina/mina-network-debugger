@@ -1,4 +1,4 @@
-use std::{fmt, collections::BTreeMap};
+use std::{fmt, collections::BTreeMap, mem};
 
 use unsigned_varint::decode;
 
@@ -10,14 +10,11 @@ pub struct State<Inner> {
 }
 
 pub enum Body<Inner> {
+    Nothing,
     NewStream(String),
-    MessageReceiver(Inner),
-    MessageInitiator(Inner),
-    CloseReceiver,
-    CloseInitiator,
-    ResetReceiver,
-    ResetInitiator,
-    Unknown,
+    Message { initiator: bool, inner: Inner },
+    Close { initiator: bool },
+    Reset { initiator: bool },
 }
 
 impl<Inner> fmt::Display for Body<Inner>
@@ -26,11 +23,29 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Body::NewStream(name) => write!(f, "new stream \"{name}\""),
-            Body::MessageReceiver(inner) | Body::MessageInitiator(inner) => write!(f, "{inner}"),
-            Body::CloseReceiver | Body::CloseInitiator => write!(f, "close"),
-            Body::ResetReceiver | Body::ResetInitiator => write!(f, "reset"),
-            Body::Unknown => write!(f, "error"),
+            Body::Nothing => Ok(()),
+            Body::NewStream(name) => write!(f, "new stream: \"{name}\""),
+            Body::Message { initiator, inner } => {
+                if *initiator {
+                    write!(f, "initiator: {inner}")
+                } else {
+                    write!(f, "responder: {inner}")
+                }
+            }
+            Body::Close { initiator } => {
+                if *initiator {
+                    write!(f, "close initiator")
+                } else {
+                    write!(f, "close responder")
+                }
+            }
+            Body::Reset { initiator } => {
+                if *initiator {
+                    write!(f, "reset initiator")
+                } else {
+                    write!(f, "reset responder")
+                }
+            }
         }
     }
 }
@@ -38,6 +53,35 @@ where
 pub struct Output<Inner> {
     pub stream_id: u64,
     pub body: Body<Inner>,
+}
+
+impl<Inner> Iterator for Output<Inner>
+where
+    Inner: Iterator,
+{
+    type Item = Output<Inner::Item>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let stream_id = self.stream_id;
+        let out = |body| Some(Output { stream_id, body });
+        match mem::replace(&mut self.body, Body::Nothing) {
+            Body::Nothing => None,
+            Body::NewStream(n) => out(Body::NewStream(n)),
+            Body::Message {
+                initiator,
+                mut inner,
+            } => {
+                let inner_item = inner.next()?;
+                self.body = Body::Message { initiator, inner };
+                out(Body::Message {
+                    initiator,
+                    inner: inner_item,
+                })
+            }
+            Body::Close { initiator } => out(Body::Close { initiator }),
+            Body::Reset { initiator } => out(Body::Reset { initiator }),
+        }
+    }
 }
 
 impl<Inner> fmt::Display for Output<Inner>
@@ -53,8 +97,9 @@ where
 impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData + Default,
+    Inner::Output: IntoIterator,
 {
-    type Output = Output<Inner::Output>;
+    type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         let (v, remaining) = decode::u64(bytes).unwrap();
@@ -69,19 +114,20 @@ where
 
         let body = match v & 7 {
             0 => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
-            1 => {
+            1 | 2 => {
                 let protocol = self.inners.entry(stream_id).or_default();
-                Body::MessageReceiver(protocol.on_data(id, bytes, cx))
+                Body::Message {
+                    initiator: v % 2 == 0,
+                    inner: protocol.on_data(id, bytes, cx).into_iter(),
+                }
             }
-            2 => {
-                let protocol = self.inners.entry(stream_id).or_default();
-                Body::MessageInitiator(protocol.on_data(id, bytes, cx))
-            }
-            3 => Body::CloseReceiver,
-            4 => Body::CloseInitiator,
-            5 => Body::ResetReceiver,
-            6 => Body::ResetInitiator,
-            7 => Body::Unknown,
+            3 | 4 => Body::Close {
+                initiator: v % 2 == 0,
+            },
+            5 | 6 => Body::Reset {
+                initiator: v % 2 == 0,
+            },
+            7 => panic!(),
             _ => unreachable!(),
         };
         Output { stream_id, body }
