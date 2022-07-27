@@ -112,21 +112,24 @@ where
         assert_eq!(offset + len, bytes.len());
         let bytes = &mut bytes[offset..(offset + len)];
 
+        let initiator = v % 2 == 0;
         let body = match v & 7 {
             0 => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
             1 | 2 => {
                 let protocol = self.inners.entry(stream_id).or_default();
                 Body::Message {
-                    initiator: v % 2 == 0,
+                    initiator,
                     inner: protocol.on_data(id, bytes, cx).into_iter(),
                 }
             }
-            3 | 4 => Body::Close {
-                initiator: v % 2 == 0,
-            },
-            5 | 6 => Body::Reset {
-                initiator: v % 2 == 0,
-            },
+            3 | 4 => {
+                self.inners.remove(&stream_id);
+                Body::Close { initiator }
+            }
+            5 | 6 => {
+                self.inners.remove(&stream_id);
+                Body::Reset { initiator }
+            }
             7 => panic!(),
             _ => unreachable!(),
         };

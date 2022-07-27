@@ -68,8 +68,8 @@ impl P2pRecorder {
         }
     }
 
-    pub fn on_randomness(&mut self, alias: String, bytes: [u8; 32]) {
-        log::info!("{alias} random: {}", hex::encode(bytes));
+    pub fn on_randomness(&mut self, _alias: String, bytes: [u8; 32]) {
+        // log::info!("{alias} random: {}", hex::encode(bytes));
         self.cx.push_randomness(bytes);
     }
 }

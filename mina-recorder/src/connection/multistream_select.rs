@@ -38,7 +38,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Output::Nothing => Ok(()),
-            Output::Protocol(p) => f.write_str(p),
+            Output::Protocol(p) => write!(f, "suggest protocol: {p}"),
             Output::Inner(inner) => inner.fmt(f),
         }
     }
