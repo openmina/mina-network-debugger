@@ -12,7 +12,7 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use super::{DirectedId, HandleData, Cx};
+use super::{DirectedId, HandleData, DynamicProtocol, Cx};
 
 type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
@@ -22,6 +22,16 @@ pub type State<Inner> = ChunkState<NoiseState<Inner>>;
 pub struct ChunkState<Inner> {
     accumulator: Vec<u8>,
     inner: Inner,
+}
+
+impl<Inner> DynamicProtocol for ChunkState<Inner>
+where
+    Inner: Default,
+{
+    fn from_name(name: &str) -> Self {
+        assert_eq!(name, "/noise");
+        Self::default()
+    }
 }
 
 pub enum ChunkOutput<Inner> {

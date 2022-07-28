@@ -1,6 +1,12 @@
 use std::fmt;
 
-use super::{DirectedId, HandleData, Cx};
+use super::{DirectedId, HandleData, DynamicProtocol, Cx};
+
+impl DynamicProtocol for () {
+    fn from_name(name: &str) -> Self {
+        let _ = name;
+    }
+}
 
 pub struct Output(Option<String>);
 

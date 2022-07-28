@@ -2,11 +2,21 @@ use std::{fmt, collections::BTreeMap, mem};
 
 use unsigned_varint::decode;
 
-use super::{DirectedId, HandleData, Cx};
+use super::{DirectedId, HandleData, DynamicProtocol, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
     inners: BTreeMap<StreamId, Inner>,
+}
+
+impl<Inner> DynamicProtocol for State<Inner>
+where
+    Inner: Default,
+{
+    fn from_name(name: &str) -> Self {
+        assert_eq!(name, "/coda/mplex/1.0.0");
+        Self::default()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, VecDeque};
 
 use super::{
     EventMetadata, ConnectionId, DirectedId,
-    connection::{HandleData, pnet, multistream_select, noise, mplex},
+    connection::{HandleData, pnet, multistream_select, noise, mplex, mina_protocol},
 };
 
 type Cn = pnet::State<Noise>;
 type Noise = multistream_select::State<noise::State<Encrypted>>;
 type Encrypted = multistream_select::State<mplex::State<Inner>>;
-type Inner = multistream_select::State<()>;
+type Inner = multistream_select::State<mina_protocol::State>;
 
 #[derive(Default)]
 pub struct P2pRecorder {

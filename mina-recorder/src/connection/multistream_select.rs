@@ -1,14 +1,25 @@
 use std::{fmt, mem};
 
-use super::{DirectedId, HandleData, Cx};
+use super::{DirectedId, HandleData, DynamicProtocol, Cx};
 
-#[derive(Default)]
 pub struct State<Inner> {
     incoming: Option<String>,
     outgoing: Option<String>,
     accumulator_incoming: Vec<u8>,
     accumulator_outgoing: Vec<u8>,
-    inner: Inner,
+    inner: Option<Inner>,
+}
+
+impl<Inner> Default for State<Inner> {
+    fn default() -> Self {
+        State {
+            incoming: None,
+            outgoing: None,
+            accumulator_incoming: vec![],
+            accumulator_outgoing: vec![],
+            inner: None,
+        }
+    }
 }
 
 fn take_msg<'a>(cursor: &mut &'a [u8]) -> Option<&'a [u8]> {
@@ -65,7 +76,7 @@ where
 
 impl<Inner> HandleData for State<Inner>
 where
-    Inner: HandleData,
+    Inner: HandleData + DynamicProtocol,
     Inner::Output: IntoIterator,
 {
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
@@ -77,12 +88,13 @@ where
             (&mut self.accumulator_outgoing, &mut self.outgoing)
         };
         if let Some(protocol) = done {
+            let inner = self.inner.get_or_insert_with(|| Inner::from_name(protocol));
             let inner_out = if accumulator.is_empty() {
-                self.inner.on_data(id, bytes, cx)
+                inner.on_data(id, bytes, cx)
             } else {
                 let mut total = mem::take(accumulator);
                 total.extend_from_slice(bytes);
-                self.inner.on_data(id, &mut total, cx)
+                inner.on_data(id, &mut total, cx)
             };
             Output::Inner(protocol.clone(), inner_out.into_iter())
         } else {

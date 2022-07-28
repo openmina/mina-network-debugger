@@ -1,5 +1,9 @@
 use super::{recorder::Cx, DirectedId};
 
+pub trait DynamicProtocol {
+    fn from_name(name: &str) -> Self;
+}
+
 pub trait HandleData {
     type Output;
 
@@ -11,3 +15,4 @@ pub mod multistream_select;
 pub mod noise;
 pub mod mplex;
 pub mod logger;
+pub mod mina_protocol;
