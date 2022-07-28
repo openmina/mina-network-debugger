@@ -4,8 +4,8 @@ use super::{DirectedId, HandleData, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
-    incoming_done: bool,
-    outgoing_done: bool,
+    incoming: Option<String>,
+    outgoing: Option<String>,
     accumulator_incoming: Vec<u8>,
     accumulator_outgoing: Vec<u8>,
     inner: Inner,
@@ -28,7 +28,7 @@ fn take_msg<'a>(cursor: &mut &'a [u8]) -> Option<&'a [u8]> {
 pub enum Output<Inner> {
     Nothing,
     Protocol(String),
-    Inner(Inner),
+    Inner(String, Inner),
 }
 
 impl<Inner> fmt::Display for Output<Inner>
@@ -38,8 +38,8 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Output::Nothing => Ok(()),
-            Output::Protocol(p) => write!(f, "suggest protocol: {p}"),
-            Output::Inner(inner) => inner.fmt(f),
+            Output::Protocol(p) => write!(f, "{p} suggested"),
+            Output::Inner(p, inner) => write!(f, "{p} {inner}"),
         }
     }
 }
@@ -54,10 +54,10 @@ where
         match mem::replace(self, Output::Nothing) {
             Output::Nothing => None,
             Output::Protocol(p) => Some(Output::Protocol(p)),
-            Output::Inner(mut inner) => {
+            Output::Inner(p, mut inner) => {
                 let inner_item = inner.next()?;
-                *self = Output::Inner(inner);
-                Some(Output::Inner(inner_item))
+                *self = Output::Inner(p.clone(), inner);
+                Some(Output::Inner(p, inner_item))
             }
         }
     }
@@ -72,14 +72,22 @@ where
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         let (accumulator, done) = if id.incoming {
-            (&mut self.accumulator_incoming, &mut self.incoming_done)
+            (&mut self.accumulator_incoming, &mut self.incoming)
         } else {
-            (&mut self.accumulator_outgoing, &mut self.outgoing_done)
+            (&mut self.accumulator_outgoing, &mut self.outgoing)
         };
-        if !*done {
+        if let Some(protocol) = done {
+            let inner_out = if accumulator.is_empty() {
+                self.inner.on_data(id, bytes, cx)
+            } else {
+                let mut total = mem::take(accumulator);
+                total.extend_from_slice(bytes);
+                self.inner.on_data(id, &mut total, cx)
+            };
+            Output::Inner(protocol.clone(), inner_out.into_iter())
+        } else {
             accumulator.extend_from_slice(bytes);
             let cursor = &mut accumulator.as_slice();
-            let mut protocol = None;
             while let Some(msg) = take_msg(cursor) {
                 if let Ok(s) = std::str::from_utf8(msg) {
                     let s = s.trim_end_matches('\n');
@@ -90,30 +98,19 @@ where
                         // TODO: handle
                         continue;
                     }
-                    protocol = Some(s.to_string());
-                    *done = true;
+                    *done = Some(s.to_string());
                     break;
                 } else {
-                    // protocol = Some(hex::encode(msg));
                     log::error!("{id} unparsed {}", hex::encode(msg));
-                    *done = true;
+                    *done = Some("ERROR".to_string());
                     break;
                 }
             }
             *accumulator = (*cursor).to_vec();
-            match protocol {
+            match done {
                 None => Output::Nothing,
-                Some(p) => Output::Protocol(p),
+                Some(p) => Output::Protocol(p.clone()),
             }
-        } else {
-            let inner_out = if accumulator.is_empty() {
-                self.inner.on_data(id, bytes, cx)
-            } else {
-                let mut total = mem::take(accumulator);
-                total.extend_from_slice(bytes);
-                self.inner.on_data(id, &mut total, cx)
-            };
-            Output::Inner(inner_out.into_iter())
         }
     }
 }
