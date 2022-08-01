@@ -23,13 +23,16 @@ impl DynamicProtocol for State {
     }
 }
 
-pub enum Output {
+pub enum Output<Meshsub> {
     Nothing,
-    Meshsub(String),
+    Meshsub(Meshsub),
     Other(logger::Output),
 }
 
-impl fmt::Display for Output {
+impl<Meshsub> fmt::Display for Output<Meshsub>
+where
+    Meshsub: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Output::Nothing => Ok(()),
@@ -39,23 +42,31 @@ impl fmt::Display for Output {
     }
 }
 
-impl Iterator for Output {
-    type Item = Output;
+impl<Meshsub> Iterator for Output<Meshsub>
+where
+    Meshsub: Iterator,
+{
+    type Item = Output<Meshsub::Item>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match mem::replace(self, Output::Nothing) {
             Output::Nothing => None,
-            s => Some(s),
+            Output::Meshsub(mut inner) => {
+                let inner_item = inner.next()?;
+                *self = Output::Meshsub(inner);
+                Some(Output::Meshsub(inner_item))
+            }
+            Output::Other(inner) => Some(Output::Other(inner)),
         }
     }
 }
 
 impl HandleData for State {
-    type Output = Output;
+    type Output = Output<<Vec<meshsub::Event> as IntoIterator>::IntoIter>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         match self {
-            State::Meshsub(inner) => Output::Meshsub(inner.on_data(id, bytes, cx)),
+            State::Meshsub(inner) => Output::Meshsub(inner.on_data(id, bytes, cx).into_iter()),
             State::Rpc => Output::Other(().on_data(id, bytes, cx)),
             State::Ipfs => Output::Other(().on_data(id, bytes, cx)),
             State::Kad => Output::Other(().on_data(id, bytes, cx)),

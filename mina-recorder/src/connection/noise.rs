@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::{fmt, mem, iter::Flatten};
 
 use curve25519_dalek::{
     scalar::Scalar, constants::ED25519_BASEPOINT_TABLE, montgomery::MontgomeryPoint,
@@ -72,15 +72,16 @@ where
 impl<Inner> HandleData for ChunkState<Inner>
 where
     Inner: HandleData,
+    Inner::Output: IntoIterator,
 {
-    type Output = ChunkOutput<<Vec<Inner::Output> as IntoIterator>::IntoIter>;
+    type Output = ChunkOutput<Flatten<<Vec<Inner::Output> as IntoIterator>::IntoIter>>;
 
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
                 let inner_out = self.inner.on_data(id, bytes, cx);
-                return ChunkOutput::Inner(vec![inner_out].into_iter());
+                return ChunkOutput::Inner(vec![inner_out].into_iter().flatten());
             }
         }
 
@@ -103,7 +104,7 @@ where
         if inner_outs.is_empty() {
             ChunkOutput::Nothing
         } else {
-            ChunkOutput::Inner(inner_outs.into_iter())
+            ChunkOutput::Inner(inner_outs.into_iter().flatten())
         }
     }
 }
@@ -117,6 +118,7 @@ pub struct NoiseState<Inner> {
 }
 
 pub enum NoiseOutput<Inner> {
+    Nothing,
     CannotDecrypt,
     FirstMessage,
     HandshakePayload(Vec<u8>),
@@ -129,10 +131,32 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            NoiseOutput::Nothing => Ok(()),
             NoiseOutput::CannotDecrypt => write!(f, "cannot decrypt"),
             NoiseOutput::FirstMessage => write!(f, "handshake"),
             NoiseOutput::HandshakePayload(p) => write!(f, "handshake {}", hex::encode(p)),
             NoiseOutput::Inner(inner) => inner.fmt(f),
+        }
+    }
+}
+
+impl<Inner> Iterator for NoiseOutput<Inner>
+where
+    Inner: Iterator,
+{
+    type Item = NoiseOutput<Inner::Item>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match mem::replace(self, NoiseOutput::Nothing) {
+            NoiseOutput::Nothing => None,
+            NoiseOutput::CannotDecrypt => Some(NoiseOutput::CannotDecrypt),
+            NoiseOutput::FirstMessage => Some(NoiseOutput::FirstMessage),
+            NoiseOutput::HandshakePayload(payload) => Some(NoiseOutput::HandshakePayload(payload)),
+            NoiseOutput::Inner(mut inner) => {
+                let inner_item = inner.next()?;
+                *self = NoiseOutput::Inner(inner);
+                Some(NoiseOutput::Inner(inner_item))
+            }
         }
     }
 }
