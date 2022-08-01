@@ -119,7 +119,7 @@ pub struct NoiseState<Inner> {
 
 pub enum NoiseOutput<Inner> {
     Nothing,
-    CannotDecrypt,
+    CannotDecrypt(Vec<u8>),
     FirstMessage,
     HandshakePayload(Vec<u8>),
     Inner(Inner),
@@ -132,7 +132,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NoiseOutput::Nothing => Ok(()),
-            NoiseOutput::CannotDecrypt => write!(f, "cannot decrypt"),
+            NoiseOutput::CannotDecrypt(bytes) => write!(f, "cannot decrypt {}", hex::encode(bytes)),
             NoiseOutput::FirstMessage => write!(f, "handshake"),
             NoiseOutput::HandshakePayload(p) => write!(f, "handshake {}", hex::encode(p)),
             NoiseOutput::Inner(inner) => inner.fmt(f),
@@ -149,7 +149,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match mem::replace(self, NoiseOutput::Nothing) {
             NoiseOutput::Nothing => None,
-            NoiseOutput::CannotDecrypt => Some(NoiseOutput::CannotDecrypt),
+            NoiseOutput::CannotDecrypt(bytes) => Some(NoiseOutput::CannotDecrypt(bytes)),
             NoiseOutput::FirstMessage => Some(NoiseOutput::FirstMessage),
             NoiseOutput::HandshakePayload(payload) => Some(NoiseOutput::HandshakePayload(payload)),
             NoiseOutput::Inner(mut inner) => {
@@ -164,11 +164,11 @@ where
 enum St {
     FirstMessage {
         st: SymmetricState<C, ChainingKey<C>>,
-        i_esk: Scalar,
+        i_epk: MontgomeryPoint,
     },
     SecondMessage {
         st: SymmetricState<C, Key<C, typenum::U1>>,
-        r_esk: Scalar,
+        r_epk: MontgomeryPoint,
     },
     Transport {
         initiators_receiver: Cipher<C, 1, false>,
@@ -199,20 +199,20 @@ where
         };
         if !self.error {
             match self.on_data_(id.incoming, bytes, cx) {
-                Ok(bytes) => match msg {
+                Some(bytes) => match msg {
                     Msg::First => NoiseOutput::FirstMessage,
                     Msg::Second => NoiseOutput::HandshakePayload(bytes.to_vec()),
                     Msg::Third => NoiseOutput::HandshakePayload(bytes.to_vec()),
                     Msg::Other => NoiseOutput::Inner(self.inner.on_data(id, bytes, cx).into_iter()),
                 },
-                Err(_bytes) => {
+                None => {
                     // Raw.on_data(id, bytes, cx);
-                    NoiseOutput::CannotDecrypt
+                    NoiseOutput::CannotDecrypt(bytes.to_vec())
                 }
             }
         } else {
             // Raw.on_data(id, bytes, cx);
-            NoiseOutput::CannotDecrypt
+            NoiseOutput::CannotDecrypt(bytes.to_vec())
         }
     }
 }
@@ -223,22 +223,28 @@ impl<Inner> NoiseState<Inner> {
         incoming: bool,
         bytes: &'a mut [u8],
         cx: &mut Cx,
-    ) -> Result<&'a mut [u8], &'a mut [u8]> {
-        fn find_sk(pk_bytes: &[u8], cx: &Cx) -> Option<Scalar> {
+    ) -> Option<&'a mut [u8]> {
+        fn find_sk(pk: &MontgomeryPoint, cx: &Cx) -> Option<Scalar> {
             let sk = cx.iter_rand().find_map(|rand| {
                 let mut sk_bytes = *rand;
                 sk_bytes[0] &= 248;
                 sk_bytes[31] &= 127;
                 sk_bytes[31] |= 64;
                 let sk = Scalar::from_bits(sk_bytes);
-                let pk = (&ED25519_BASEPOINT_TABLE * &sk).to_montgomery();
-                if pk.as_bytes() == pk_bytes {
+                if (&ED25519_BASEPOINT_TABLE * &sk).to_montgomery().eq(pk) {
                     Some(sk)
                 } else {
                     None
                 }
             })?;
             Some(sk)
+        }
+
+        fn try_dh(a: &MontgomeryPoint, b: &MontgomeryPoint, cx: &Cx) -> Option<[u8; 32]> {
+            find_sk(a, cx)
+                .map(|sk| b * sk)
+                .or_else(|| find_sk(b, cx).map(|sk| a * sk))
+                .map(|ss| ss.to_bytes())
         }
 
         let range;
@@ -249,45 +255,36 @@ impl<Inner> NoiseState<Inner> {
 
                 if bytes.len() < 34 {
                     self.error = true;
-                    return Err(bytes);
+                    return None;
                 }
 
                 let i_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
-                let i_esk = match find_sk(&bytes[2..34], cx) {
-                    Some(v) => v,
-                    None => {
-                        self.error = true;
-                        return Err(bytes);
-                    }
-                };
                 let st = SymmetricState::new("Noise_XX_25519_ChaChaPoly_SHA256")
                     .mix_hash(&[])
                     .mix_hash(i_epk.as_bytes())
                     .mix_hash(&[]);
                 range = 34..len;
-                Some(St::FirstMessage { st, i_esk })
+                Some(St::FirstMessage { st, i_epk })
             }
-            Some(St::FirstMessage { st, i_esk }) => {
+            Some(St::FirstMessage { st, i_epk }) => {
                 if bytes.len() < 98 {
                     self.error = true;
-                    return Err(bytes);
+                    return None;
                 }
 
                 let r_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
-                let r_esk = match find_sk(&bytes[2..34], cx) {
-                    Some(v) => v,
-                    None => {
-                        self.error = true;
-                        return Err(bytes);
-                    }
-                };
+                let ee = try_dh(&r_epk, &i_epk, cx).or_else(|| {
+                    self.error = true;
+                    None
+                })?;
+
                 let mut r_spk_bytes: [u8; 32] = bytes[34..66].try_into().unwrap();
                 let tag = *GenericArray::from_slice(&bytes[66..82]);
                 let r_spk;
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
                 let st = st
                     .mix_hash(r_epk.as_bytes())
-                    .mix_shared_secret((r_epk * i_esk).to_bytes())
+                    .mix_shared_secret(ee)
                     .decrypt(&mut r_spk_bytes, &tag)
                     .unwrap()
                     .mix_shared_secret({
@@ -295,18 +292,21 @@ impl<Inner> NoiseState<Inner> {
                         // let pk = libp2p_core::PublicKey::Ed25519(libp2p_core::identity::ed25519::PublicKey::decode(&b).unwrap());
                         // dbg!(libp2p_core::PeerId::from_public_key(&pk));
                         r_spk = MontgomeryPoint(r_spk_bytes);
-                        (i_esk * r_spk).to_bytes()
+                        try_dh(&r_spk, &i_epk, cx).or_else(|| {
+                            self.error = true;
+                            None
+                        })?
                     })
                     .decrypt(&mut bytes[82..(len - 16)], &payload_tag)
                     .unwrap();
 
                 range = 82..(len - 16);
-                Some(St::SecondMessage { st, r_esk })
+                Some(St::SecondMessage { st, r_epk })
             }
-            Some(St::SecondMessage { st, r_esk }) => {
+            Some(St::SecondMessage { st, r_epk }) => {
                 if bytes.len() < 98 {
                     self.error = true;
-                    return Err(bytes);
+                    return None;
                 }
 
                 let mut i_spk_bytes: [u8; 32] = bytes[2..34].try_into().unwrap();
@@ -323,7 +323,10 @@ impl<Inner> NoiseState<Inner> {
                         // let pk = libp2p_core::PublicKey::Ed25519(libp2p_core::identity::ed25519::PublicKey::decode(&b).unwrap());
                         // dbg!(libp2p_core::PeerId::from_public_key(&pk));
                         i_spk = MontgomeryPoint(i_spk_bytes);
-                        (i_spk * r_esk).to_bytes()
+                        try_dh(&i_spk, &r_epk, cx).or_else(|| {
+                            self.error = true;
+                            None
+                        })?
                     })
                     .decrypt(&mut bytes[50..(len - 16)], &payload_tag)
                     .unwrap()
@@ -341,7 +344,7 @@ impl<Inner> NoiseState<Inner> {
             }) => {
                 if len < 18 {
                     self.error = true;
-                    return Err(bytes);
+                    return None;
                 }
 
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
@@ -354,7 +357,7 @@ impl<Inner> NoiseState<Inner> {
                     .decrypt(&[], &mut bytes[2..(len - 16)], &payload_tag)
                     .is_err()
                 {
-                    return Err(bytes);
+                    return None;
                 } else {
                     range = 2..(len - 16);
                 }
@@ -364,7 +367,7 @@ impl<Inner> NoiseState<Inner> {
                 })
             }
         };
-        Ok(&mut bytes[range])
+        Some(&mut bytes[range])
     }
 }
 

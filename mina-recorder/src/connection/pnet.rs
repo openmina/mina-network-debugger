@@ -24,7 +24,9 @@ impl<Inner> State<Inner> {
         };
 
         // TODO: seed
-        let seed = b"/coda/0.0.1/dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d";
+        // local sandbox dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
+        // mainnet 5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1
+        let seed = b"/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
         let mut key = GenericArray::default();
         Blake2bVar::new(32)
             .unwrap()
