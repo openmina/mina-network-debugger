@@ -1,4 +1,4 @@
-use std::{fmt, collections::BTreeMap, mem};
+use std::{fmt, collections::BTreeMap, mem, iter::Flatten, ops::Range};
 
 use unsigned_varint::decode;
 
@@ -6,6 +6,7 @@ use super::{DirectedId, HandleData, DynamicProtocol, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
+    accumulating: Vec<u8>,
     inners: BTreeMap<StreamId, Inner>,
 }
 
@@ -97,33 +98,62 @@ where
     }
 }
 
-impl<Inner> HandleData for State<Inner>
+enum Tag {
+    New,
+    Msg,
+    Close,
+    Reset,
+}
+
+struct Header {
+    tag: Tag,
+    stream_id: StreamId,
+    initiator: bool,
+}
+
+impl Header {
+    fn new(v: u64, incoming: bool) -> Self {
+        let initiator = v % 2 == 0;
+        Header {
+            tag: match v & 7 {
+                0 => Tag::New,
+                1 | 2 => Tag::Msg,
+                3 | 4 => Tag::Close,
+                5 | 6 => Tag::Reset,
+                7 => panic!("wrong header tag"),
+                _ => unreachable!(),
+            },
+            stream_id: StreamId {
+                i: v >> 3,
+                initiator_is_incoming: initiator == incoming,
+            },
+            initiator,
+        }
+    }
+}
+
+impl<Inner> State<Inner>
 where
     Inner: HandleData + Default,
     Inner::Output: IntoIterator,
 {
-    type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
-
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
-        let (v, remaining) = decode::u64(bytes).unwrap();
-        let i = v >> 3;
-        let initiator = v % 2 == 0;
-        let initiator_is_incoming = initiator == id.incoming;
-        let stream_id = StreamId {
-            i,
-            initiator_is_incoming,
-        };
-
-        let (len, remaining) = decode::usize(remaining).unwrap();
-        let offset = remaining.as_ptr() as usize - bytes.as_ptr() as usize;
-
-        // TODO:
-        assert_eq!(offset + len, bytes.len());
-        let bytes = &mut bytes[offset..(offset + len)];
-
-        let body = match v & 7 {
-            0 => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
-            1 | 2 => {
+    fn out(
+        &mut self,
+        id: DirectedId,
+        bytes: &mut [u8],
+        cx: &mut Cx,
+        header: Header,
+        range: Range<usize>,
+    ) -> Output<<Inner::Output as IntoIterator>::IntoIter> {
+        let bytes = &mut bytes[range];
+        let Header {
+            tag,
+            stream_id,
+            initiator,
+        } = header;
+        let body = match tag {
+            Tag::New => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
+            Tag::Msg => {
                 let inner = self
                     .inners
                     .entry(stream_id)
@@ -132,17 +162,50 @@ where
                     .into_iter();
                 Body::Message { initiator, inner }
             }
-            3 | 4 => {
+            Tag::Close => {
                 self.inners.remove(&stream_id);
                 Body::Close { initiator }
             }
-            5 | 6 => {
+            Tag::Reset => {
                 self.inners.remove(&stream_id);
                 Body::Reset { initiator }
             }
-            7 => panic!(),
-            _ => unreachable!(),
         };
         Output { stream_id, body }
+    }
+}
+
+impl<Inner> HandleData for State<Inner>
+where
+    Inner: HandleData + Default,
+    Inner::Output: IntoIterator,
+{
+    type Output =
+        Flatten<<Vec<Output<<Inner::Output as IntoIterator>::IntoIter>> as IntoIterator>::IntoIter>;
+
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+        self.accumulating.extend_from_slice(bytes);
+
+        let (header, len, offset) = {
+            let (v, remaining) = decode::u64(&self.accumulating).unwrap();
+            let header = Header::new(v, id.incoming);
+
+            let (len, remaining) = decode::usize(remaining).unwrap();
+            let offset = remaining.as_ptr() as usize - self.accumulating.as_ptr() as usize;
+            (header, len, offset)
+        };
+
+        #[allow(clippy::comparison_chain)]
+        if offset + len == self.accumulating.len() {
+            // good case, we have all data in one chunk
+            let out = self.out(id, bytes, cx, header, offset..(len + offset));
+            self.accumulating.clear();
+            vec![out].into_iter().flatten()
+        } else if offset + len > self.accumulating.len() {
+            vec![].into_iter().flatten()
+        } else {
+            // TODO:
+            panic!("{} < {}", offset + len, self.accumulating.len());
+        }
     }
 }

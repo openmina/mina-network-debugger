@@ -9,6 +9,7 @@ pub enum State {
     Rpc,
     Ipfs,
     Kad,
+    PeerExchange,
 }
 
 impl DynamicProtocol for State {
@@ -18,6 +19,7 @@ impl DynamicProtocol for State {
             "coda/rpcs/0.0.1" => State::Rpc,
             "/ipfs/id/1.0.0" => State::Ipfs,
             "/coda/kad/1.0.0" => State::Kad,
+            "/mina/peer-exchange" => State::PeerExchange,
             name => panic!("unknown protocol {name}"),
         }
     }
@@ -70,6 +72,7 @@ impl HandleData for State {
             State::Rpc => Output::Other(().on_data(id, bytes, cx)),
             State::Ipfs => Output::Other(().on_data(id, bytes, cx)),
             State::Kad => Output::Other(().on_data(id, bytes, cx)),
+            State::PeerExchange => Output::Other(().on_data(id, bytes, cx)),
         }
     }
 }

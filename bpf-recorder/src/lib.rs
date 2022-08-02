@@ -153,7 +153,11 @@ pub mod sniffer_event {
             }
             let size = size as usize;
             if slice.len() < 32 + size {
-                return Err(ErrorSliceTooShort);
+                log::error!(
+                    "expected 32 bytes header + {size} bytes body, got {}, cannot recover",
+                    slice.len(),
+                );
+                std::process::exit(1);
             }
             let data = &slice[32..(32 + size)];
             if let DataTag::Accept | DataTag::Connect = tag {
