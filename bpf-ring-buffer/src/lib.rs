@@ -140,7 +140,7 @@ impl RingBuffer {
                 Some(v) => {
                     self.read_finish();
                     return Ok(v);
-                },
+                }
                 None => (),
             }
         }
@@ -171,13 +171,7 @@ impl RingBuffer {
             let (header, data_offset) = {
                 let masked_pos = self.consumer_pos_value & self.mask;
                 let index_in_array = masked_pos / mem::size_of::<AtomicUsize>();
-                let mut header = self.observer.data[index_in_array].load(Ordering::Acquire);
-                // TODO: understand it
-                if header == 0 {
-                    let masked_pos = masked_pos + (self.mask + 1);
-                    let index_in_array = masked_pos / mem::size_of::<AtomicUsize>();
-                    header = self.observer.data[index_in_array].load(Ordering::Acquire);
-                }
+                let header = self.observer.data[index_in_array].load(Ordering::Acquire);
                 // keep only 32 bits
                 (header & 0xffffffff, masked_pos + HEADER_SIZE)
             };
@@ -189,16 +183,16 @@ impl RingBuffer {
 
             let (length, discard) = (header & !DISCARD_BIT, (header & DISCARD_BIT) != 0);
 
-            // if !discard {
-            //     let c_pos = self.consumer_pos_value;
-            //     log::warn!("SLICE: {c_pos:010x}, {pr_pos:010x}, length: 8 + {length:010x}");
+            if !discard {
+                let c_pos = self.consumer_pos_value;
+                log::debug!("SLICE: {c_pos:010x}, {pr_pos:010x}, length: 8 + {length:010x}");
 
-            //     // check length, valid lengths are 0x20 or (0x20 + (2 ^ n)), where 8 <= n < 28
-            //     if !(8..28).map(|n| 1 << n).any(|l| l + 0x20 == length) && (0x20 != length) {
-            //         log::error!("invalid length {length}");
-            //         return Err(Error::WouldBlock);
-            //     }
-            // }
+                // check length, valid lengths are 0x20 or (0x20 + (2 ^ n)), where 8 <= n < 28
+                if !(8..28).map(|n| 1 << n).any(|l| l + 0x20 == length) && (0x20 != length) {
+                    log::error!("invalid length {length}");
+                    return Err(Error::WouldBlock);
+                }
+            }
 
             // align the length by 8, and advance our position
             self.consumer_pos_value += HEADER_SIZE + (length + 7) / 8 * 8;

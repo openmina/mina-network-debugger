@@ -14,18 +14,14 @@ use ebpf_user as ebpf;
 #[cfg(feature = "kern")]
 ebpf::license!("GPL");
 
-// 1 GiB
-#[cfg(feature = "user")]
-const RING_BUFFER_SIZE: usize = 0x40000000;
-
 #[cfg(any(feature = "kern", feature = "user"))]
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
-    // WARNING: the literal here should match the constant `RING_BUFFER_SIZE`
-    #[ringbuf(size = 0x40000000)]
+    #[ringbuf(size = 0x20000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
+    // 0x1000 processes maximum
     #[hashmap(size = 0x1000)]
     pub pid: ebpf::HashMapRef<4, 4>,
     #[prog("tracepoint/syscalls/sys_enter_execve")]
@@ -33,6 +29,7 @@ pub struct App {
     #[prog("tracepoint/syscalls/sys_enter_execveat")]
     pub execveat: ebpf::ProgRef,
     // store/load context parameters
+    // 0x100 cpus maximum
     #[hashmap(size = 0x100)]
     pub context_parameters: ebpf::HashMapRef<4, 0x20>,
     #[prog("tracepoint/syscalls/sys_enter_bind")]
@@ -49,7 +46,8 @@ pub struct App {
     pub exit_accept4: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_enter_close")]
     pub enter_close: ebpf::ProgRef,
-    #[hashmap(size = 0x2000)]
+    // 0x4000 simultaneous connections maximum
+    #[hashmap(size = 0x4000)]
     pub connections: ebpf::HashMapRef<8, 4>,
     #[prog("tracepoint/syscalls/sys_enter_write")]
     pub enter_write: ebpf::ProgRef,
@@ -543,7 +541,17 @@ fn main() {
         ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
         _ => unreachable!(),
     };
-    let mut rb = RingBuffer::new(fd, RING_BUFFER_SIZE).unwrap();
+
+    let mut info = libbpf_sys::bpf_map_info::default();
+    let mut len = std::mem::size_of::<libbpf_sys::bpf_map_info>() as u32;
+    unsafe {
+        libbpf_sys::bpf_obj_get_info_by_fd(
+            fd,
+            &mut info as *mut libbpf_sys::bpf_map_info as *mut _,
+            &mut len as _,
+        )
+    };
+    let mut rb = RingBuffer::new(fd, info.max_entries as usize).unwrap();
 
     const P2P_PORT: u16 = 8302;
     let mut apps = BTreeMap::new();

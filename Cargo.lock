@@ -213,6 +213,7 @@ dependencies = [
  "ebpf-user",
  "env_logger",
  "hex",
+ "libbpf-sys",
  "log",
  "mina-recorder",
  "sudo",
