@@ -82,6 +82,7 @@ where
 {
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
+    #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if self.skip {
             return Output::Nothing;

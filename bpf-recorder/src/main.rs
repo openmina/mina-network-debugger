@@ -551,9 +551,13 @@ fn main() {
     let mut ignored_cns = BTreeMap::new();
     let mut recorder = mina_recorder::P2pRecorder::default();
     let mut origin = None::<SystemTime>;
+    let mut last_ts = 0;
     while !terminating.load(Ordering::Relaxed) {
-        let events = rb.read_blocking::<SnifferEvent>(&terminating).unwrap();
-        for event in events {
+        while let Ok(Some(event)) = rb.read_blocking::<SnifferEvent>(&terminating) {
+            if event.ts0 + 1_000_000_000 < last_ts {
+                log::error!("unordered {} < {last_ts}", event.ts0);
+            }
+            last_ts = event.ts0;
             let time = match &origin {
                 None => {
                     let now = SystemTime::now();

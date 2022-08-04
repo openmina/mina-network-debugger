@@ -8,5 +8,4 @@ license = "MIT"
 
 [dependencies]
 libc = "0.2"
-smallvec = "1.6"
 log = "0.4"

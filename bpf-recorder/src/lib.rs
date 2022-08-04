@@ -127,8 +127,12 @@ pub mod sniffer_event {
         type Error = ErrorSliceTooShort;
 
         fn from_rb_slice(slice: &[u8]) -> Result<Option<Self>, Self::Error> {
+            if slice.is_empty() {
+                return Ok(None);
+            }
             if slice.len() < 32 {
-                return Err(ErrorSliceTooShort);
+                log::error!("slice too short: {}", hex::encode(slice));
+                return Ok(None);
             }
             let event = Event::from_bytes(&slice[..32]);
             let Event {

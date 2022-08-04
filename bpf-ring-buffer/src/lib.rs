@@ -5,8 +5,6 @@ use std::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use smallvec::SmallVec;
-
 pub trait RingBufferData
 where
     Self: Sized,
@@ -20,7 +18,6 @@ pub struct RingBuffer {
     fd: i32,
     mask: usize,
     consumer_pos_value: usize,
-    last_reported_percent: usize,
     // pointers to shared memory
     observer: RingBufferObserver,
 }
@@ -51,9 +48,18 @@ impl AsRef<[u8]> for RingBufferObserver {
     }
 }
 
+enum Error {
+    Overflown,
+    WouldBlock,
+}
+
 impl RingBuffer {
     pub fn new(fd: i32, max_length: usize) -> io::Result<Self> {
         debug_assert_eq!(max_length & (max_length - 1), 0);
+
+        // The layout is:
+        // [consumer's page] [producer's page]       [data]
+        //    0x1000 rw         0x1000 ro       max_length * 2 ro
 
         // it is a constant, most likely 0x1000
         let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
@@ -116,7 +122,6 @@ impl RingBuffer {
             fd,
             mask: max_length - 1,
             consumer_pos_value: 0,
-            last_reported_percent: 0,
             observer: RingBufferObserver {
                 page_size,
                 data,
@@ -126,68 +131,74 @@ impl RingBuffer {
         })
     }
 
-    // try to read a data slice from the ring buffer, advance our position
-    #[allow(clippy::comparison_chain)]
-    fn read<D>(&mut self) -> io::Result<SmallVec<[D; 64]>>
+    fn read_value<D>(&mut self) -> Result<D, Error>
     where
         D: RingBufferData,
     {
+        loop {
+            match self.read_slice()? {
+                Some(v) => {
+                    self.read_finish();
+                    return Ok(v);
+                },
+                None => (),
+            }
+        }
+    }
+
+    fn read_finish(&mut self) {
+        self.observer
+            .consumer_pos
+            .store(self.consumer_pos_value, Ordering::Release);
+    }
+
+    fn read_slice<D>(&mut self) -> Result<Option<D>, Error>
+    where
+        D: RingBufferData,
+    {
+        const HEADER_SIZE: usize = 8;
         const BUSY_BIT: usize = 1 << 31;
         const DISCARD_BIT: usize = 1 << 30;
-        const HEADER_SIZE: usize = 8;
-        const TOTAL_READ_THRESHOLD: usize = 0x100000; // 1MiB
 
-        let mut vec = SmallVec::new();
-        let mut read_total = 0;
-
-        // try read something
-        loop {
-            let pr_pos = self.observer.producer_pos.load(Ordering::Acquire);
-            if self.consumer_pos_value > pr_pos {
-                // it means we were read a slice of memory which wasn't written yet
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "read uninitialized data",
-                ));
-            } else if self.consumer_pos_value == pr_pos {
-                // nothing to read more
-                // tell the kernel were we are
-                break;
-            } else {
-                // determine how far we are, how many unseen data is in the buffer
-                let distance = pr_pos - self.consumer_pos_value;
-                let quant = (self.mask + 1) / 100;
-                let percent = distance / quant;
-                if percent >= 100 {
-                    log::error!("the buffer is overflow");
-                    // TODO:
-                    std::process::exit(1);
-                }
-                if percent > self.last_reported_percent {
-                    log::warn!("the buffer is filled by: {}%, increasing", percent);
-                    self.last_reported_percent = percent;
-                } else if percent < self.last_reported_percent {
-                    log::info!("the buffer is filled by: {}%, decreasing", percent);
-                    self.last_reported_percent = percent;
-                }
+        let pr_pos = self.observer.producer_pos.load(Ordering::Acquire);
+        if self.consumer_pos_value < pr_pos {
+            // determine how far we are, how many unseen data is in the buffer
+            let distance = pr_pos - self.consumer_pos_value;
+            if distance > self.mask + 1 {
+                return Err(Error::Overflown);
             }
-
             // the first 8 bytes of the memory slice is a header (length and flags)
             let (header, data_offset) = {
                 let masked_pos = self.consumer_pos_value & self.mask;
                 let index_in_array = masked_pos / mem::size_of::<AtomicUsize>();
-                let header = self.observer.data[index_in_array].load(Ordering::Acquire);
+                let mut header = self.observer.data[index_in_array].load(Ordering::Acquire);
+                // TODO: understand it
+                if header == 0 {
+                    let masked_pos = masked_pos + (self.mask + 1);
+                    let index_in_array = masked_pos / mem::size_of::<AtomicUsize>();
+                    header = self.observer.data[index_in_array].load(Ordering::Acquire);
+                }
                 // keep only 32 bits
                 (header & 0xffffffff, masked_pos + HEADER_SIZE)
             };
 
             if header & BUSY_BIT != 0 {
                 // nothing to read, kernel is writing to this slice right now
-                // tell the kernel were we are
-                break;
+                return Err(Error::WouldBlock);
             }
 
             let (length, discard) = (header & !DISCARD_BIT, (header & DISCARD_BIT) != 0);
+
+            // if !discard {
+            //     let c_pos = self.consumer_pos_value;
+            //     log::warn!("SLICE: {c_pos:010x}, {pr_pos:010x}, length: 8 + {length:010x}");
+
+            //     // check length, valid lengths are 0x20 or (0x20 + (2 ^ n)), where 8 <= n < 28
+            //     if !(8..28).map(|n| 1 << n).any(|l| l + 0x20 == length) && (0x20 != length) {
+            //         log::error!("invalid length {length}");
+            //         return Err(Error::WouldBlock);
+            //     }
+            // }
 
             // align the length by 8, and advance our position
             self.consumer_pos_value += HEADER_SIZE + (length + 7) / 8 * 8;
@@ -201,32 +212,18 @@ impl RingBuffer {
                     )
                 };
                 match D::from_rb_slice(s) {
-                    Ok(None) => {
-                        read_total += s.len();
+                    Err(err) => {
+                        log::error!("rb parse data: {:?}", err);
+                        Ok(None)
                     }
-                    Ok(Some(data)) => {
-                        vec.push(data);
-                        read_total += s.len();
-                    }
-                    Err(error) => log::error!("rb parse data: {:?}", error),
+                    Ok(None) => Ok(None),
+                    Ok(Some(value)) => Ok(Some(value)),
                 }
+            } else {
+                Ok(None)
             }
-            // if kernel decide to discard this slice, go to the next iteration
-
-            // store our position to tell kernel it can overwrite memory behind our position
-            self.observer
-                .consumer_pos
-                .store(self.consumer_pos_value, Ordering::Release);
-
-            if read_total > TOTAL_READ_THRESHOLD {
-                break;
-            }
-        }
-
-        if vec.is_empty() {
-            Err(io::Error::new(io::ErrorKind::WouldBlock, ""))
         } else {
-            Ok(vec)
+            Err(Error::WouldBlock)
         }
     }
 
@@ -257,7 +254,7 @@ impl RingBuffer {
         }
     }
 
-    pub fn read_blocking<D>(&mut self, terminating: &AtomicBool) -> io::Result<SmallVec<[D; 64]>>
+    pub fn read_blocking<D>(&mut self, terminating: &AtomicBool) -> io::Result<Option<D>>
     where
         D: RingBufferData,
     {
@@ -266,14 +263,17 @@ impl RingBuffer {
             if tries > 10 {
                 log::debug!("cannot read ring buffer: {} attempts", tries);
             }
-            match self.read() {
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+            match self.read_value() {
+                Err(Error::WouldBlock) => {
                     self.wait(terminating);
                     if terminating.load(Ordering::Relaxed) {
-                        break Ok(SmallVec::new());
+                        break Ok(None);
                     }
                 }
-                x => break x,
+                Err(Error::Overflown) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, "overflow"));
+                }
+                Ok(value) => return Ok(Some(value)),
             }
             tries += 1;
         }

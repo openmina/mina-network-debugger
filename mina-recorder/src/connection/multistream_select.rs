@@ -81,6 +81,7 @@ where
 {
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
+    #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         let (accumulator, done) = if id.incoming {
             (&mut self.accumulator_incoming, &mut self.incoming)

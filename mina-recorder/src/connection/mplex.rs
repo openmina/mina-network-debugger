@@ -140,12 +140,11 @@ where
     fn out(
         &mut self,
         id: DirectedId,
-        bytes: &mut [u8],
         cx: &mut Cx,
         header: Header,
         range: Range<usize>,
     ) -> Output<<Inner::Output as IntoIterator>::IntoIter> {
-        let bytes = &mut bytes[range];
+        let bytes = &mut self.accumulating[range];
         let Header {
             tag,
             stream_id,
@@ -183,6 +182,7 @@ where
     type Output =
         Flatten<<Vec<Output<<Inner::Output as IntoIterator>::IntoIter>> as IntoIterator>::IntoIter>;
 
+    #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         self.accumulating.extend_from_slice(bytes);
 
@@ -198,7 +198,7 @@ where
         #[allow(clippy::comparison_chain)]
         if offset + len == self.accumulating.len() {
             // good case, we have all data in one chunk
-            let out = self.out(id, bytes, cx, header, offset..(len + offset));
+            let out = self.out(id, cx, header, offset..(len + offset));
             self.accumulating.clear();
             vec![out].into_iter().flatten()
         } else if offset + len > self.accumulating.len() {

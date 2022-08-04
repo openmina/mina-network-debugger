@@ -76,6 +76,7 @@ where
 {
     type Output = ChunkOutput<Flatten<<Vec<Inner::Output> as IntoIterator>::IntoIter>>;
 
+    #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
@@ -183,6 +184,7 @@ where
 {
     type Output = NoiseOutput<<Inner::Output as IntoIterator>::IntoIter>;
 
+    #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         enum Msg {
             First,

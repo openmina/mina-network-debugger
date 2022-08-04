@@ -48,6 +48,7 @@ pub struct State {}
 impl HandleData for State {
     type Output = Vec<Event>;
 
+    #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         use prost::{bytes::Bytes, Message};
 

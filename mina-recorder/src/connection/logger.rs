@@ -27,6 +27,7 @@ impl Iterator for Output {
 impl HandleData for () {
     type Output = Output;
 
+    #[inline(never)]
     fn on_data(&mut self, _id: DirectedId, bytes: &mut [u8], _cx: &mut Cx) -> Self::Output {
         Output(Some(format!(
             "({} \"{}\")",

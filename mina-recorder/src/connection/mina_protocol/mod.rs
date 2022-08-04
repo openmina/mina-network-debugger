@@ -66,6 +66,7 @@ where
 impl HandleData for State {
     type Output = Output<<Vec<meshsub::Event> as IntoIterator>::IntoIter>;
 
+    #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         match self {
             State::Meshsub(inner) => Output::Meshsub(inner.on_data(id, bytes, cx).into_iter()),
