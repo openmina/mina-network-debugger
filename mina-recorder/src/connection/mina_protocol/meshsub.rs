@@ -11,15 +11,19 @@ mod gossipsub {
 }
 
 pub enum Msg {
-    ExternalTransition(Box<ExternalTransitionV1>),
-    Other { tag: u8, raw: Vec<u8> },
+    Transition(Box<ExternalTransitionV1>),
+    TransactionsPoolDiff(Vec<u8>),
+    SnarkPoolDiff(Vec<u8>),
+    Unrecognized(u8, Vec<u8>),
 }
 
 impl fmt::Display for Msg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Msg::ExternalTransition(v) => write!(f, "{v:?}"),
-            Msg::Other { tag, raw } => write!(f, "({tag} {})", hex::encode(raw)),
+            Msg::Transition(v) => write!(f, "Transition({v:?})"),
+            Msg::TransactionsPoolDiff(v) => write!(f, "TransactionsPoolDiff({})", hex::encode(v)),
+            Msg::SnarkPoolDiff(v) => write!(f, "SnarkPoolDiff({})", hex::encode(v)),
+            Msg::Unrecognized(tag, v) => write!(f, "Tag{tag}({})", hex::encode(v)),
         }
     }
 }
@@ -74,21 +78,16 @@ impl HandleData for State {
             .into_iter()
             .filter_map(|msg| msg.data.map(|d| (d, msg.topic)))
             .map(|(data, topic)| {
-                if data[8] == 0 {
-                    let v = ExternalTransitionV1::try_decode_binprot(&data[9..]).unwrap();
-                    Event::Publish {
-                        topic,
-                        msg: Msg::ExternalTransition(Box::new(v)),
+                let msg = match data[8] {
+                    0 => {
+                        let v = ExternalTransitionV1::try_decode_binprot(&data[9..]).unwrap();
+                        Msg::Transition(Box::new(v))
                     }
-                } else {
-                    Event::Publish {
-                        topic,
-                        msg: Msg::Other {
-                            tag: data[8],
-                            raw: data[9..].to_vec(),
-                        },
-                    }
-                }
+                    1 => Msg::TransactionsPoolDiff(data[9..].to_vec()),
+                    2 => Msg::SnarkPoolDiff(data[9..].to_vec()),
+                    tag => Msg::Unrecognized(tag, data[9..].to_vec()),
+                };
+                Event::Publish { topic, msg }
             });
         let control = control.into_iter().map(|_c| Event::Control);
         subscriptions.chain(publish).chain(control).collect()
@@ -97,10 +96,10 @@ impl HandleData for State {
 
 #[cfg(test)]
 #[test]
-fn meshsub_msg() {
+fn tag0_msg() {
     use prost::{bytes::Bytes, Message as _};
 
-    let buf = Bytes::from(hex::decode(include_str!("meshsub_test.hex")).unwrap());
+    let buf = Bytes::from(hex::decode(include_str!("tag_0.hex")).unwrap());
     let msg = gossipsub::Rpc::decode_length_delimited(buf).unwrap();
     for a in msg
         .publish
