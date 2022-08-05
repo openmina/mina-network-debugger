@@ -1,4 +1,5 @@
 pub mod meshsub;
+pub mod kademlia;
 
 use std::{fmt, mem};
 
@@ -8,7 +9,7 @@ pub enum State {
     Meshsub(meshsub::State),
     Rpc,
     Ipfs,
-    Kad,
+    Kad(kademlia::State),
     PeerExchange,
 }
 
@@ -18,7 +19,7 @@ impl DynamicProtocol for State {
             "/meshsub/1.1.0" => State::Meshsub(Default::default()),
             "coda/rpcs/0.0.1" => State::Rpc,
             "/ipfs/id/1.0.0" => State::Ipfs,
-            "/coda/kad/1.0.0" => State::Kad,
+            "/coda/kad/1.0.0" => State::Kad(Default::default()),
             "/mina/peer-exchange" => State::PeerExchange,
             name => panic!("unknown protocol {name}"),
         }
@@ -28,6 +29,7 @@ impl DynamicProtocol for State {
 pub enum Output<Meshsub> {
     Nothing,
     Meshsub(Meshsub),
+    Kad(String),
     Other(logger::Output),
 }
 
@@ -39,6 +41,7 @@ where
         match self {
             Output::Nothing => Ok(()),
             Output::Meshsub(inner) => inner.fmt(f),
+            Output::Kad(inner) => inner.fmt(f),
             Output::Other(inner) => inner.fmt(f),
         }
     }
@@ -58,6 +61,7 @@ where
                 *self = Output::Meshsub(inner);
                 Some(Output::Meshsub(inner_item))
             }
+            Output::Kad(inner) => Some(Output::Kad(inner)),
             Output::Other(inner) => Some(Output::Other(inner)),
         }
     }
@@ -72,7 +76,7 @@ impl HandleData for State {
             State::Meshsub(inner) => Output::Meshsub(inner.on_data(id, bytes, cx).into_iter()),
             State::Rpc => Output::Other(().on_data(id, bytes, cx)),
             State::Ipfs => Output::Other(().on_data(id, bytes, cx)),
-            State::Kad => Output::Other(().on_data(id, bytes, cx)),
+            State::Kad(inner) => Output::Kad(inner.on_data(id, bytes, cx)),
             State::PeerExchange => Output::Other(().on_data(id, bytes, cx)),
         }
     }
