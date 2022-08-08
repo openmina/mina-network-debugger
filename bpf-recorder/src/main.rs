@@ -245,6 +245,7 @@ impl App {
 
     #[inline(never)]
     fn on_ret(&mut self, ret: i64, data: context::Variant, ts0: u64, ts1: u64) -> Result<(), i32> {
+        use core::ptr;
         use ebpf::helpers;
 
         const EAGAIN: i64 = -11;
@@ -331,7 +332,13 @@ impl App {
                     return Ok(());
                 }
                 if ret < 0 {
-                    event.set_err(ret)
+                    if self.connections.remove(&socket_id.to_ne_bytes())?.is_none() {
+                        return Ok(());
+                    }
+                    let close_ev = event.set_tag_fd(DataTag::Close, fd);
+                    let event = event.set_err(ret);
+                    send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())?;
+                    close_ev
                 } else {
                     event.set_ok(ret as _)
                 }
@@ -343,7 +350,13 @@ impl App {
                     return Ok(());
                 }
                 if ret < 0 {
-                    event.set_err(ret)
+                    if self.connections.remove(&socket_id.to_ne_bytes())?.is_none() {
+                        return Ok(());
+                    }
+                    let close_ev = event.set_tag_fd(DataTag::Close, fd);
+                    let event = event.set_err(ret);
+                    send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())?;
+                    close_ev
                 } else {
                     event.set_ok(ret as _)
                 }
