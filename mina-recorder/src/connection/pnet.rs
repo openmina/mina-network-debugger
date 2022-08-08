@@ -6,7 +6,7 @@ use salsa20::{
     XSalsa20,
 };
 
-use super::{DirectedId, HandleData, Cx};
+use super::{HandleData, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
@@ -83,19 +83,19 @@ where
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if self.skip {
             return Output::Nothing;
         }
 
-        let cipher = if id.incoming {
+        let cipher = if incoming {
             &mut self.cipher_in
         } else {
             &mut self.cipher_out
         };
         if let Some(cipher) = cipher {
             cipher.apply_keystream(bytes);
-            let inner_out = self.inner.on_data(id, bytes, cx);
+            let inner_out = self.inner.on_data(incoming, bytes, cx);
             Output::Inner(inner_out.into_iter())
         } else if bytes.len() != 24 {
             self.skip = true;

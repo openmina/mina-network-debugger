@@ -1,6 +1,6 @@
 use std::{fmt, mem};
 
-use super::{DirectedId, HandleData, DynamicProtocol, Cx};
+use super::{HandleData, DynamicProtocol, Cx};
 
 pub struct State<Inner> {
     incoming: Option<String>,
@@ -82,8 +82,8 @@ where
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
-        let (accumulator, done) = if id.incoming {
+    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+        let (accumulator, done) = if incoming {
             (&mut self.accumulator_incoming, &mut self.incoming)
         } else {
             (&mut self.accumulator_outgoing, &mut self.outgoing)
@@ -91,11 +91,11 @@ where
         if let Some(protocol) = done {
             let inner = self.inner.get_or_insert_with(|| Inner::from_name(protocol));
             let inner_out = if accumulator.is_empty() {
-                inner.on_data(id, bytes, cx)
+                inner.on_data(incoming, bytes, cx)
             } else {
                 let mut total = mem::take(accumulator);
                 total.extend_from_slice(bytes);
-                inner.on_data(id, &mut total, cx)
+                inner.on_data(incoming, &mut total, cx)
             };
             Output::Inner(protocol.clone(), inner_out.into_iter())
         } else {
@@ -114,7 +114,7 @@ where
                     *done = Some(s.to_string());
                     break;
                 } else {
-                    log::error!("{id} unparsed {}", hex::encode(msg));
+                    log::error!("incoming: {incoming} unparsed {}", hex::encode(msg));
                     *done = Some("ERROR".to_string());
                     break;
                 }
@@ -131,20 +131,13 @@ where
 #[cfg(test)]
 #[test]
 fn simple() {
-    use crate::{DirectedId, EventMetadata};
-
     let bytes_1 = hex::decode("132f6d756c746973747265616d2f312e302e300a").unwrap();
     let bytes_2 = hex::decode("132f6d756c746973747265616d2f312e302e300a102f636f64612f6b61642f312e302e300a2c0804122600240801122059458f97a855040a767e890855941fb130dfa3fd5a9c8213bd73d716c2e697e15001").unwrap();
     let mut state = State::<()>::default();
-    let mut id = DirectedId {
-        metadata: EventMetadata::fake(),
-        incoming: true,
-    };
-    for item in state.on_data(id.clone(), &mut bytes_2.clone(), &mut Cx::default()) {
+    for item in state.on_data(true, &mut bytes_2.clone(), &mut Cx::default()) {
         println!("{item}");
     }
-    id.incoming = !id.incoming;
-    for item in state.on_data(id.clone(), &mut bytes_1.clone(), &mut Cx::default()) {
+    for item in state.on_data(false, &mut bytes_1.clone(), &mut Cx::default()) {
         println!("{item}");
     }
 }

@@ -3,7 +3,7 @@ use std::fmt;
 use mina_serialization_types::v1::ExternalTransitionV1;
 use bin_prot::encodable::BinProtEncodable;
 
-use super::{DirectedId, HandleData, Cx};
+use super::{HandleData, Cx};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
@@ -53,10 +53,10 @@ impl HandleData for State {
     type Output = Vec<Event>;
 
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         use prost::{bytes::Bytes, Message};
 
-        let _ = (id, cx);
+        let _ = (incoming, cx);
 
         let buf = Bytes::from(bytes.to_vec());
         let pb::Rpc {

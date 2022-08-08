@@ -16,22 +16,6 @@ pub struct EventMetadata {
     pub duration: Duration,
 }
 
-impl EventMetadata {
-    #[cfg(test)]
-    pub fn fake() -> Self {
-        EventMetadata {
-            id: ConnectionId {
-                alias: "fake".to_string(),
-                addr: "127.0.0.1:0".parse().unwrap(),
-                pid: 0,
-                fd: 0,
-            },
-            time: SystemTime::now(),
-            duration: Duration::default(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId {
     pub alias: String,

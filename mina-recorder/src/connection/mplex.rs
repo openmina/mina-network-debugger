@@ -2,7 +2,7 @@ use std::{fmt, collections::BTreeMap, mem, iter::Flatten, ops::Range};
 
 use unsigned_varint::decode;
 
-use super::{DirectedId, HandleData, DynamicProtocol, Cx};
+use super::{HandleData, DynamicProtocol, Cx};
 
 #[derive(Default)]
 pub struct State<Inner> {
@@ -139,7 +139,7 @@ where
 {
     fn out(
         &mut self,
-        id: DirectedId,
+        incoming: bool,
         cx: &mut Cx,
         header: Header,
         range: Range<usize>,
@@ -157,7 +157,7 @@ where
                     .inners
                     .entry(stream_id)
                     .or_default()
-                    .on_data(id, bytes, cx)
+                    .on_data(incoming, bytes, cx)
                     .into_iter();
                 Body::Message { initiator, inner }
             }
@@ -183,12 +183,12 @@ where
         Flatten<<Vec<Output<<Inner::Output as IntoIterator>::IntoIter>> as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         self.accumulating.extend_from_slice(bytes);
 
         let (header, len, offset) = {
             let (v, remaining) = decode::u64(&self.accumulating).unwrap();
-            let header = Header::new(v, id.incoming);
+            let header = Header::new(v, incoming);
 
             let (len, remaining) = decode::usize(remaining).unwrap();
             let offset = remaining.as_ptr() as usize - self.accumulating.as_ptr() as usize;
@@ -198,7 +198,7 @@ where
         #[allow(clippy::comparison_chain)]
         if offset + len == self.accumulating.len() {
             // good case, we have all data in one chunk
-            let out = self.out(id, cx, header, offset..(len + offset));
+            let out = self.out(incoming, cx, header, offset..(len + offset));
             self.accumulating.clear();
             vec![out].into_iter().flatten()
         } else if offset + len > self.accumulating.len() {

@@ -61,7 +61,7 @@ impl P2pRecorder {
     pub fn on_data(&mut self, incoming: bool, metadata: EventMetadata, mut bytes: Vec<u8>) {
         if let Some(cn) = self.cns.get_mut(&metadata.id) {
             let id = DirectedId { metadata, incoming };
-            let output = cn.on_data(id.clone(), &mut bytes, &mut self.cx);
+            let output = cn.on_data(incoming, &mut bytes, &mut self.cx);
             for item in output {
                 log::info!("{id} {item}");
             }

@@ -12,7 +12,7 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use super::{DirectedId, HandleData, DynamicProtocol, Cx};
+use super::{HandleData, DynamicProtocol, Cx};
 
 type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
@@ -77,11 +77,11 @@ where
     type Output = ChunkOutput<Flatten<<Vec<Inner::Output> as IntoIterator>::IntoIter>>;
 
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
-                let inner_out = self.inner.on_data(id, bytes, cx);
+                let inner_out = self.inner.on_data(incoming, bytes, cx);
                 return ChunkOutput::Inner(vec![inner_out].into_iter().flatten());
             }
         }
@@ -93,7 +93,7 @@ where
                 let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
                 if self.accumulator.len() >= 2 + len {
                     let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
-                    let inner_out = self.inner.on_data(id.clone(), chunk, cx);
+                    let inner_out = self.inner.on_data(incoming, chunk, cx);
                     inner_outs.push(inner_out);
                     self.accumulator = remaining.to_vec();
                     continue;
@@ -185,7 +185,7 @@ where
     type Output = NoiseOutput<<Inner::Output as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         enum Msg {
             First,
             Second,
@@ -200,12 +200,12 @@ where
             Some(_) => Msg::Other,
         };
         if !self.error {
-            match self.on_data_(id.incoming, bytes, cx) {
+            match self.on_data_(incoming, bytes, cx) {
                 Some(bytes) => match msg {
                     Msg::First => NoiseOutput::FirstMessage,
                     Msg::Second => NoiseOutput::HandshakePayload(bytes.to_vec()),
                     Msg::Third => NoiseOutput::HandshakePayload(bytes.to_vec()),
-                    Msg::Other => NoiseOutput::Inner(self.inner.on_data(id, bytes, cx).into_iter()),
+                    Msg::Other => NoiseOutput::Inner(self.inner.on_data(incoming, bytes, cx).into_iter()),
                 },
                 None => {
                     // Raw.on_data(id, bytes, cx);

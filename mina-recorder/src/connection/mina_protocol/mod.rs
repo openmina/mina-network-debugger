@@ -3,7 +3,7 @@ pub mod kademlia;
 
 use std::{fmt, mem};
 
-use super::{DirectedId, HandleData, DynamicProtocol, Cx, logger};
+use super::{HandleData, DynamicProtocol, Cx, logger};
 
 pub enum State {
     Meshsub(meshsub::State),
@@ -71,13 +71,13 @@ impl HandleData for State {
     type Output = Output<<Vec<meshsub::Event> as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         match self {
-            State::Meshsub(inner) => Output::Meshsub(inner.on_data(id, bytes, cx).into_iter()),
-            State::Rpc => Output::Other(().on_data(id, bytes, cx)),
-            State::Ipfs => Output::Other(().on_data(id, bytes, cx)),
-            State::Kad(inner) => Output::Kad(inner.on_data(id, bytes, cx)),
-            State::PeerExchange => Output::Other(().on_data(id, bytes, cx)),
+            State::Meshsub(inner) => Output::Meshsub(inner.on_data(incoming, bytes, cx).into_iter()),
+            State::Rpc => Output::Other(().on_data(incoming, bytes, cx)),
+            State::Ipfs => Output::Other(().on_data(incoming, bytes, cx)),
+            State::Kad(inner) => Output::Kad(inner.on_data(incoming, bytes, cx)),
+            State::PeerExchange => Output::Other(().on_data(incoming, bytes, cx)),
         }
     }
 }
