@@ -29,7 +29,7 @@ impl DynamicProtocol for State {
 pub enum Output<Meshsub> {
     Nothing,
     Meshsub(Meshsub),
-    Kad(String),
+    Kad(kademlia::RawOutput),
     Other(logger::Output),
 }
 

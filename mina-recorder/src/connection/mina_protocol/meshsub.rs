@@ -6,7 +6,7 @@ use bin_prot::encodable::BinProtEncodable;
 use super::{DirectedId, HandleData, Cx};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
-mod gossipsub {
+mod pb {
     include!(concat!(env!("OUT_DIR"), "/gossipsub.pb.rs"));
 }
 
@@ -59,7 +59,7 @@ impl HandleData for State {
         let _ = (id, cx);
 
         let buf = Bytes::from(bytes.to_vec());
-        let gossipsub::Rpc {
+        let pb::Rpc {
             subscriptions,
             publish,
             control,
@@ -100,7 +100,7 @@ fn tag0_msg() {
     use prost::{bytes::Bytes, Message as _};
 
     let buf = Bytes::from(hex::decode(include_str!("tag_0.hex")).unwrap());
-    let msg = gossipsub::Rpc::decode_length_delimited(buf).unwrap();
+    let msg = pb::Rpc::decode_length_delimited(buf).unwrap();
     for a in msg
         .publish
         .into_iter()
