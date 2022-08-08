@@ -7,40 +7,65 @@ mod pb {
     include!(concat!(env!("OUT_DIR"), "/kad.pb.rs"));
 }
 
-// pub enum Output {
-//     Nothing,
-//     FindNodeRequest {
-//         // public key?
-//         peer_id: Vec<u8>,
-//     },
-//     FindNodeResponse {
-//         peers: Vec<pb::message::Peer>,
-//     }
-// }
-
-// impl fmt::Display for Output {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             Output::Nothing => write!(f, "not impl"),
-//             Output::FindNodeRequest { peer_id } => {
-//                 write!(f, "FindNode request {}", hex::encode(peer_id))
-//             }
-//             Output::FindNodeResponse { peers } => {
-//                 write!(f, "FindNode response")?;
-//                 for peer in peers {
-//                     write!(f, " Peer(id: {}, cn: {:?})", hex::encode(&peer.id), peer.connection())?;
-//                 }
-//                 Ok(())
-//             }
-//         }
-//     }
-// }
+impl fmt::Display for pb::message::Peer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let addrs = self
+            .addrs
+            .iter()
+            .map(|addr| {
+                let mut acc = String::new();
+                let mut input = addr.as_slice();
+                while !input.is_empty() {
+                    match multiaddr::Protocol::from_bytes(input) {
+                        Ok((p, i)) => {
+                            input = i;
+                            acc = format!("{acc}{p}");
+                        }
+                        Err(err) => {
+                            input = &[];
+                            acc = format!("{acc}{err}");
+                        }
+                    }
+                }
+                acc
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        // f.debug_struct("Peer")
+        //     .field("id", &hex::encode(&self.id))
+        //     .field("addrs", &addrs)
+        //     .field("connection", &self.connection())
+        //     .finish()
+        write!(
+            f,
+            "Peer {{ id: {}, addrs: {}, connection: {:?} }}",
+            hex::encode(&self.id),
+            addrs,
+            self.connection()
+        )
+    }
+}
 
 pub struct RawOutput(pb::Message);
 
 impl fmt::Display for RawOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
+        let print_peers = |peers: &[pb::message::Peer]| -> String {
+            let s = peers
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{}]", s)
+        };
+        f.debug_struct("Message")
+            .field("type", &self.0.r#type())
+            .field("cluster_level_raw", &self.0.cluster_level_raw)
+            .field("key", &hex::encode(&self.0.key))
+            .field("record", &self.0.record)
+            .field("closer_peers", &print_peers(&self.0.closer_peers))
+            .field("provider_peers", &print_peers(&self.0.provider_peers))
+            .finish()
     }
 }
 
@@ -58,19 +83,6 @@ impl HandleData for State {
 
         let buf = Bytes::from(bytes.to_vec());
         let msg = <pb::Message as Message>::decode_length_delimited(buf).unwrap();
-
-        // match msg.r#type() {
-        //     pb::message::MessageType::FindNode => {
-        //         if msg.closer_peers.is_empty() {
-        //             Output::FindNodeRequest { peer_id: msg.key }
-        //         } else {
-        //             Output::FindNodeResponse {
-        //                 peers: msg.closer_peers,
-        //             }
-        //         }
-        //     }
-        //     _ => Output::Nothing,
-        // }
         RawOutput(msg)
     }
 }

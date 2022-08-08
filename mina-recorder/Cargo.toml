@@ -14,17 +14,18 @@ log = { version = "0.4.17" }
 hex = { version = "0.4.3" }
 time = { version = "0.3.11", features = ["formatting"] }
 unsigned-varint = { version = "0.7.1" }
+multiaddr = { version = "0.14.0" }
 
 mina-serialization-types = { git = "https://github.com/ChainSafe/mina-rs", branch = "mvp-proxy" }
 bin-prot = { git = "https://github.com/ChainSafe/mina-rs", branch = "mvp-proxy" }
-prost = { version = "0.10.4" }
+prost = { version = "0.11.0" }
 
 salsa20 = { version = "0.10.2" }
 blake2 = { version = "0.10.4" }
 curve25519-dalek = { version = "3.2" }
 sha2 = { version = "0.10.2" }
-chacha20poly1305 = { version = "0.9.1" }
-vru-noise = { version = "1.4" }
+chacha20poly1305 = { version = "0.10.0" }
+vru-noise = { version = "1.5" }
 
 # libp2p-core = { version = "*" }
 # ed25519-dalek = { version = "*" }
