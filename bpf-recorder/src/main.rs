@@ -46,6 +46,10 @@ pub struct App {
     pub exit_accept4: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_enter_close")]
     pub enter_close: ebpf::ProgRef,
+    #[prog("tracepoint/syscalls/sys_exit_socket")]
+    pub exit_socket: ebpf::ProgRef,
+    #[prog("tracepoint/syscalls/sys_exit_open")]
+    pub exit_open: ebpf::ProgRef,
     // 0x4000 simultaneous connections maximum
     #[hashmap(size = 0x4000)]
     pub connections: ebpf::HashMapRef<8, 4>,
@@ -432,6 +436,16 @@ impl App {
         let event = Event::new(pid, ts, ts);
         let event = event.set_tag_fd(DataTag::Close, fd);
         send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())
+    }
+
+    #[inline(always)]
+    pub fn exit_socket(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
+        self.enter_close(ctx)
+    }
+
+    #[inline(always)]
+    pub fn exit_open(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
+        self.enter_close(ctx)
     }
 
     #[inline(always)]
