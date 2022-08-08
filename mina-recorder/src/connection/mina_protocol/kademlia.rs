@@ -29,16 +29,10 @@ impl fmt::Display for pb::message::Peer {
                 }
                 acc
             })
-            .collect::<Vec<_>>()
-            .join(", ");
-        // f.debug_struct("Peer")
-        //     .field("id", &hex::encode(&self.id))
-        //     .field("addrs", &addrs)
-        //     .field("connection", &self.connection())
-        //     .finish()
+            .collect::<Vec<_>>();
         write!(
             f,
-            "Peer {{ id: {}, addrs: {}, connection: {:?} }}",
+            "Peer {{ id: {}, addrs: {:?}, connection: {:?} }}",
             hex::encode(&self.id),
             addrs,
             self.connection()
@@ -50,13 +44,11 @@ pub struct RawOutput(pb::Message);
 
 impl fmt::Display for RawOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let print_peers = |peers: &[pb::message::Peer]| -> String {
-            let s = peers
+        let print_peers = |peers: &[pb::message::Peer]| {
+            peers
                 .iter()
                 .map(|p| p.to_string())
                 .collect::<Vec<_>>()
-                .join(", ");
-            format!("[{}]", s)
         };
         f.debug_struct("Message")
             .field("type", &self.0.r#type())
