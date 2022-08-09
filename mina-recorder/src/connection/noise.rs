@@ -205,7 +205,9 @@ where
                     Msg::First => NoiseOutput::FirstMessage,
                     Msg::Second => NoiseOutput::HandshakePayload(bytes.to_vec()),
                     Msg::Third => NoiseOutput::HandshakePayload(bytes.to_vec()),
-                    Msg::Other => NoiseOutput::Inner(self.inner.on_data(incoming, bytes, cx).into_iter()),
+                    Msg::Other => {
+                        NoiseOutput::Inner(self.inner.on_data(incoming, bytes, cx).into_iter())
+                    }
                 },
                 None => {
                     // Raw.on_data(id, bytes, cx);

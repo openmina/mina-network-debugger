@@ -44,12 +44,8 @@ pub struct RawOutput(pb::Message);
 
 impl fmt::Display for RawOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let print_peers = |peers: &[pb::message::Peer]| {
-            peers
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-        };
+        let print_peers =
+            |peers: &[pb::message::Peer]| peers.iter().map(|p| p.to_string()).collect::<Vec<_>>();
         f.debug_struct("Message")
             .field("type", &self.0.r#type())
             .field("cluster_level_raw", &self.0.cluster_level_raw)

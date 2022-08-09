@@ -73,7 +73,9 @@ impl HandleData for State {
     #[inline(never)]
     fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
         match self {
-            State::Meshsub(inner) => Output::Meshsub(inner.on_data(incoming, bytes, cx).into_iter()),
+            State::Meshsub(inner) => {
+                Output::Meshsub(inner.on_data(incoming, bytes, cx).into_iter())
+            }
             State::Rpc => Output::Other(().on_data(incoming, bytes, cx)),
             State::Ipfs => Output::Other(().on_data(incoming, bytes, cx)),
             State::Kad(inner) => Output::Kad(inner.on_data(incoming, bytes, cx)),

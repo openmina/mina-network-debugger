@@ -537,7 +537,7 @@ fn main() {
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
     use bpf_ring_buffer::RingBuffer;
-    use mina_recorder::{EventMetadata, ConnectionId};
+    use mina_recorder::{EventMetadata, ConnectionInfo};
     use ebpf::{kind::AppItem, Skeleton};
 
     let env = env_logger::Env::default().default_filter_or("info");
@@ -581,7 +581,6 @@ fn main() {
     let mut rb = RingBuffer::new(fd, info.max_entries as usize).unwrap();
 
     const P2P_PORT: u16 = 8302;
-    let mut apps = BTreeMap::new();
     let mut p2p_cns = BTreeMap::new();
     let mut ignored_cns = BTreeMap::new();
     let mut recorder = mina_recorder::P2pRecorder::default();
@@ -605,129 +604,114 @@ fn main() {
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
                     log::info!("exec {alias} pid: {}", event.pid);
-                    apps.insert(event.pid, alias);
+                    recorder.on_alias(event.pid, alias);
                 }
                 SnifferEventVariant::Error(_, _) => (),
                 SnifferEventVariant::OutgoingConnection(addr) => {
-                    if let Some(alias) = apps.get(&event.pid) {
-                        if addr.port() == P2P_PORT {
-                            let metadata = EventMetadata {
-                                id: ConnectionId {
-                                    alias: alias.clone(),
-                                    addr,
-                                    pid: event.pid,
-                                    fd: event.fd,
-                                },
-                                time,
-                                duration,
-                            };
-                            if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                                log::warn!("new outgoing connection on already allocated fd");
-                                let mut metadata = metadata.clone();
-                                metadata.id.addr = old_addr;
-                                recorder.on_disconnect(metadata);
-                            }
-                            recorder.on_connect(false, metadata);
-                        } else {
-                            ignored_cns.insert((event.pid, event.fd), addr);
+                    if addr.port() == P2P_PORT {
+                        let metadata = EventMetadata {
+                            id: ConnectionInfo {
+                                addr,
+                                pid: event.pid,
+                                fd: event.fd,
+                            },
+                            time,
+                            duration,
+                        };
+                        if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
+                            log::warn!("new outgoing connection on already allocated fd");
+                            let mut metadata = metadata.clone();
+                            metadata.id.addr = old_addr;
+                            recorder.on_disconnect(metadata);
                         }
+                        recorder.on_connect(false, metadata);
+                    } else {
+                        ignored_cns.insert((event.pid, event.fd), addr);
                     }
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
-                    if let Some(alias) = apps.get(&event.pid) {
-                        if addr.port() == P2P_PORT || addr.port() >= 49152 {
-                            let metadata = EventMetadata {
-                                id: ConnectionId {
-                                    alias: alias.clone(),
-                                    addr,
-                                    pid: event.pid,
-                                    fd: event.fd,
-                                },
-                                time,
-                                duration,
-                            };
-                            if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                                log::warn!("new incoming connection on already allocated fd");
-                                let mut metadata = metadata.clone();
-                                metadata.id.addr = old_addr;
-                                recorder.on_disconnect(metadata);
-                            }
-                            recorder.on_connect(true, metadata);
-                        } else {
-                            ignored_cns.insert((event.pid, event.fd), addr);
+                    if addr.port() == P2P_PORT || addr.port() >= 49152 {
+                        let metadata = EventMetadata {
+                            id: ConnectionInfo {
+                                addr,
+                                pid: event.pid,
+                                fd: event.fd,
+                            },
+                            time,
+                            duration,
+                        };
+                        if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
+                            log::warn!("new incoming connection on already allocated fd");
+                            let mut metadata = metadata.clone();
+                            metadata.id.addr = old_addr;
+                            recorder.on_disconnect(metadata);
                         }
+                        recorder.on_connect(true, metadata);
+                    } else {
+                        ignored_cns.insert((event.pid, event.fd), addr);
                     }
                 }
                 SnifferEventVariant::Disconnected => {
-                    if let Some(alias) = apps.get(&event.pid) {
-                        let key = (event.pid, event.fd);
-                        if let Some(addr) = p2p_cns.remove(&key) {
-                            let metadata = EventMetadata {
-                                id: ConnectionId {
-                                    alias: alias.clone(),
-                                    addr,
-                                    pid: event.pid,
-                                    fd: event.fd,
-                                },
-                                time,
-                                duration,
-                            };
-                            recorder.on_disconnect(metadata);
-                        } else if !ignored_cns.contains_key(&key) {
-                            log::debug!("{alias} cannot disconnect {fd}, not connected");
-                        }
+                    let key = (event.pid, event.fd);
+                    if let Some(addr) = p2p_cns.remove(&key) {
+                        let metadata = EventMetadata {
+                            id: ConnectionInfo {
+                                addr,
+                                pid: event.pid,
+                                fd: event.fd,
+                            },
+                            time,
+                            duration,
+                        };
+                        recorder.on_disconnect(metadata);
+                    } else if !ignored_cns.contains_key(&key) {
+                        log::debug!("{} cannot disconnect {fd}, not connected", event.pid);
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
-                    if let Some(alias) = apps.get(&event.pid) {
-                        let key = (event.pid, event.fd);
-                        if let Some(addr) = p2p_cns.get(&key) {
-                            let metadata = EventMetadata {
-                                id: ConnectionId {
-                                    alias: alias.clone(),
-                                    addr: *addr,
-                                    pid: event.pid,
-                                    fd: event.fd,
-                                },
-                                time,
-                                duration,
-                            };
-                            recorder.on_data(true, metadata, data);
-                        } else if !ignored_cns.contains_key(&key) {
-                            log::debug!(
-                                "{alias} cannot handle data on {fd}, not connected, {}",
-                                hex::encode(data),
-                            );
-                        }
+                    let key = (event.pid, event.fd);
+                    if let Some(addr) = p2p_cns.get(&key) {
+                        let metadata = EventMetadata {
+                            id: ConnectionInfo {
+                                addr: *addr,
+                                pid: event.pid,
+                                fd: event.fd,
+                            },
+                            time,
+                            duration,
+                        };
+                        recorder.on_data(true, metadata, data);
+                    } else if !ignored_cns.contains_key(&key) {
+                        log::debug!(
+                            "{} cannot handle data on {fd}, not connected, {}",
+                            event.pid,
+                            hex::encode(data),
+                        );
                     }
                 }
                 SnifferEventVariant::OutgoingData(data) => {
-                    if let Some(alias) = apps.get(&event.pid) {
-                        let key = (event.pid, event.fd);
-                        if let Some(addr) = p2p_cns.get(&key) {
-                            let metadata = EventMetadata {
-                                id: ConnectionId {
-                                    alias: alias.clone(),
-                                    addr: *addr,
-                                    pid: event.pid,
-                                    fd: event.fd,
-                                },
-                                time,
-                                duration,
-                            };
-                            recorder.on_data(false, metadata, data);
-                        } else if !ignored_cns.contains_key(&key) {
-                            log::debug!(
-                                "{alias} cannot handle data on {fd}, not connected, {}",
-                                hex::encode(data),
-                            );
-                        }
+                    let key = (event.pid, event.fd);
+                    if let Some(addr) = p2p_cns.get(&key) {
+                        let metadata = EventMetadata {
+                            id: ConnectionInfo {
+                                addr: *addr,
+                                pid: event.pid,
+                                fd: event.fd,
+                            },
+                            time,
+                            duration,
+                        };
+                        recorder.on_data(false, metadata, data);
+                    } else if !ignored_cns.contains_key(&key) {
+                        log::debug!(
+                            "{} cannot handle data on {fd}, not connected, {}",
+                            event.pid,
+                            hex::encode(data),
+                        );
                     }
                 }
                 SnifferEventVariant::Random(random) => {
-                    if let Some(alias) = apps.get(&event.pid) {
-                        recorder.on_randomness(alias.clone(), random);
-                    }
+                    recorder.on_randomness(event.pid, random);
                 }
             }
         }
