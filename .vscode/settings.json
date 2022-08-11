@@ -30,6 +30,7 @@
         "repr",
         "revents",
         "ringbuf",
+        "rocksdb",
         "rustc",
         "sendto",
         "Shleft",

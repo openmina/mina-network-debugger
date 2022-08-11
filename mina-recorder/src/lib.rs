@@ -5,6 +5,8 @@ mod connection;
 
 mod custom_coding;
 
+pub mod database;
+
 use std::{
     net::SocketAddr,
     fmt,
@@ -13,14 +15,10 @@ use std::{
 
 use radiation::{Emit, Absorb};
 
-#[derive(Debug, Clone, Emit, Absorb)]
+#[derive(Debug, Clone)]
 pub struct EventMetadata {
     pub id: ConnectionInfo,
-    #[custom_absorb(custom_coding::time_absorb)]
-    #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
-    #[custom_absorb(custom_coding::duration_absorb)]
-    #[custom_emit(custom_coding::duration_emit)]
     pub duration: Duration,
 }
 
