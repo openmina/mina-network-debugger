@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, VecDeque};
 use super::{
     EventMetadata, ConnectionInfo, DirectedId,
     connection::{HandleData, pnet, multistream_select, noise, mplex, mina_protocol},
+    database::DbFacade,
 };
 
 type Cn = pnet::State<Noise>;
@@ -10,8 +11,8 @@ type Noise = multistream_select::State<noise::State<Encrypted>>;
 type Encrypted = multistream_select::State<mplex::State<Inner>>;
 type Inner = multistream_select::State<mina_protocol::State>;
 
-#[derive(Default)]
 pub struct P2pRecorder {
+    db: DbFacade,
     cns: BTreeMap<ConnectionInfo, Cn>,
     cx: Cx,
     apps: BTreeMap<u32, String>,
@@ -33,6 +34,15 @@ impl Cx {
 }
 
 impl P2pRecorder {
+    pub fn new(db: DbFacade) -> Self {
+        P2pRecorder {
+            db,
+            cns: BTreeMap::default(),
+            cx: Cx::default(),
+            apps: BTreeMap::default(),
+        }
+    }
+
     pub fn on_alias(&mut self, pid: u32, alias: String) {
         self.apps.insert(pid, alias);
     }
@@ -45,6 +55,10 @@ impl P2pRecorder {
         } else {
             log::info!("{alias}_{pid} connect {addr} {fd}");
         }
+        let _group = self
+            .db
+            .add(metadata.id.clone(), incoming, metadata.time)
+            .unwrap();
         self.cns.insert(metadata.id, Default::default());
     }
 

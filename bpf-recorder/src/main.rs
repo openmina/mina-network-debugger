@@ -543,10 +543,16 @@ fn main() {
     let env = env_logger::Env::default().default_filter_or("info");
     env_logger::init_from_env(env);
     sudo::escalate_if_needed().expect("failed to obtain superuser permission");
+    let (db, callback, server_thread) = mina_recorder::database::run_server();
     let terminating = Arc::new(AtomicBool::new(false));
     {
         let terminating = terminating.clone();
+        let mut callback = Some(callback);
         ctrlc::set_handler(move || {
+            log::info!("ctrlc");
+            if let Some(cb) = callback.take() {
+                cb();
+            }
             terminating.store(true, Ordering::Relaxed);
         })
         .expect("Error setting Ctrl-C handler");
@@ -583,7 +589,7 @@ fn main() {
     const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
     let mut ignored_cns = BTreeMap::new();
-    let mut recorder = mina_recorder::P2pRecorder::default();
+    let mut recorder = mina_recorder::P2pRecorder::new(db);
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     while !terminating.load(Ordering::Relaxed) {
@@ -716,6 +722,7 @@ fn main() {
             }
         }
     }
+    server_thread.join().unwrap();
     log::info!("terminated");
     drop(skeleton);
 }

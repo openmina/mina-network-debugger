@@ -12,15 +12,21 @@ use std::{
 
 use radiation::{AbsorbExt, nom, ParseError, Emit};
 
+use thiserror::Error;
+
 use crate::ConnectionInfo;
 
 use super::types::{
     Connection, ConnectionId, Stream, StreamId, Message, MessageId, StreamMeta, StreamKind,
 };
 
+#[derive(Debug, Error)]
 pub enum DbError {
+    #[error("{_0}")]
     Io(io::Error),
+    #[error("{_0}")]
     Inner(rocksdb::Error),
+    #[error("{_0}")]
     Parse(nom::Err<ParseError<Vec<u8>>>),
 }
 
@@ -62,17 +68,56 @@ impl StreamBytes {
 type StreamBytesSync = Arc<Mutex<StreamBytes>>;
 
 #[derive(Clone)]
-struct DbMsg {
-    messages: Arc<AtomicU64>,
+pub struct DbCore {
     path: PathBuf,
     stream_bytes: Arc<Mutex<BTreeMap<StreamId, StreamBytesSync>>>,
     inner: Arc<rocksdb::DB>,
 }
 
+impl DbCore {
+    fn connections(&self) -> &rocksdb::ColumnFamily {
+        self.inner
+            .cf_handle(DbFacade::CONNECTIONS)
+            .expect("must exist")
+    }
+
+    fn streams(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(DbFacade::STREAMS).expect("must exist")
+    }
+
+    fn messages(&self) -> &rocksdb::ColumnFamily {
+        self.inner
+            .cf_handle(DbFacade::MESSAGES)
+            .expect("must exist")
+    }
+
+    pub fn fetch_connections(&self, filter: &()) -> impl serde::Serialize {
+        let _ = filter;
+        let it = self
+            .inner
+            .iterator_cf(self.connections(), rocksdb::IteratorMode::Start);
+        it.filter_map(|item| match item {
+            Ok((_, value)) => match Connection::absorb_ext(&value) {
+                Ok(cn) => Some(cn),
+                Err(err) => {
+                    log::error!("{err}");
+                    None
+                }
+            },
+            Err(err) => {
+                log::error!("{err}");
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+    }
+}
+
 pub struct DbFacade {
     cns: AtomicU64,
     streams: Arc<AtomicU64>,
-    inner: DbMsg,
+    messages: Arc<AtomicU64>,
+    inner: DbCore,
 }
 
 impl DbFacade {
@@ -86,13 +131,6 @@ impl DbFacade {
 
     const TTL: Duration = Duration::from_secs(120);
 
-    fn connections(&self) -> &rocksdb::ColumnFamily {
-        self.inner
-            .inner
-            .cf_handle(Self::CONNECTIONS)
-            .expect("must exist")
-    }
-
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
         P: AsRef<Path>,
@@ -101,6 +139,7 @@ impl DbFacade {
 
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
         let inner =
             rocksdb::DB::open_cf_with_ttl(&opts, path.join("rocksdb"), Self::CFS, Self::TTL)?;
         let get_atomic_counter = |k| -> Result<AtomicU64, DbError> {
@@ -113,8 +152,8 @@ impl DbFacade {
         Ok(DbFacade {
             cns: get_atomic_counter(0)?,
             streams: Arc::new(get_atomic_counter(1)?),
-            inner: DbMsg {
-                messages: Arc::new(get_atomic_counter(2)?),
+            messages: Arc::new(get_atomic_counter(2)?),
+            inner: DbCore {
                 path,
                 stream_bytes: Arc::default(),
                 inner: Arc::new(inner),
@@ -136,30 +175,29 @@ impl DbFacade {
         };
         self.inner
             .inner
-            .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
+            .put_cf(self.inner.connections(), id.emit(vec![]), v.emit(vec![]))?;
 
         Ok(DbGroup {
             id,
             streams: self.streams.clone(),
+            messages: self.messages.clone(),
             inner: self.inner.clone(),
         })
+    }
+
+    pub fn core(&self) -> DbCore {
+        self.inner.clone()
     }
 }
 
 pub struct DbGroup {
     id: ConnectionId,
     streams: Arc<AtomicU64>,
-    inner: DbMsg,
+    messages: Arc<AtomicU64>,
+    inner: DbCore,
 }
 
 impl DbGroup {
-    fn streams(&self) -> &rocksdb::ColumnFamily {
-        self.inner
-            .inner
-            .cf_handle(DbFacade::STREAMS)
-            .expect("must exist")
-    }
-
     pub fn add(&self, meta: StreamMeta, kind: StreamKind) -> Result<DbStream, DbError> {
         let id = StreamId(self.streams.fetch_add(1, Ordering::SeqCst));
         let connection_id = self.id;
@@ -170,10 +208,11 @@ impl DbGroup {
         };
         self.inner
             .inner
-            .put_cf(self.streams(), id.emit(vec![]), v.emit(vec![]))?;
+            .put_cf(self.inner.streams(), id.emit(vec![]), v.emit(vec![]))?;
 
         Ok(DbStream {
             id,
+            messages: self.messages.clone(),
             inner: self.inner.clone(),
         })
     }
@@ -181,17 +220,11 @@ impl DbGroup {
 
 pub struct DbStream {
     id: StreamId,
-    inner: DbMsg,
+    messages: Arc<AtomicU64>,
+    inner: DbCore,
 }
 
 impl DbStream {
-    fn messages(&self) -> &rocksdb::ColumnFamily {
-        self.inner
-            .inner
-            .cf_handle(DbFacade::MESSAGES)
-            .expect("must exist")
-    }
-
     pub fn add(&self, incoming: bool, timestamp: SystemTime, bytes: &[u8]) -> Result<(), DbError> {
         let mut lock = self.inner.stream_bytes.lock().expect("poisoned");
         let stream_id = self.id;
@@ -213,7 +246,7 @@ impl DbStream {
         lock.offset += bytes.len() as u64;
         drop(lock);
 
-        let id = MessageId(self.inner.messages.fetch_add(1, Ordering::SeqCst));
+        let id = MessageId(self.messages.fetch_add(1, Ordering::SeqCst));
         let v = Message {
             stream_id,
             incoming,
@@ -223,7 +256,7 @@ impl DbStream {
         };
         self.inner
             .inner
-            .put_cf(self.messages(), id.emit(vec![]), v.emit(vec![]))?;
+            .put_cf(self.inner.messages(), id.emit(vec![]), v.emit(vec![]))?;
 
         Ok(())
     }

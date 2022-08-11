@@ -15,6 +15,8 @@ use std::{
 
 use radiation::{Emit, Absorb};
 
+use serde::{Serialize, Deserialize};
+
 #[derive(Debug, Clone)]
 pub struct EventMetadata {
     pub id: ConnectionInfo,
@@ -22,7 +24,7 @@ pub struct EventMetadata {
     pub duration: Duration,
 }
 
-#[derive(Debug, Clone, Emit, Absorb, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Emit, Absorb, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionInfo {
     #[custom_absorb(custom_coding::addr_absorb)]
     #[custom_emit(custom_coding::addr_emit)]

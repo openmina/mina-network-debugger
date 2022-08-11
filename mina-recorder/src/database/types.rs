@@ -2,12 +2,14 @@ use std::{time::SystemTime, fmt};
 
 use radiation::{Absorb, Emit};
 
+use serde::{Serialize, Deserialize};
+
 use crate::{ConnectionInfo, custom_coding};
 
 #[derive(Clone, Copy, Debug, Absorb, Emit, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId(pub u64);
 
-#[derive(Clone, Absorb, Emit)]
+#[derive(Clone, Absorb, Emit, Serialize, Deserialize)]
 pub struct Connection {
     pub info: ConnectionInfo,
     pub incoming: bool,
