@@ -9,10 +9,32 @@ use super::rocksdb::DbCore;
 fn connections(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("v1" / "connections")
+    warp::path!("connections")
         .and(warp::query::query())
         .map(move |filter| -> WithStatus<Json> {
-            let connections = db.fetch_connections(&filter);
+            let connections = db.fetch_connections(&filter, 0, 100);
+            reply::with_status(reply::json(&connections), StatusCode::OK)
+        })
+}
+
+fn streams(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("streams")
+        .and(warp::query::query())
+        .map(move |filter| -> WithStatus<Json> {
+            let connections = db.fetch_streams(&filter, 0, 100);
+            reply::with_status(reply::json(&connections), StatusCode::OK)
+        })
+}
+
+fn messages(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("messages")
+        .and(warp::query::query())
+        .map(move |filter| -> WithStatus<Json> {
+            let connections = db.fetch_messages(&filter, 0, 100);
             reply::with_status(reply::json(&connections), StatusCode::OK)
         })
 }
@@ -44,7 +66,12 @@ pub fn routes(
     use warp::reply::with;
 
     warp::get()
-        .and(connections(db).or(version().or(openapi())))
+        .and(
+            connections(db.clone())
+                .or(streams(db.clone()))
+                .or(messages(db))
+                .or(version().or(openapi())),
+        )
         .with(with::header("Content-Type", "application/json"))
         .with(with::header("Access-Control-Allow-Origin", "*"))
 }

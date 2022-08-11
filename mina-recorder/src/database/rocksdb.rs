@@ -6,8 +6,9 @@ use std::{
         Mutex, Arc,
     },
     collections::BTreeMap,
-    fs::File,
+    fs::{File, self},
     io::{Write, self},
+    os::unix::prelude::FileExt,
 };
 
 use radiation::{AbsorbExt, nom, ParseError, Emit};
@@ -28,6 +29,14 @@ pub enum DbError {
     Inner(rocksdb::Error),
     #[error("{_0}")]
     Parse(nom::Err<ParseError<Vec<u8>>>),
+    #[error("no such stream {_0}")]
+    NoSuchStream(StreamId),
+    #[error("read beyond stream {stream_id} end {border} > {size}")]
+    BeyondStreamEnd {
+        stream_id: StreamId,
+        border: u64,
+        size: u64,
+    },
 }
 
 impl From<io::Error> for DbError {
@@ -91,8 +100,13 @@ impl DbCore {
             .expect("must exist")
     }
 
-    pub fn fetch_connections(&self, filter: &()) -> impl serde::Serialize {
-        let _ = filter;
+    pub fn fetch_connections(
+        &self,
+        filter: &(),
+        cursor: usize,
+        limit: usize,
+    ) -> impl serde::Serialize {
+        let _ = (filter, cursor);
         let it = self
             .inner
             .iterator_cf(self.connections(), rocksdb::IteratorMode::Start);
@@ -109,6 +123,83 @@ impl DbCore {
                 None
             }
         })
+        .take(limit)
+        .collect::<Vec<_>>()
+    }
+
+    pub fn fetch_streams(&self, filter: &(), cursor: usize, limit: usize) -> impl serde::Serialize {
+        let _ = (filter, cursor);
+        let it = self
+            .inner
+            .iterator_cf(self.streams(), rocksdb::IteratorMode::Start);
+        it.filter_map(|item| match item {
+            Ok((_, value)) => match Stream::absorb_ext(&value) {
+                Ok(cn) => Some(cn),
+                Err(err) => {
+                    log::error!("{err}");
+                    None
+                }
+            },
+            Err(err) => {
+                log::error!("{err}");
+                None
+            }
+        })
+        .take(limit)
+        .collect::<Vec<_>>()
+    }
+
+    pub fn read_stream(
+        &self,
+        stream_id: StreamId,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Result<(), DbError> {
+        let lock = self.stream_bytes.lock().expect("poisoned");
+        let bytes = lock
+            .get(&stream_id)
+            .ok_or(DbError::NoSuchStream(stream_id))?
+            .clone();
+        drop(lock);
+
+        let lock = bytes.lock().expect("poisoned");
+        let size = lock.offset;
+        let border = offset + buf.len() as u64;
+        if border > size {
+            return Err(DbError::BeyondStreamEnd {
+                stream_id,
+                border,
+                size,
+            });
+        }
+        lock.file.read_exact_at(buf, offset)?;
+        Ok(())
+    }
+
+    pub fn fetch_messages(
+        &self,
+        filter: &(),
+        cursor: usize,
+        limit: usize,
+    ) -> impl serde::Serialize {
+        let _ = (filter, cursor);
+        let it = self
+            .inner
+            .iterator_cf(self.messages(), rocksdb::IteratorMode::Start);
+        it.filter_map(|item| match item {
+            Ok((_, value)) => match Message::absorb_ext(&value) {
+                Ok(cn) => Some(cn),
+                Err(err) => {
+                    log::error!("{err}");
+                    None
+                }
+            },
+            Err(err) => {
+                log::error!("{err}");
+                None
+            }
+        })
+        .take(limit)
         .collect::<Vec<_>>()
     }
 }
@@ -148,6 +239,13 @@ impl DbFacade {
                 Some(b) => Ok(AtomicU64::new(u64::absorb_ext(&b)?)),
             }
         };
+        fs::create_dir(path.join("streams")).or_else(|e| {
+            if e.kind() == io::ErrorKind::AlreadyExists {
+                Ok(())
+            } else {
+                Err(e)
+            }
+        })?;
 
         Ok(DbFacade {
             cns: get_atomic_counter(0)?,

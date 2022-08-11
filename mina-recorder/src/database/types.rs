@@ -2,14 +2,14 @@ use std::{time::SystemTime, fmt};
 
 use radiation::{Absorb, Emit};
 
-use serde::{Serialize, Deserialize};
+use serde::{Serialize};
 
 use crate::{ConnectionInfo, custom_coding};
 
-#[derive(Clone, Copy, Debug, Absorb, Emit, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId(pub u64);
 
-#[derive(Clone, Absorb, Emit, Serialize, Deserialize)]
+#[derive(Clone, Absorb, Emit, Serialize)]
 pub struct Connection {
     pub info: ConnectionInfo,
     pub incoming: bool,
@@ -19,7 +19,7 @@ pub struct Connection {
 }
 
 /// Positive ids are streams from initiator, negatives are from responder
-#[derive(Clone, Copy, Debug, Absorb, Emit, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StreamId(pub u64);
 
 impl fmt::Display for StreamId {
@@ -30,9 +30,12 @@ impl fmt::Display for StreamId {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename = "snake_case")]
 pub enum StreamKind {
     Unknown = 0xffff,
+    Raw = 0x0000,
+    Handshake = 0x0001,
     Kad = 0x0100,
     IpfsId = 0x0200,
     IpfsPush = 0x0201,
@@ -44,6 +47,8 @@ pub enum StreamKind {
 impl StreamKind {
     pub fn iter() -> impl Iterator<Item = Self> {
         [
+            StreamKind::Raw,
+            StreamKind::Handshake,
             StreamKind::Kad,
             StreamKind::IpfsId,
             StreamKind::IpfsPush,
@@ -55,7 +60,8 @@ impl StreamKind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
+#[serde(rename = "snake_case")]
 pub enum StreamMeta {
     Raw,
     Handshake,
@@ -63,7 +69,7 @@ pub enum StreamMeta {
     Backward(u64),
 }
 
-#[derive(Clone, Absorb, Emit)]
+#[derive(Clone, Absorb, Emit, Serialize)]
 pub struct Stream {
     pub connection_id: ConnectionId,
     #[custom_absorb(custom_coding::stream_meta_absorb)]
@@ -74,10 +80,10 @@ pub struct Stream {
     pub kind: StreamKind,
 }
 
-#[derive(Clone, Copy, Debug, Absorb, Emit, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MessageId(pub u64);
 
-#[derive(Clone, Absorb, Emit)]
+#[derive(Clone, Absorb, Serialize, Emit)]
 pub struct Message {
     pub stream_id: StreamId,
     pub incoming: bool,

@@ -18,7 +18,7 @@ pub fn run_server() -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>) {
     let (tx, rx) = oneshot::channel();
 
     let db = DbFacade::open("target/db").unwrap();
-    let addr = ([127, 0, 0, 1], 8000u16);
+    let addr = ([0, 0, 0, 0], 8000u16);
     let (_, server) =
         warp::serve(server::routes(db.core())).bind_with_graceful_shutdown(addr, async move {
             rx.await.unwrap();
