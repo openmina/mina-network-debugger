@@ -197,29 +197,22 @@ impl DbCore {
             meta,
             kind,
         } = AbsorbExt::absorb_ext(&v)?;
-        let v = self
-            .inner
-            .get_cf(self.connections(), connection_id.emit(vec![]))?
-            .ok_or(DbError::NoSuchConnection(connection_id))?;
-        let Connection {
-            info,
-            incoming,
-            timestamp,
-        } = AbsorbExt::absorb_ext(&v)?;
         let mut buf = vec![0; msg.size as usize];
         self.read_stream(msg.stream_id, msg.offset, &mut buf)?;
         let message = match kind {
             StreamKind::Raw => serde_json::Value::String(hex::encode(&buf)),
+            StreamKind::Kad => {
+                let v = crate::connection::mina_protocol::kademlia::parse(buf);
+                serde_json::to_value(&v).unwrap()
+            }
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
-            cn_timestamp: timestamp,
-            cn_info: info,
-            cn_incoming: incoming,
-            stream_meta: meta,
-            stream_kind: kind,
+            connection_id,
             incoming: msg.incoming,
             timestamp: msg.timestamp,
+            stream_meta: meta,
+            stream_kind: kind,
             message,
         })
     }
@@ -358,6 +351,13 @@ pub struct DbStream {
     id: StreamId,
     messages: Arc<AtomicU64>,
     inner: DbCore,
+}
+
+impl Drop for DbStream {
+    fn drop(&mut self) {
+        let mut lock = self.inner.stream_bytes.lock().expect("poisoned");
+        lock.remove(&self.id);
+    }
 }
 
 impl DbStream {

@@ -1,84 +1,122 @@
-use std::fmt;
-
-use crate::database::{DbStream, StreamMeta, StreamKind};
-
-use super::{HandleData, DirectedId, Cx, Db};
+use serde::Serialize;
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
     include!(concat!(env!("OUT_DIR"), "/kad.pb.rs"));
 }
 
-impl fmt::Display for pb::message::Peer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let addrs = self
-            .addrs
-            .iter()
-            .map(|addr| {
-                let mut acc = String::new();
-                let mut input = addr.as_slice();
-                while !input.is_empty() {
-                    match multiaddr::Protocol::from_bytes(input) {
-                        Ok((p, i)) => {
-                            input = i;
-                            acc = format!("{acc}{p}");
-                        }
-                        Err(err) => {
-                            input = &[];
-                            acc = format!("{acc}{err}");
-                        }
-                    }
-                }
-                acc
-            })
-            .collect::<Vec<_>>();
-        write!(
-            f,
-            "Peer {{ id: {}, addrs: {:?}, connection: {:?} }}",
-            hex::encode(&self.id),
-            addrs,
-            self.connection()
-        )
+pub fn parse(bytes: Vec<u8>) -> impl Serialize {
+    #[derive(Serialize)]
+    pub enum MessageType {
+        PutValue = 0,
+        GetValue = 1,
+        AddProvider = 2,
+        GetProviders = 3,
+        FindNode = 4,
+        Ping = 5,
     }
-}
 
-pub struct RawOutput(pb::Message);
-
-impl fmt::Display for RawOutput {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let print_peers =
-            |peers: &[pb::message::Peer]| peers.iter().map(|p| p.to_string()).collect::<Vec<_>>();
-        f.debug_struct("Message")
-            .field("type", &self.0.r#type())
-            .field("cluster_level_raw", &self.0.cluster_level_raw)
-            .field("key", &hex::encode(&self.0.key))
-            .field("record", &self.0.record)
-            .field("closer_peers", &print_peers(&self.0.closer_peers))
-            .field("provider_peers", &print_peers(&self.0.provider_peers))
-            .finish()
+    #[derive(Serialize)]
+    pub struct Record {
+        key: String,
+        value: String,
+        /// Time the record was received, set by receiver
+        /// Formatted according to <https://datatracker.ietf.org/doc/html/rfc3339>
+        time_received: String,
     }
-}
 
-#[derive(Default)]
-pub struct State {
-    stream: Option<DbStream>,
-}
+    impl From<pb::Record> for Record {
+        fn from(v: pb::Record) -> Self {
+            Record {
+                key: hex::encode(v.key),
+                value: hex::encode(v.value),
+                time_received: v.time_received,
+            }
+        }
+    }
 
-impl HandleData for State {
-    type Output = RawOutput;
+    #[derive(Serialize)]
+    pub enum ConnectionType {
+        /// sender does not have a connection to peer, and no extra information (default)
+        NotConnected = 0,
+        /// sender has a live connection to peer
+        Connected = 1,
+        /// sender recently connected to peer
+        CanConnect = 2,
+        /// sender recently tried to connect to peer repeatedly but failed to connect
+        /// ("try" here is loose, but this should signal "made strong effort, failed")
+        CannotConnect = 3,
+    }
 
-    #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _: &mut Cx, db: &Db) -> Self::Output {
-        use prost::{bytes::Bytes, Message};
+    #[derive(Serialize)]
+    pub struct Peer {
+        id: String,
+        addrs: Vec<String>,
+        connection: ConnectionType,
+    }
 
-        let stream = self.stream.get_or_insert_with(|| {
-            // TODO:
-            db.add(StreamMeta::Forward(0), StreamKind::Meshsub).unwrap()
-        });
-        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
+    impl From<pb::message::Peer> for Peer {
+        fn from(v: pb::message::Peer) -> Self {
+            Peer {
+                id: hex::encode(&v.id),
+                addrs: v
+                    .addrs
+                    .iter()
+                    .map(|addr| {
+                        let mut acc = String::new();
+                        let mut input = addr.as_slice();
+                        while !input.is_empty() {
+                            match multiaddr::Protocol::from_bytes(input) {
+                                Ok((p, i)) => {
+                                    input = i;
+                                    acc = format!("{acc}{p}");
+                                }
+                                Err(err) => {
+                                    input = &[];
+                                    acc = format!("{acc}{err}");
+                                }
+                            }
+                        }
+                        acc
+                    })
+                    .collect(),
+                connection: match v.connection() {
+                    pb::message::ConnectionType::NotConnected => ConnectionType::NotConnected,
+                    pb::message::ConnectionType::Connected => ConnectionType::Connected,
+                    pb::message::ConnectionType::CanConnect => ConnectionType::CanConnect,
+                    pb::message::ConnectionType::CannotConnect => ConnectionType::CannotConnect,
+                },
+            }
+        }
+    }
 
-        let buf = Bytes::from(bytes.to_vec());
-        let msg = <pb::Message as Message>::decode_length_delimited(buf).unwrap();
-        RawOutput(msg)
+    #[derive(Serialize)]
+    pub struct T {
+        ty: MessageType,
+        // TODO: parse further
+        key: String,
+        record: Option<Record>,
+        closer_peers: Vec<Peer>,
+        provider_peers: Vec<Peer>,
+    }
+
+    use prost::{bytes::Bytes, Message};
+
+    let buf = Bytes::from(bytes);
+    let msg = <pb::Message as Message>::decode_length_delimited(buf).unwrap();
+
+    T {
+        ty: match msg.r#type() {
+            pb::message::MessageType::PutValue => MessageType::PutValue,
+            pb::message::MessageType::GetValue => MessageType::GetValue,
+            pb::message::MessageType::AddProvider => MessageType::AddProvider,
+            pb::message::MessageType::GetProviders => MessageType::GetProviders,
+            pb::message::MessageType::FindNode => MessageType::FindNode,
+            pb::message::MessageType::Ping => MessageType::Ping,
+        },
+        key: hex::encode(msg.key),
+        record: msg.record.map(From::from),
+        closer_peers: msg.closer_peers.into_iter().map(From::from).collect(),
+        provider_peers: msg.provider_peers.into_iter().map(From::from).collect(),
     }
 }

@@ -103,13 +103,11 @@ pub struct Message {
 
 #[derive(Serialize)]
 pub struct FullMessage {
-    pub cn_timestamp: SystemTime,
-    pub cn_info: ConnectionInfo,
-    pub cn_incoming: bool,
-    pub stream_meta: StreamMeta,
-    pub stream_kind: StreamKind,
+    pub connection_id: ConnectionId,
     pub incoming: bool,
     pub timestamp: SystemTime,
+    pub stream_meta: StreamMeta,
+    pub stream_kind: StreamKind,
     // dynamic type, the type is depend on `stream_kind`
     pub message: serde_json::Value,
 }

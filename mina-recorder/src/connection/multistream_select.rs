@@ -133,23 +133,3 @@ where
         }
     }
 }
-
-#[cfg(test)]
-#[test]
-fn simple() {
-    let bytes_1 = hex::decode("132f6d756c746973747265616d2f312e302e300a").unwrap();
-    let bytes_2 = hex::decode("132f6d756c746973747265616d2f312e302e300a102f636f64612f6b61642f312e302e300a2c0804122600240801122059458f97a855040a767e890855941fb130dfa3fd5a9c8213bd73d716c2e697e15001").unwrap();
-    let mut state = State::<()>::from((0, false));
-    let mut id = DirectedId::fake();
-    let db_facade = crate::database::DbFacade::open("/tmp/mina_test").unwrap();
-    let db = db_facade
-        .add(id.metadata.id.clone(), id.incoming, id.metadata.time)
-        .unwrap();
-    for item in state.on_data(id.clone(), &mut bytes_2.clone(), &mut Cx::default(), &db) {
-        println!("{item}");
-    }
-    id.incoming = !id.incoming;
-    for item in state.on_data(id, &mut bytes_1.clone(), &mut Cx::default(), &db) {
-        println!("{item}");
-    }
-}

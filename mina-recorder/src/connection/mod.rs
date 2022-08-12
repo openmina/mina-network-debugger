@@ -14,5 +14,4 @@ pub mod pnet;
 pub mod multistream_select;
 pub mod noise;
 pub mod mplex;
-pub mod logger;
 pub mod mina_protocol;
