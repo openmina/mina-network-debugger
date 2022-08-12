@@ -1,8 +1,10 @@
 use std::{fmt, mem};
 
-use super::{HandleData, DynamicProtocol, Cx};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
 
 pub struct State<Inner> {
+    stream_id: u64,
+    stream_forward: bool,
     incoming: Option<String>,
     outgoing: Option<String>,
     accumulator_incoming: Vec<u8>,
@@ -10,9 +12,11 @@ pub struct State<Inner> {
     inner: Option<Inner>,
 }
 
-impl<Inner> Default for State<Inner> {
-    fn default() -> Self {
+impl<Inner> From<(u64, bool)> for State<Inner> {
+    fn from((stream_id, stream_forward): (u64, bool)) -> Self {
         State {
+            stream_id,
+            stream_forward,
             incoming: None,
             outgoing: None,
             accumulator_incoming: vec![],
@@ -82,20 +86,22 @@ where
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
-        let (accumulator, done) = if incoming {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
+        let (accumulator, done) = if id.incoming {
             (&mut self.accumulator_incoming, &mut self.incoming)
         } else {
             (&mut self.accumulator_outgoing, &mut self.outgoing)
         };
         if let Some(protocol) = done {
-            let inner = self.inner.get_or_insert_with(|| Inner::from_name(protocol));
+            let inner = self.inner.get_or_insert_with(|| {
+                Inner::from_name(protocol, self.stream_id, self.stream_forward)
+            });
             let inner_out = if accumulator.is_empty() {
-                inner.on_data(incoming, bytes, cx)
+                inner.on_data(id, bytes, cx, db)
             } else {
                 let mut total = mem::take(accumulator);
                 total.extend_from_slice(bytes);
-                inner.on_data(incoming, &mut total, cx)
+                inner.on_data(id, &mut total, cx, db)
             };
             Output::Inner(protocol.clone(), inner_out.into_iter())
         } else {
@@ -114,7 +120,7 @@ where
                     *done = Some(s.to_string());
                     break;
                 } else {
-                    log::error!("incoming: {incoming} unparsed {}", hex::encode(msg));
+                    log::error!("incoming: {} unparsed {}", id, hex::encode(msg));
                     *done = Some("ERROR".to_string());
                     break;
                 }
@@ -133,11 +139,17 @@ where
 fn simple() {
     let bytes_1 = hex::decode("132f6d756c746973747265616d2f312e302e300a").unwrap();
     let bytes_2 = hex::decode("132f6d756c746973747265616d2f312e302e300a102f636f64612f6b61642f312e302e300a2c0804122600240801122059458f97a855040a767e890855941fb130dfa3fd5a9c8213bd73d716c2e697e15001").unwrap();
-    let mut state = State::<()>::default();
-    for item in state.on_data(true, &mut bytes_2.clone(), &mut Cx::default()) {
+    let mut state = State::<()>::from((0, false));
+    let mut id = DirectedId::fake();
+    let db_facade = crate::database::DbFacade::open("/tmp/mina_test").unwrap();
+    let db = db_facade
+        .add(id.metadata.id.clone(), id.incoming, id.metadata.time)
+        .unwrap();
+    for item in state.on_data(id.clone(), &mut bytes_2.clone(), &mut Cx::default(), &db) {
         println!("{item}");
     }
-    for item in state.on_data(false, &mut bytes_1.clone(), &mut Cx::default()) {
+    id.incoming = !id.incoming;
+    for item in state.on_data(id, &mut bytes_1.clone(), &mut Cx::default(), &db) {
         println!("{item}");
     }
 }

@@ -1,11 +1,9 @@
 use std::fmt;
 
-use super::{HandleData, DynamicProtocol, Cx};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
 
 impl DynamicProtocol for () {
-    fn from_name(name: &str) -> Self {
-        let _ = name;
-    }
+    fn from_name(_: &str, _: u64, _: bool) -> Self {}
 }
 
 pub struct Output(Option<String>);
@@ -28,7 +26,7 @@ impl HandleData for () {
     type Output = Output;
 
     #[inline(never)]
-    fn on_data(&mut self, _incoming: bool, bytes: &mut [u8], _cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, _: DirectedId, bytes: &mut [u8], _: &mut Cx, _: &Db) -> Self::Output {
         Output(Some(format!(
             "({} \"{}\")",
             bytes.len(),

@@ -9,6 +9,13 @@ use crate::{ConnectionInfo, custom_coding};
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId(pub u64);
 
+impl fmt::Display for ConnectionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ConnectionId(id) = self;
+        write!(f, "connection{id:08x}")
+    }
+}
+
 #[derive(Clone, Absorb, Emit, Serialize)]
 pub struct Connection {
     pub info: ConnectionInfo,
@@ -30,7 +37,7 @@ impl fmt::Display for StreamId {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename = "snake_case")]
 pub enum StreamKind {
     Unknown = 0xffff,
@@ -92,4 +99,17 @@ pub struct Message {
     pub timestamp: SystemTime,
     pub offset: u64,
     pub size: u32,
+}
+
+#[derive(Serialize)]
+pub struct FullMessage {
+    pub cn_timestamp: SystemTime,
+    pub cn_info: ConnectionInfo,
+    pub cn_incoming: bool,
+    pub stream_meta: StreamMeta,
+    pub stream_kind: StreamKind,
+    pub incoming: bool,
+    pub timestamp: SystemTime,
+    // dynamic type, the type is depend on `stream_kind`
+    pub message: serde_json::Value,
 }

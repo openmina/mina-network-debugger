@@ -12,7 +12,9 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use super::{HandleData, DynamicProtocol, Cx};
+use crate::database::{DbStream, StreamMeta, StreamKind};
+
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
 
 type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
@@ -28,7 +30,7 @@ impl<Inner> DynamicProtocol for ChunkState<Inner>
 where
     Inner: Default,
 {
-    fn from_name(name: &str) -> Self {
+    fn from_name(name: &str, _: u64, _: bool) -> Self {
         assert_eq!(name, "/noise");
         Self::default()
     }
@@ -77,11 +79,11 @@ where
     type Output = ChunkOutput<Flatten<<Vec<Inner::Output> as IntoIterator>::IntoIter>>;
 
     #[inline(never)]
-    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
-                let inner_out = self.inner.on_data(incoming, bytes, cx);
+                let inner_out = self.inner.on_data(id, bytes, cx, db);
                 return ChunkOutput::Inner(vec![inner_out].into_iter().flatten());
             }
         }
@@ -93,7 +95,7 @@ where
                 let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
                 if self.accumulator.len() >= 2 + len {
                     let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
-                    let inner_out = self.inner.on_data(incoming, chunk, cx);
+                    let inner_out = self.inner.on_data(id.clone(), chunk, cx, db);
                     inner_outs.push(inner_out);
                     self.accumulator = remaining.to_vec();
                     continue;
@@ -110,12 +112,27 @@ where
     }
 }
 
-#[derive(Default)]
 pub struct NoiseState<Inner> {
     machine: Option<St>,
+    stream: Option<DbStream>,
     initiator_is_incoming: bool,
     error: bool,
     inner: Inner,
+}
+
+impl<Inner> Default for NoiseState<Inner>
+where
+    Inner: From<(u64, bool)>,
+{
+    fn default() -> Self {
+        NoiseState {
+            machine: None,
+            stream: None,
+            initiator_is_incoming: false,
+            error: false,
+            inner: Inner::from((0, false)),
+        }
+    }
 }
 
 pub enum NoiseOutput<Inner> {
@@ -185,7 +202,7 @@ where
     type Output = NoiseOutput<<Inner::Output as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
         enum Msg {
             First,
             Second,
@@ -200,22 +217,29 @@ where
             Some(_) => Msg::Other,
         };
         if !self.error {
-            match self.on_data_(incoming, bytes, cx) {
+            match self.on_data_(id.incoming, bytes, cx) {
                 Some(bytes) => match msg {
                     Msg::First => NoiseOutput::FirstMessage,
-                    Msg::Second => NoiseOutput::HandshakePayload(bytes.to_vec()),
-                    Msg::Third => NoiseOutput::HandshakePayload(bytes.to_vec()),
+                    Msg::Second => {
+                        let stream = self.stream.get_or_insert_with(|| {
+                            db.add(StreamMeta::Handshake, StreamKind::Handshake)
+                                .unwrap()
+                        });
+                        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
+                        NoiseOutput::HandshakePayload(bytes.to_vec())
+                    }
+                    Msg::Third => {
+                        let stream = self.stream.as_ref().unwrap();
+                        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
+                        NoiseOutput::HandshakePayload(bytes.to_vec())
+                    }
                     Msg::Other => {
-                        NoiseOutput::Inner(self.inner.on_data(incoming, bytes, cx).into_iter())
+                        NoiseOutput::Inner(self.inner.on_data(id, bytes, cx, db).into_iter())
                     }
                 },
-                None => {
-                    // Raw.on_data(id, bytes, cx);
-                    NoiseOutput::CannotDecrypt(bytes.to_vec())
-                }
+                None => NoiseOutput::CannotDecrypt(bytes.to_vec()),
             }
         } else {
-            // Raw.on_data(id, bytes, cx);
             NoiseOutput::CannotDecrypt(bytes.to_vec())
         }
     }
@@ -379,7 +403,7 @@ impl<Inner> NoiseState<Inner> {
 #[test]
 #[rustfmt::skip]
 fn noise() {
-    let mut noise = NoiseState::<()>::default();
+    let mut noise = NoiseState::<super::multistream_select::State<()>>::default();
     let mut cx = Cx::default();
     cx.push_randomness(hex::decode("d1f3bca173136dd555dd97262336ce644a76ec31d521d2befe87caec8678c1a7").unwrap().try_into().unwrap());
     cx.push_randomness(hex::decode("1c283e25c80f64f2806d9e19da1a393873d40bdf3d903a3776e013c4fdd97cb3").unwrap().try_into().unwrap());

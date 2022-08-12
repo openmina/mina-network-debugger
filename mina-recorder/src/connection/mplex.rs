@@ -2,21 +2,20 @@ use std::{fmt, collections::BTreeMap, mem, iter::Flatten, ops::Range};
 
 use unsigned_varint::decode;
 
-use super::{HandleData, DynamicProtocol, Cx};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
 
-#[derive(Default)]
 pub struct State<Inner> {
     accumulating: Vec<u8>,
     inners: BTreeMap<StreamId, Inner>,
 }
 
-impl<Inner> DynamicProtocol for State<Inner>
-where
-    Inner: Default,
-{
-    fn from_name(name: &str) -> Self {
+impl<Inner> DynamicProtocol for State<Inner> {
+    fn from_name(name: &str, _: u64, _: bool) -> Self {
         assert_eq!(name, "/coda/mplex/1.0.0");
-        Self::default()
+        State {
+            accumulating: Vec::default(),
+            inners: BTreeMap::default(),
+        }
     }
 }
 
@@ -134,13 +133,14 @@ impl Header {
 
 impl<Inner> State<Inner>
 where
-    Inner: HandleData + Default,
+    Inner: HandleData + From<(u64, bool)>,
     Inner::Output: IntoIterator,
 {
     fn out(
         &mut self,
-        incoming: bool,
+        id: DirectedId,
         cx: &mut Cx,
+        db: &Db,
         header: Header,
         range: Range<usize>,
     ) -> Output<<Inner::Output as IntoIterator>::IntoIter> {
@@ -156,8 +156,8 @@ where
                 let inner = self
                     .inners
                     .entry(stream_id)
-                    .or_default()
-                    .on_data(incoming, bytes, cx)
+                    .or_insert_with(|| Inner::from((stream_id.i, stream_id.initiator_is_incoming)))
+                    .on_data(id, bytes, cx, db)
                     .into_iter();
                 Body::Message { initiator, inner }
             }
@@ -176,19 +176,19 @@ where
 
 impl<Inner> HandleData for State<Inner>
 where
-    Inner: HandleData + Default,
+    Inner: HandleData + From<(u64, bool)>,
     Inner::Output: IntoIterator,
 {
     type Output =
         Flatten<<Vec<Output<<Inner::Output as IntoIterator>::IntoIter>> as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
         self.accumulating.extend_from_slice(bytes);
 
         let (header, len, offset) = {
             let (v, remaining) = decode::u64(&self.accumulating).unwrap();
-            let header = Header::new(v, incoming);
+            let header = Header::new(v, id.incoming);
 
             let (len, remaining) = decode::usize(remaining).unwrap();
             let offset = remaining.as_ptr() as usize - self.accumulating.as_ptr() as usize;
@@ -198,7 +198,7 @@ where
         #[allow(clippy::comparison_chain)]
         if offset + len == self.accumulating.len() {
             // good case, we have all data in one chunk
-            let out = self.out(incoming, cx, header, offset..(len + offset));
+            let out = self.out(id, cx, db, header, offset..(len + offset));
             self.accumulating.clear();
             vec![out].into_iter().flatten()
         } else if offset + len > self.accumulating.len() {

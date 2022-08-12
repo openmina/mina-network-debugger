@@ -6,14 +6,32 @@ use salsa20::{
     XSalsa20,
 };
 
-use super::{HandleData, Cx};
+use crate::database::DbStream;
 
-#[derive(Default)]
+use super::{HandleData, DirectedId, Cx, Db};
+
 pub struct State<Inner> {
     cipher_in: Option<XSalsa20>,
     cipher_out: Option<XSalsa20>,
+    // TODO: raw stream in separate cf
+    _stream: Option<DbStream>,
     skip: bool,
     inner: Inner,
+}
+
+impl<Inner> Default for State<Inner>
+where
+    Inner: From<(u64, bool)>,
+{
+    fn default() -> Self {
+        State {
+            cipher_in: None,
+            cipher_out: None,
+            _stream: None,
+            skip: false,
+            inner: Inner::from((0, false)),
+        }
+    }
 }
 
 impl<Inner> State<Inner> {
@@ -83,19 +101,20 @@ where
     type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
 
     #[inline(never)]
-    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
         if self.skip {
             return Output::Nothing;
         }
 
-        let cipher = if incoming {
+        let cipher = if id.incoming {
             &mut self.cipher_in
         } else {
             &mut self.cipher_out
         };
         if let Some(cipher) = cipher {
+            // self.stream.as_ref().unwrap().add(id.incoming, id.metadata.time, bytes).unwrap();
             cipher.apply_keystream(bytes);
-            let inner_out = self.inner.on_data(incoming, bytes, cx);
+            let inner_out = self.inner.on_data(id, bytes, cx, db);
             Output::Inner(inner_out.into_iter())
         } else if bytes.len() != 24 {
             self.skip = true;
@@ -103,6 +122,7 @@ where
         } else {
             let key = Self::shared_secret();
             *cipher = Some(XSalsa20::new(&key, GenericArray::from_slice(bytes)));
+            // self.stream = Some(db.add(StreamMeta::Raw, StreamKind::Raw).unwrap());
             Output::HaveNonce
         }
     }

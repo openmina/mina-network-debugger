@@ -1,6 +1,8 @@
 use std::fmt;
 
-use super::{HandleData, Cx};
+use crate::database::{DbStream, StreamMeta, StreamKind};
+
+use super::{HandleData, DirectedId, Cx, Db};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
@@ -58,16 +60,22 @@ impl fmt::Display for RawOutput {
 }
 
 #[derive(Default)]
-pub struct State {}
+pub struct State {
+    stream: Option<DbStream>,
+}
 
 impl HandleData for State {
     type Output = RawOutput;
 
     #[inline(never)]
-    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _: &mut Cx, db: &Db) -> Self::Output {
         use prost::{bytes::Bytes, Message};
 
-        let _ = (incoming, cx);
+        let stream = self.stream.get_or_insert_with(|| {
+            // TODO:
+            db.add(StreamMeta::Forward(0), StreamKind::Meshsub).unwrap()
+        });
+        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
 
         let buf = Bytes::from(bytes.to_vec());
         let msg = <pb::Message as Message>::decode_length_delimited(buf).unwrap();

@@ -19,6 +19,7 @@ use crate::ConnectionInfo;
 
 use super::types::{
     Connection, ConnectionId, Stream, StreamId, Message, MessageId, StreamMeta, StreamKind,
+    FullMessage,
 };
 
 #[derive(Debug, Error)]
@@ -31,6 +32,8 @@ pub enum DbError {
     Parse(nom::Err<ParseError<Vec<u8>>>),
     #[error("no such stream {_0}")]
     NoSuchStream(StreamId),
+    #[error("no such connection {_0}")]
+    NoSuchConnection(ConnectionId),
     #[error("read beyond stream {stream_id} end {border} > {size}")]
     BeyondStreamEnd {
         stream_id: StreamId,
@@ -67,10 +70,13 @@ impl StreamBytes {
     where
         P: AsRef<Path>,
     {
-        Ok(Arc::new(Mutex::new(StreamBytes {
-            offset: 0,
-            file: File::create(path)?,
-        })))
+        let file = File::options()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(path)?;
+        let offset = file.metadata()?.len();
+        Ok(Arc::new(Mutex::new(StreamBytes { offset, file })))
     }
 }
 
@@ -100,53 +106,42 @@ impl DbCore {
             .expect("must exist")
     }
 
+    #[allow(clippy::type_complexity)]
+    fn decode<T>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<T>
+    where
+        T: for<'pa> AbsorbExt<'pa>,
+    {
+        match item {
+            Ok((_, value)) => match T::absorb_ext(&value) {
+                Ok(v) => Some(v),
+                Err(err) => {
+                    log::error!("{err}");
+                    None
+                }
+            },
+            Err(err) => {
+                log::error!("{err}");
+                None
+            }
+        }
+    }
+
     pub fn fetch_connections(
         &self,
         filter: &(),
-        cursor: usize,
-        limit: usize,
-    ) -> impl serde::Serialize {
+        cursor: u64,
+    ) -> impl Iterator<Item = Connection> + '_ {
         let _ = (filter, cursor);
-        let it = self
-            .inner
-            .iterator_cf(self.connections(), rocksdb::IteratorMode::Start);
-        it.filter_map(|item| match item {
-            Ok((_, value)) => match Connection::absorb_ext(&value) {
-                Ok(cn) => Some(cn),
-                Err(err) => {
-                    log::error!("{err}");
-                    None
-                }
-            },
-            Err(err) => {
-                log::error!("{err}");
-                None
-            }
-        })
-        .take(limit)
-        .collect::<Vec<_>>()
+        self.inner
+            .iterator_cf(self.connections(), rocksdb::IteratorMode::Start)
+            .filter_map(Self::decode)
     }
 
-    pub fn fetch_streams(&self, filter: &(), cursor: usize, limit: usize) -> impl serde::Serialize {
+    pub fn fetch_streams(&self, filter: &(), cursor: u64) -> impl Iterator<Item = Stream> + '_ {
         let _ = (filter, cursor);
-        let it = self
-            .inner
-            .iterator_cf(self.streams(), rocksdb::IteratorMode::Start);
-        it.filter_map(|item| match item {
-            Ok((_, value)) => match Stream::absorb_ext(&value) {
-                Ok(cn) => Some(cn),
-                Err(err) => {
-                    log::error!("{err}");
-                    None
-                }
-            },
-            Err(err) => {
-                log::error!("{err}");
-                None
-            }
-        })
-        .take(limit)
-        .collect::<Vec<_>>()
+        self.inner
+            .iterator_cf(self.streams(), rocksdb::IteratorMode::Start)
+            .filter_map(Self::decode)
     }
 
     pub fn read_stream(
@@ -155,14 +150,21 @@ impl DbCore {
         offset: u64,
         buf: &mut [u8],
     ) -> Result<(), DbError> {
-        let lock = self.stream_bytes.lock().expect("poisoned");
-        let bytes = lock
-            .get(&stream_id)
-            .ok_or(DbError::NoSuchStream(stream_id))?
-            .clone();
+        let mut lock = self.stream_bytes.lock().expect("poisoned");
+        let sb = lock.get(&stream_id).cloned();
+        let sb = match sb {
+            None => {
+                let path = self.path.join("streams").join(stream_id.to_string());
+                let sb = StreamBytes::new(path)?;
+                lock.insert(stream_id, sb.clone());
+                sb
+            }
+            Some(sb) => sb,
+        };
+
         drop(lock);
 
-        let lock = bytes.lock().expect("poisoned");
+        let lock = sb.lock().expect("poisoned");
         let size = lock.offset;
         let border = offset + buf.len() as u64;
         if border > size {
@@ -172,35 +174,71 @@ impl DbCore {
                 size,
             });
         }
-        lock.file.read_exact_at(buf, offset)?;
+        lock.file.read_exact_at(buf, offset).unwrap();
         Ok(())
     }
 
-    pub fn fetch_messages(
-        &self,
-        filter: &(),
-        cursor: usize,
-        limit: usize,
-    ) -> impl serde::Serialize {
+    pub fn fetch_messages(&self, filter: &(), cursor: u64) -> impl Iterator<Item = Message> + '_ {
         let _ = (filter, cursor);
-        let it = self
+        let cursor = cursor.to_be_bytes();
+        let mode = rocksdb::IteratorMode::From(&cursor, rocksdb::Direction::Forward);
+        self.inner
+            .iterator_cf(self.messages(), mode)
+            .filter_map(Self::decode)
+    }
+
+    pub fn fetch_details(&self, msg: Message) -> Result<FullMessage, DbError> {
+        let v = self
             .inner
-            .iterator_cf(self.messages(), rocksdb::IteratorMode::Start);
-        it.filter_map(|item| match item {
-            Ok((_, value)) => match Message::absorb_ext(&value) {
-                Ok(cn) => Some(cn),
+            .get_cf(self.streams(), msg.stream_id.emit(vec![]))?
+            .ok_or(DbError::NoSuchStream(msg.stream_id))?;
+        let Stream {
+            connection_id,
+            meta,
+            kind,
+        } = AbsorbExt::absorb_ext(&v)?;
+        let v = self
+            .inner
+            .get_cf(self.connections(), connection_id.emit(vec![]))?
+            .ok_or(DbError::NoSuchConnection(connection_id))?;
+        let Connection {
+            info,
+            incoming,
+            timestamp,
+        } = AbsorbExt::absorb_ext(&v)?;
+        let mut buf = vec![0; msg.size as usize];
+        self.read_stream(msg.stream_id, msg.offset, &mut buf)?;
+        let message = match kind {
+            StreamKind::Raw => serde_json::Value::String(hex::encode(&buf)),
+            _ => serde_json::Value::String(hex::encode(&buf)),
+        };
+        Ok(FullMessage {
+            cn_timestamp: timestamp,
+            cn_info: info,
+            cn_incoming: incoming,
+            stream_meta: meta,
+            stream_kind: kind,
+            incoming: msg.incoming,
+            timestamp: msg.timestamp,
+            message,
+        })
+    }
+
+    pub fn fetch_full(&self, filter: &(), cursor: u64) -> impl Iterator<Item = FullMessage> + '_ {
+        self.fetch_messages(filter, cursor)
+            .filter_map(|msg| match self.fetch_details(msg) {
+                Ok(v) => {
+                    if v.stream_kind == StreamKind::Handshake {
+                        None
+                    } else {
+                        Some(v)
+                    }
+                }
                 Err(err) => {
                     log::error!("{err}");
                     None
                 }
-            },
-            Err(err) => {
-                log::error!("{err}");
-                None
-            }
-        })
-        .take(limit)
-        .collect::<Vec<_>>()
+            })
     }
 }
 

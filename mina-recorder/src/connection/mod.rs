@@ -1,13 +1,13 @@
-use super::recorder::Cx;
+use super::{recorder::Cx, DirectedId, database::DbGroup as Db};
 
 pub trait DynamicProtocol {
-    fn from_name(name: &str) -> Self;
+    fn from_name(name: &str, id: u64, forward: bool) -> Self;
 }
 
 pub trait HandleData {
     type Output;
 
-    fn on_data(&mut self, incoming: bool, bytes: &mut [u8], cx: &mut Cx) -> Self::Output;
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output;
 }
 
 pub mod pnet;
