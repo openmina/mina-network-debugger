@@ -1,105 +1,69 @@
-use std::fmt;
-
 use mina_serialization_types::v1::ExternalTransitionV1;
 use bin_prot::encodable::BinProtEncodable;
-
-use crate::database::{DbStream, StreamMeta, StreamKind};
-
-use super::{HandleData, DirectedId, Cx, Db};
+use serde::Serialize;
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
     include!(concat!(env!("OUT_DIR"), "/gossipsub.pb.rs"));
 }
 
-pub enum Msg {
-    Transition(Box<ExternalTransitionV1>),
-    TransactionsPoolDiff(Vec<u8>),
-    SnarkPoolDiff(Vec<u8>),
-    Unrecognized(u8, Vec<u8>),
-}
+pub fn parse(bytes: Vec<u8>) -> impl Serialize {
+    #[derive(Serialize)]
+    pub enum Event {
+        Subscribe(String),
+        Unsubscribe(String),
+        Publish { topic: String, msg: Msg },
+        Control,
+    }
 
-impl fmt::Display for Msg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Msg::Transition(v) => write!(f, "Transition({v:?})"),
-            Msg::TransactionsPoolDiff(v) => write!(f, "TransactionsPoolDiff({})", hex::encode(v)),
-            Msg::SnarkPoolDiff(v) => write!(f, "SnarkPoolDiff({})", hex::encode(v)),
-            Msg::Unrecognized(tag, v) => write!(f, "Tag{tag}({})", hex::encode(v)),
+    #[derive(Serialize)]
+    pub enum Msg {
+        Transition(Box<ExternalTransitionV1>),
+        TransactionsPoolDiff(String),
+        SnarkPoolDiff(String),
+        Unrecognized { tag: u8, hex: String },
+    }
+
+    use prost::{bytes::Bytes, Message};
+
+    let buf = Bytes::from(bytes.to_vec());
+    let pb::Rpc {
+        subscriptions,
+        publish,
+        control,
+    } = Message::decode_length_delimited(buf).unwrap();
+    let subscriptions = subscriptions.into_iter().map(|v| {
+        let subscribe = v.subscribe();
+        let topic = v.topic_id.unwrap_or_default();
+        if subscribe {
+            Event::Subscribe(topic)
+        } else {
+            Event::Unsubscribe(topic)
         }
-    }
-}
-
-pub enum Event {
-    Subscribe(String),
-    Unsubscribe(String),
-    Publish { topic: String, msg: Msg },
-    Control,
-}
-
-impl fmt::Display for Event {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Event::Subscribe(topic) => write!(f, "subscribe {topic}"),
-            Event::Unsubscribe(topic) => write!(f, "unsubscribe {topic}"),
-            Event::Publish { topic, msg } => write!(f, "publish {topic} {msg}"),
-            Event::Control => write!(f, "control message, unimplemented"),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct State {
-    stream: Option<DbStream>,
-}
-
-impl HandleData for State {
-    type Output = Vec<Event>;
-
-    #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _: &mut Cx, db: &Db) -> Self::Output {
-        use prost::{bytes::Bytes, Message};
-
-        let stream = self.stream.get_or_insert_with(|| {
-            // TODO:
-            db.add(StreamMeta::Forward(0), StreamKind::Meshsub).unwrap()
+    });
+    let publish = publish
+        .into_iter()
+        .filter_map(|msg| msg.data.map(|d| (d, msg.topic)))
+        .map(|(data, topic)| {
+            let msg = match data[8] {
+                0 => {
+                    let v = ExternalTransitionV1::try_decode_binprot(&data[9..]).unwrap();
+                    Msg::Transition(Box::new(v))
+                }
+                1 => Msg::TransactionsPoolDiff(hex::encode(&data[9..])),
+                2 => Msg::SnarkPoolDiff(hex::encode(&data[9..])),
+                tag => Msg::Unrecognized {
+                    tag,
+                    hex: hex::encode(&data[9..]),
+                },
+            };
+            Event::Publish { topic, msg }
         });
-        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
-
-        let buf = Bytes::from(bytes.to_vec());
-        let pb::Rpc {
-            subscriptions,
-            publish,
-            control,
-        } = Message::decode_length_delimited(buf).unwrap();
-
-        let subscriptions = subscriptions.into_iter().map(|v| {
-            let subscribe = v.subscribe();
-            let topic = v.topic_id.unwrap_or_default();
-            if subscribe {
-                Event::Subscribe(topic)
-            } else {
-                Event::Unsubscribe(topic)
-            }
-        });
-        let publish = publish
-            .into_iter()
-            .filter_map(|msg| msg.data.map(|d| (d, msg.topic)))
-            .map(|(data, topic)| {
-                let msg = match data[8] {
-                    0 => {
-                        let v = ExternalTransitionV1::try_decode_binprot(&data[9..]).unwrap();
-                        Msg::Transition(Box::new(v))
-                    }
-                    1 => Msg::TransactionsPoolDiff(data[9..].to_vec()),
-                    2 => Msg::SnarkPoolDiff(data[9..].to_vec()),
-                    tag => Msg::Unrecognized(tag, data[9..].to_vec()),
-                };
-                Event::Publish { topic, msg }
-            });
-        let control = control.into_iter().map(|_c| Event::Control);
-        subscriptions.chain(publish).chain(control).collect()
-    }
+    let control = control.into_iter().map(|_c| Event::Control);
+    subscriptions
+        .chain(publish)
+        .chain(control)
+        .collect::<Vec<_>>()
 }
 
 #[cfg(test)]

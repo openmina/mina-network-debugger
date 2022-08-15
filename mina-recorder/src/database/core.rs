@@ -327,6 +327,10 @@ impl DbCore {
                 let v = crate::connection::mina_protocol::kademlia::parse(buf);
                 serde_json::to_value(&v).unwrap()
             }
+            StreamKind::Meshsub => {
+                let v = crate::connection::mina_protocol::meshsub::parse(buf);
+                serde_json::to_value(&v).unwrap()
+            }
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
@@ -370,13 +374,7 @@ impl DbCore {
             .iterator_cf(self.messages(), mode)
             .filter_map(Self::decode)
             .filter_map(|(key, msg)| match self.fetch_details(msg) {
-                Ok(v) => {
-                    if v.stream_kind == StreamKind::Handshake {
-                        None
-                    } else {
-                        Some((key, v))
-                    }
-                }
+                Ok(v) => Some((key, v)),
                 Err(err) => {
                     log::error!("{err}");
                     None
