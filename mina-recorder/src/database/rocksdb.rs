@@ -1,8 +1,9 @@
 use std::{
     path::{PathBuf, Path},
     time::{Duration, SystemTime},
+    cmp::Ordering,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering::SeqCst},
         Mutex, Arc,
     },
     collections::BTreeMap,
@@ -10,6 +11,8 @@ use std::{
     io::{Write, self},
     os::unix::prelude::FileExt,
 };
+
+use serde::Deserialize;
 
 use radiation::{AbsorbExt, nom, ParseError, Emit};
 
@@ -40,6 +43,8 @@ pub enum DbError {
         border: u64,
         size: u64,
     },
+    #[error("no item at cursor {_0}")]
+    NoItemAtCursor(u64),
 }
 
 impl From<io::Error> for DbError {
@@ -89,6 +94,20 @@ pub struct DbCore {
     inner: Arc<rocksdb::DB>,
 }
 
+#[derive(Deserialize)]
+pub struct Params {
+    // the start of the list, either number of record ...
+    cursor: Option<u64>,
+    // ... or timestamp
+    timestamp: Option<u64>,
+    // wether go forward or backward
+    reverse: Option<bool>,
+    // how many records to read
+    limit: Option<u64>,
+    // what streams to read, comma separated
+    // streams: Option<String>,
+}
+
 impl DbCore {
     fn connections(&self) -> &rocksdb::ColumnFamily {
         self.inner
@@ -107,15 +126,19 @@ impl DbCore {
     }
 
     #[allow(clippy::type_complexity)]
-    fn decode<T>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<T>
+    fn decode<T>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<(u64, T)>
     where
         T: for<'pa> AbsorbExt<'pa>,
     {
         match item {
-            Ok((_, value)) => match T::absorb_ext(&value) {
-                Ok(v) => Some(v),
-                Err(err) => {
-                    log::error!("{err}");
+            Ok((key, value)) => match (u64::absorb_ext(&key), T::absorb_ext(&value)) {
+                (Ok(key), Ok(v)) => Some((key, v)),
+                (Ok(key), Err(err)) => {
+                    log::error!("key {key}, err: {err}");
+                    None
+                }
+                (Err(err), _) => {
+                    log::error!("key is unknown, err: {err}");
                     None
                 }
             },
@@ -126,22 +149,70 @@ impl DbCore {
         }
     }
 
+    fn search_timestamp<T>(
+        &self,
+        cf: &rocksdb::ColumnFamily,
+        total: u64,
+        timestamp: u64,
+    ) -> Result<u64, DbError>
+    where
+        T: for<'pa> AbsorbExt<'pa> + AsRef<SystemTime>,
+    {
+        if total == 0 {
+            return Err(DbError::NoItemAtCursor(0));
+        }
+        let mut pos = total / 2;
+        let mut r = pos;
+        while r > 0 {
+            let v = self
+                .inner
+                .get_cf(cf, pos.to_be_bytes())?
+                .ok_or(DbError::NoItemAtCursor(pos))?;
+            let v = T::absorb_ext(&v)?;
+            let this_timestamp = v
+                .as_ref()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("after unix epoch")
+                .as_secs();
+
+            r /= 2;
+            match this_timestamp.cmp(&timestamp) {
+                Ordering::Less => pos += r,
+                Ordering::Equal => r = 0,
+                Ordering::Greater => pos -= r,
+            }
+        }
+        Ok(pos)
+    }
+
+    fn total(&self, d: u8) -> Result<u64, DbError> {
+        match self.inner.get([d])? {
+            None => Ok(0),
+            Some(b) => Ok(u64::absorb_ext(&b)?),
+        }
+    }
+
+    fn set_total(&self, d: u8, v: u64) -> Result<(), DbError> {
+        Ok(self.inner.put([d], v.emit(vec![]))?)
+    }
+
     pub fn fetch_connections(
         &self,
-        filter: &(),
-        cursor: u64,
-    ) -> impl Iterator<Item = Connection> + '_ {
-        let _ = (filter, cursor);
+        filter: &Params,
+    ) -> impl Iterator<Item = (u64, Connection)> + '_ {
+        let _ = filter;
         self.inner
             .iterator_cf(self.connections(), rocksdb::IteratorMode::Start)
             .filter_map(Self::decode)
+            .take(filter.limit.unwrap_or(1000) as usize)
     }
 
-    pub fn fetch_streams(&self, filter: &(), cursor: u64) -> impl Iterator<Item = Stream> + '_ {
-        let _ = (filter, cursor);
+    pub fn fetch_streams(&self, filter: &Params) -> impl Iterator<Item = (u64, Stream)> + '_ {
+        let _ = filter;
         self.inner
             .iterator_cf(self.streams(), rocksdb::IteratorMode::Start)
             .filter_map(Self::decode)
+            .take(filter.limit.unwrap_or(1000) as usize)
     }
 
     pub fn read_stream(
@@ -178,15 +249,6 @@ impl DbCore {
         Ok(())
     }
 
-    pub fn fetch_messages(&self, filter: &(), cursor: u64) -> impl Iterator<Item = Message> + '_ {
-        let _ = (filter, cursor);
-        let cursor = cursor.to_be_bytes();
-        let mode = rocksdb::IteratorMode::From(&cursor, rocksdb::Direction::Forward);
-        self.inner
-            .iterator_cf(self.messages(), mode)
-            .filter_map(Self::decode)
-    }
-
     pub fn fetch_details(&self, msg: Message) -> Result<FullMessage, DbError> {
         let v = self
             .inner
@@ -217,14 +279,41 @@ impl DbCore {
         })
     }
 
-    pub fn fetch_full(&self, filter: &(), cursor: u64) -> impl Iterator<Item = FullMessage> + '_ {
-        self.fetch_messages(filter, cursor)
-            .filter_map(|msg| match self.fetch_details(msg) {
+    pub fn fetch_messages(&self, filter: &Params) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
+        let reverse = filter.reverse.unwrap_or(false);
+        let direction = if reverse {
+            rocksdb::Direction::Reverse
+        } else {
+            rocksdb::Direction::Forward
+        };
+        let mut cursor = filter.cursor.unwrap_or(0).to_be_bytes();
+        let mode = match (reverse, filter.timestamp, filter.cursor) {
+            (false, None, None) => rocksdb::IteratorMode::Start,
+            (true, None, None) => rocksdb::IteratorMode::End,
+            (_, None, Some(_)) => rocksdb::IteratorMode::From(&cursor, direction),
+            (_, Some(timestamp), _) => {
+                let total = self.total(2).unwrap_or(0);
+                match self.search_timestamp::<Message>(self.messages(), total, timestamp) {
+                    Ok(c) => {
+                        cursor = c.to_be_bytes();
+                        rocksdb::IteratorMode::From(&cursor, direction)
+                    }
+                    Err(err) => {
+                        log::error!("cannot find timestamp {timestamp}, err: {err}");
+                        rocksdb::IteratorMode::From(&cursor, direction)
+                    }
+                }
+            }
+        };
+        self.inner
+            .iterator_cf(self.messages(), mode)
+            .filter_map(Self::decode)
+            .filter_map(|(key, msg)| match self.fetch_details(msg) {
                 Ok(v) => {
                     if v.stream_kind == StreamKind::Handshake {
                         None
                     } else {
-                        Some(v)
+                        Some((key, v))
                     }
                 }
                 Err(err) => {
@@ -232,6 +321,7 @@ impl DbCore {
                     None
                 }
             })
+            .take(filter.limit.unwrap_or(1000) as usize)
     }
 }
 
@@ -264,12 +354,6 @@ impl DbFacade {
         opts.create_missing_column_families(true);
         let inner =
             rocksdb::DB::open_cf_with_ttl(&opts, path.join("rocksdb"), Self::CFS, Self::TTL)?;
-        let get_atomic_counter = |k| -> Result<AtomicU64, DbError> {
-            match inner.get([k])? {
-                None => Ok(AtomicU64::default()),
-                Some(b) => Ok(AtomicU64::new(u64::absorb_ext(&b)?)),
-            }
-        };
         fs::create_dir(path.join("streams")).or_else(|e| {
             if e.kind() == io::ErrorKind::AlreadyExists {
                 Ok(())
@@ -278,15 +362,17 @@ impl DbFacade {
             }
         })?;
 
+        let inner = DbCore {
+            path,
+            stream_bytes: Arc::default(),
+            inner: Arc::new(inner),
+        };
+
         Ok(DbFacade {
-            cns: get_atomic_counter(0)?,
-            streams: Arc::new(get_atomic_counter(1)?),
-            messages: Arc::new(get_atomic_counter(2)?),
-            inner: DbCore {
-                path,
-                stream_bytes: Arc::default(),
-                inner: Arc::new(inner),
-            },
+            cns: AtomicU64::new(inner.total(0)?),
+            streams: Arc::new(AtomicU64::new(inner.total(1)?)),
+            messages: Arc::new(AtomicU64::new(inner.total(2)?)),
+            inner,
         })
     }
 
@@ -296,7 +382,7 @@ impl DbFacade {
         incoming: bool,
         timestamp: SystemTime,
     ) -> Result<DbGroup, DbError> {
-        let id = ConnectionId(self.cns.fetch_add(1, Ordering::SeqCst));
+        let id = ConnectionId(self.cns.fetch_add(1, SeqCst));
         let v = Connection {
             info,
             incoming,
@@ -305,6 +391,7 @@ impl DbFacade {
         self.inner
             .inner
             .put_cf(self.inner.connections(), id.emit(vec![]), v.emit(vec![]))?;
+        self.inner.set_total(0, id.0)?;
 
         Ok(DbGroup {
             id,
@@ -328,7 +415,7 @@ pub struct DbGroup {
 
 impl DbGroup {
     pub fn add(&self, meta: StreamMeta, kind: StreamKind) -> Result<DbStream, DbError> {
-        let id = StreamId(self.streams.fetch_add(1, Ordering::SeqCst));
+        let id = StreamId(self.streams.fetch_add(1, SeqCst));
         let connection_id = self.id;
         let v = Stream {
             connection_id,
@@ -338,6 +425,7 @@ impl DbGroup {
         self.inner
             .inner
             .put_cf(self.inner.streams(), id.emit(vec![]), v.emit(vec![]))?;
+        self.inner.set_total(1, id.0)?;
 
         Ok(DbStream {
             id,
@@ -382,7 +470,7 @@ impl DbStream {
         lock.offset += bytes.len() as u64;
         drop(lock);
 
-        let id = MessageId(self.messages.fetch_add(1, Ordering::SeqCst));
+        let id = MessageId(self.messages.fetch_add(1, SeqCst));
         let v = Message {
             stream_id,
             incoming,
@@ -393,6 +481,7 @@ impl DbStream {
         self.inner
             .inner
             .put_cf(self.inner.messages(), id.emit(vec![]), v.emit(vec![]))?;
+        self.inner.set_total(2, id.0)?;
 
         Ok(())
     }

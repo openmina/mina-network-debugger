@@ -1,4 +1,3 @@
-use serde::Deserialize;
 use warp::{
     Filter, Rejection, Reply,
     reply::{WithStatus, Json, self},
@@ -10,48 +9,34 @@ use super::rocksdb::DbCore;
 fn connections(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    #[derive(Deserialize)]
-    struct Params {
-        cursor: Option<u64>,
-    }
-    warp::path!("connections").and(warp::query::query()).map(
-        move |Params { cursor }| -> WithStatus<Json> {
-            let v = db
-                .fetch_connections(&(), cursor.unwrap_or_default())
-                .take(100);
+    warp::path!("connections")
+        .and(warp::query::query())
+        .map(move |params| -> WithStatus<Json> {
+            let v = db.fetch_connections(&params);
             reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        },
-    )
+        })
 }
 
 fn streams(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    #[derive(Deserialize)]
-    struct Params {
-        cursor: Option<u64>,
-    }
-    warp::path!("streams").and(warp::query::query()).map(
-        move |Params { cursor }| -> WithStatus<Json> {
-            let v = db.fetch_streams(&(), cursor.unwrap_or_default()).take(100);
+    warp::path!("streams")
+        .and(warp::query::query())
+        .map(move |params| -> WithStatus<Json> {
+            let v = db.fetch_streams(&params);
             reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        },
-    )
+        })
 }
 
 fn messages(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    #[derive(Deserialize)]
-    struct Params {
-        cursor: Option<u64>,
-    }
-    warp::path!("messages").and(warp::query::query()).map(
-        move |Params { cursor }| -> WithStatus<Json> {
-            let v = db.fetch_full(&(), cursor.unwrap_or_default()).take(100);
+    warp::path!("messages")
+        .and(warp::query::query())
+        .map(move |params| -> WithStatus<Json> {
+            let v = db.fetch_messages(&params);
             reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        },
-    )
+        })
 }
 
 fn version(

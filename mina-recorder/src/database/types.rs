@@ -1,4 +1,4 @@
-use std::{time::SystemTime, fmt};
+use std::{time::SystemTime, fmt, str::FromStr};
 
 use radiation::{Absorb, Emit};
 
@@ -25,6 +25,12 @@ pub struct Connection {
     pub timestamp: SystemTime,
 }
 
+impl AsRef<SystemTime> for Connection {
+    fn as_ref(&self) -> &SystemTime {
+        &self.timestamp
+    }
+}
+
 /// Positive ids are streams from initiator, negatives are from responder
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StreamId(pub u64);
@@ -49,6 +55,23 @@ pub enum StreamKind {
     PeerExchange = 0x0300,
     Meshsub = 0x0400,
     Rpc = 0x0500,
+}
+
+impl FromStr for StreamKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "/noise" => Ok(StreamKind::Handshake),
+            "/coda/kad/1.0.0" => Ok(StreamKind::Kad),
+            "/ipfs/id/1.0.0" => Ok(StreamKind::IpfsId),
+            "/ipfs/push/1.0.0" => Ok(StreamKind::IpfsPush),
+            "/mina/peer-exchange" => Ok(StreamKind::PeerExchange),
+            "/meshsub/1.1.0" => Ok(StreamKind::Meshsub),
+            "coda/rpcs/0.0.1" => Ok(StreamKind::Rpc),
+            _ => Err(()),
+        }
+    }
 }
 
 impl StreamKind {
@@ -99,6 +122,12 @@ pub struct Message {
     pub timestamp: SystemTime,
     pub offset: u64,
     pub size: u32,
+}
+
+impl AsRef<SystemTime> for Message {
+    fn as_ref(&self) -> &SystemTime {
+        &self.timestamp
+    }
 }
 
 #[derive(Serialize)]
