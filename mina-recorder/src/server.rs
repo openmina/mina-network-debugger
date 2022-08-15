@@ -19,17 +19,6 @@ fn connections(
         })
 }
 
-fn streams(
-    db: DbCore,
-) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("streams")
-        .and(warp::query::query())
-        .map(move |params| -> WithStatus<Json> {
-            let v = db.fetch_streams(&params);
-            reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        })
-}
-
 fn messages(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
@@ -69,7 +58,6 @@ fn routes(
     warp::get()
         .and(
             connections(db.clone())
-                .or(streams(db.clone()))
                 .or(messages(db))
                 .or(version().or(openapi())),
         )

@@ -15,9 +15,7 @@ use radiation::{AbsorbExt, nom, ParseError, Emit};
 
 use thiserror::Error;
 
-use super::types::{
-    Connection, ConnectionId, Stream, StreamId, Message, StreamKind, FullMessage, MessageId,
-};
+use super::types::{Connection, ConnectionId, StreamId, Message, StreamKind, FullMessage, MessageId};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -110,13 +108,11 @@ pub struct Params {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 3] = [Self::CONNECTIONS, Self::STREAMS, Self::MESSAGES];
+    const CFS: [&'static str; 2] = [Self::CONNECTIONS, Self::MESSAGES];
 
     const TTL: Duration = Duration::from_secs(120);
 
     const CONNECTIONS: &'static str = "connections";
-
-    const STREAMS: &'static str = "streams";
 
     const MESSAGES: &'static str = "messages";
 
@@ -150,23 +146,13 @@ impl DbCore {
         self.inner.cf_handle(Self::CONNECTIONS).expect("must exist")
     }
 
-    fn streams(&self) -> &rocksdb::ColumnFamily {
-        self.inner.cf_handle(Self::STREAMS).expect("must exist")
-    }
-
     fn messages(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::MESSAGES).expect("must exist")
     }
 
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
         self.inner
-            .put_cf(self.messages(), id.emit(vec![]), v.emit(vec![]))?;
-        Ok(())
-    }
-
-    pub fn put_stream(&self, id: StreamId, v: Stream) -> Result<(), DbError> {
-        self.inner
-            .put_cf(self.streams(), id.emit(vec![]), v.emit(vec![]))?;
+            .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
         Ok(())
     }
 
@@ -251,17 +237,34 @@ impl DbCore {
         &self,
         filter: &Params,
     ) -> impl Iterator<Item = (u64, Connection)> + '_ {
-        let _ = filter;
-        self.inner
-            .iterator_cf(self.connections(), rocksdb::IteratorMode::Start)
-            .filter_map(Self::decode)
-            .take(filter.limit.unwrap_or(1000) as usize)
-    }
+        let reverse = filter.reverse.unwrap_or(false);
+        let direction = if reverse {
+            rocksdb::Direction::Reverse
+        } else {
+            rocksdb::Direction::Forward
+        };
+        let mut cursor = filter.cursor.unwrap_or(0).to_be_bytes();
+        let mode = match (reverse, filter.timestamp, filter.cursor) {
+            (false, None, None) => rocksdb::IteratorMode::Start,
+            (true, None, None) => rocksdb::IteratorMode::End,
+            (_, None, Some(_)) => rocksdb::IteratorMode::From(&cursor, direction),
+            (_, Some(timestamp), _) => {
+                let total = self.total(0).unwrap_or(0);
+                match self.search_timestamp::<Connection>(self.connections(), total, timestamp) {
+                    Ok(c) => {
+                        cursor = c.to_be_bytes();
+                        rocksdb::IteratorMode::From(&cursor, direction)
+                    }
+                    Err(err) => {
+                        log::error!("cannot find timestamp {timestamp}, err: {err}");
+                        rocksdb::IteratorMode::From(&cursor, direction)
+                    }
+                }
+            }
+        };
 
-    pub fn fetch_streams(&self, filter: &Params) -> impl Iterator<Item = (u64, Stream)> + '_ {
-        let _ = filter;
         self.inner
-            .iterator_cf(self.streams(), rocksdb::IteratorMode::Start)
+            .iterator_cf(self.connections(), mode)
             .filter_map(Self::decode)
             .take(filter.limit.unwrap_or(1000) as usize)
     }
@@ -308,18 +311,13 @@ impl DbCore {
     }
 
     fn fetch_details(&self, msg: Message) -> Result<FullMessage, DbError> {
-        let v = self
-            .inner
-            .get_cf(self.streams(), msg.stream_id.emit(vec![]))?
-            .ok_or(DbError::NoSuchStream(msg.stream_id))?;
-        let Stream {
-            connection_id,
-            meta,
-            kind,
-        } = AbsorbExt::absorb_ext(&v)?;
+        let stream_id = StreamId {
+            cn: msg.connection_id,
+            meta: msg.stream_meta,
+        };
         let mut buf = vec![0; msg.size as usize];
-        self.read_stream(msg.stream_id, msg.offset, &mut buf)?;
-        let message = match kind {
+        self.read_stream(stream_id, msg.offset, &mut buf)?;
+        let message = match msg.stream_kind {
             StreamKind::Raw => serde_json::Value::String(hex::encode(&buf)),
             StreamKind::Kad => {
                 let v = crate::connection::mina_protocol::kademlia::parse(buf);
@@ -328,11 +326,11 @@ impl DbCore {
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
-            connection_id,
+            connection_id: msg.connection_id,
             incoming: msg.incoming,
             timestamp: msg.timestamp,
-            stream_meta: meta,
-            stream_kind: kind,
+            stream_meta: msg.stream_meta,
+            stream_kind: msg.stream_kind,
             message,
         })
     }
@@ -363,6 +361,7 @@ impl DbCore {
                 }
             }
         };
+
         self.inner
             .iterator_cf(self.messages(), mode)
             .filter_map(Self::decode)

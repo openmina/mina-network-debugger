@@ -65,7 +65,7 @@ impl HandleData for State {
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _: &mut Cx, db: &Db) -> Self::Output {
         let stream = self
             .stream
-            .get_or_insert_with(|| db.add(self.meta.clone(), self.kind).unwrap());
+            .get_or_insert_with(|| db.add(self.meta, self.kind).unwrap());
         stream.add(id.incoming, id.metadata.time, bytes).unwrap();
         Output::Nothing
     }

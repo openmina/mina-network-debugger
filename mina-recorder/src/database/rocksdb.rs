@@ -10,13 +10,10 @@ use std::{
 use crate::ConnectionInfo;
 
 use super::core::{DbCore, DbError};
-use super::types::{
-    Connection, ConnectionId, Stream, StreamId, Message, MessageId, StreamMeta, StreamKind,
-};
+use super::types::{Connection, ConnectionId, StreamId, Message, MessageId, StreamMeta, StreamKind};
 
 pub struct DbFacade {
     cns: AtomicU64,
-    streams: Arc<AtomicU64>,
     messages: Arc<AtomicU64>,
     inner: DbCore,
 }
@@ -30,7 +27,6 @@ impl DbFacade {
 
         Ok(DbFacade {
             cns: AtomicU64::new(inner.total(0)?),
-            streams: Arc::new(AtomicU64::new(inner.total(1)?)),
             messages: Arc::new(AtomicU64::new(inner.total(2)?)),
             inner,
         })
@@ -53,7 +49,6 @@ impl DbFacade {
 
         Ok(DbGroup {
             id,
-            streams: self.streams.clone(),
             messages: self.messages.clone(),
             inner: self.inner.clone(),
         })
@@ -66,25 +61,17 @@ impl DbFacade {
 
 pub struct DbGroup {
     id: ConnectionId,
-    streams: Arc<AtomicU64>,
     messages: Arc<AtomicU64>,
     inner: DbCore,
 }
 
 impl DbGroup {
     pub fn add(&self, meta: StreamMeta, kind: StreamKind) -> Result<DbStream, DbError> {
-        let id = StreamId(self.streams.fetch_add(1, SeqCst));
-        let connection_id = self.id;
-        let v = Stream {
-            connection_id,
-            meta,
-            kind,
-        };
-        self.inner.put_stream(id, v)?;
-        self.inner.set_total(1, id.0)?;
+        let id = StreamId { cn: self.id, meta };
 
         Ok(DbStream {
             id,
+            kind,
             messages: self.messages.clone(),
             inner: self.inner.clone(),
         })
@@ -93,6 +80,7 @@ impl DbGroup {
 
 pub struct DbStream {
     id: StreamId,
+    kind: StreamKind,
     messages: Arc<AtomicU64>,
     inner: DbCore,
 }
@@ -110,7 +98,9 @@ impl DbStream {
 
         let id = MessageId(self.messages.fetch_add(1, SeqCst));
         let v = Message {
-            stream_id: self.id,
+            connection_id: self.id.cn,
+            stream_meta: self.id.meta,
+            stream_kind: self.kind,
             incoming,
             timestamp,
             offset,

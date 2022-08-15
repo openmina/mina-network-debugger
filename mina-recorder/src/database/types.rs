@@ -33,12 +33,20 @@ impl AsRef<SystemTime> for Connection {
 
 /// Positive ids are streams from initiator, negatives are from responder
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StreamId(pub u64);
+pub struct StreamId {
+    pub cn: ConnectionId,
+    #[custom_absorb(custom_coding::stream_meta_absorb)]
+    #[custom_emit(custom_coding::stream_meta_emit)]
+    pub meta: StreamMeta,
+}
 
 impl fmt::Display for StreamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let StreamId(id) = self;
-        write!(f, "stream{id:08x}")
+        let StreamId {
+            cn: ConnectionId(id),
+            meta,
+        } = self;
+        write!(f, "stream_{id:08x}_{meta}")
     }
 }
 
@@ -90,7 +98,7 @@ impl StreamKind {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename = "snake_case")]
 pub enum StreamMeta {
     Raw,
@@ -99,15 +107,15 @@ pub enum StreamMeta {
     Backward(u64),
 }
 
-#[derive(Clone, Absorb, Emit, Serialize)]
-pub struct Stream {
-    pub connection_id: ConnectionId,
-    #[custom_absorb(custom_coding::stream_meta_absorb)]
-    #[custom_emit(custom_coding::stream_meta_emit)]
-    pub meta: StreamMeta,
-    #[custom_absorb(custom_coding::stream_kind_absorb)]
-    #[custom_emit(custom_coding::stream_kind_emit)]
-    pub kind: StreamKind,
+impl fmt::Display for StreamMeta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StreamMeta::Raw => write!(f, "raw"),
+            StreamMeta::Handshake => write!(f, "handshake"),
+            StreamMeta::Forward(a) => write!(f, "forward_{a:08x}"),
+            StreamMeta::Backward(a) => write!(f, "backward_{a:08x}"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -115,7 +123,13 @@ pub struct MessageId(pub u64);
 
 #[derive(Clone, Absorb, Serialize, Emit)]
 pub struct Message {
-    pub stream_id: StreamId,
+    pub connection_id: ConnectionId,
+    #[custom_absorb(custom_coding::stream_meta_absorb)]
+    #[custom_emit(custom_coding::stream_meta_emit)]
+    pub stream_meta: StreamMeta,
+    #[custom_absorb(custom_coding::stream_kind_absorb)]
+    #[custom_emit(custom_coding::stream_kind_emit)]
+    pub stream_kind: StreamKind,
     pub incoming: bool,
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
