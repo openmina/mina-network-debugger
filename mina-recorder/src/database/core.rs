@@ -35,7 +35,7 @@ pub enum DbError {
         border: u64,
         size: u64,
     },
-    #[error("no item at cursor {_0}")]
+    #[error("no item at id {_0}")]
     NoItemAtCursor(u64),
 }
 
@@ -95,8 +95,8 @@ pub struct DbCore {
 
 #[derive(Deserialize)]
 pub struct Params {
-    // the start of the list, either number of record ...
-    cursor: Option<u64>,
+    // the start of the list, either id of record ...
+    id: Option<u64>,
     // ... or timestamp
     timestamp: Option<u64>,
     // wether go forward or backward
@@ -114,7 +114,11 @@ impl DbCore {
 
     const CONNECTIONS: &'static str = "connections";
 
+    pub const CONNECTIONS_CNT: u8 = 0;
+
     const MESSAGES: &'static str = "messages";
+
+    pub const MESSAGES_CNT: u8 = 1;
 
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
@@ -222,15 +226,15 @@ impl DbCore {
         Ok(pos)
     }
 
-    pub fn total(&self, d: u8) -> Result<u64, DbError> {
-        match self.inner.get([d])? {
+    pub fn total<const K: u8>(&self) -> Result<u64, DbError> {
+        match self.inner.get([K])? {
             None => Ok(0),
             Some(b) => Ok(u64::absorb_ext(&b)?),
         }
     }
 
-    pub fn set_total(&self, d: u8, v: u64) -> Result<(), DbError> {
-        Ok(self.inner.put([d], v.emit(vec![]))?)
+    pub fn set_total<const K: u8>(&self, v: u64) -> Result<(), DbError> {
+        Ok(self.inner.put([K], v.emit(vec![]))?)
     }
 
     pub fn fetch_connections(
@@ -243,21 +247,21 @@ impl DbCore {
         } else {
             rocksdb::Direction::Forward
         };
-        let mut cursor = filter.cursor.unwrap_or(0).to_be_bytes();
-        let mode = match (reverse, filter.timestamp, filter.cursor) {
+        let mut id = filter.id.unwrap_or(0).to_be_bytes();
+        let mode = match (reverse, filter.timestamp, filter.id) {
             (false, None, None) => rocksdb::IteratorMode::Start,
             (true, None, None) => rocksdb::IteratorMode::End,
-            (_, None, Some(_)) => rocksdb::IteratorMode::From(&cursor, direction),
+            (_, None, Some(_)) => rocksdb::IteratorMode::From(&id, direction),
             (_, Some(timestamp), _) => {
-                let total = self.total(0).unwrap_or(0);
+                let total = self.total::<{ Self::CONNECTIONS_CNT }>().unwrap_or(0);
                 match self.search_timestamp::<Connection>(self.connections(), total, timestamp) {
                     Ok(c) => {
-                        cursor = c.to_be_bytes();
-                        rocksdb::IteratorMode::From(&cursor, direction)
+                        id = c.to_be_bytes();
+                        rocksdb::IteratorMode::From(&id, direction)
                     }
                     Err(err) => {
                         log::error!("cannot find timestamp {timestamp}, err: {err}");
-                        rocksdb::IteratorMode::From(&cursor, direction)
+                        rocksdb::IteratorMode::From(&id, direction)
                     }
                 }
             }
@@ -266,7 +270,7 @@ impl DbCore {
         self.inner
             .iterator_cf(self.connections(), mode)
             .filter_map(Self::decode)
-            .take(filter.limit.unwrap_or(1000) as usize)
+            .take(filter.limit.unwrap_or(16) as usize)
     }
 
     pub fn get_stream(&self, stream_id: StreamId) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
@@ -342,21 +346,21 @@ impl DbCore {
         } else {
             rocksdb::Direction::Forward
         };
-        let mut cursor = filter.cursor.unwrap_or(0).to_be_bytes();
-        let mode = match (reverse, filter.timestamp, filter.cursor) {
+        let mut id = filter.id.unwrap_or(0).to_be_bytes();
+        let mode = match (reverse, filter.timestamp, filter.id) {
             (false, None, None) => rocksdb::IteratorMode::Start,
             (true, None, None) => rocksdb::IteratorMode::End,
-            (_, None, Some(_)) => rocksdb::IteratorMode::From(&cursor, direction),
+            (_, None, Some(_)) => rocksdb::IteratorMode::From(&id, direction),
             (_, Some(timestamp), _) => {
-                let total = self.total(2).unwrap_or(0);
+                let total = self.total::<{ Self::MESSAGES_CNT }>().unwrap_or(0);
                 match self.search_timestamp::<Message>(self.messages(), total, timestamp) {
                     Ok(c) => {
-                        cursor = c.to_be_bytes();
-                        rocksdb::IteratorMode::From(&cursor, direction)
+                        id = c.to_be_bytes();
+                        rocksdb::IteratorMode::From(&id, direction)
                     }
                     Err(err) => {
                         log::error!("cannot find timestamp {timestamp}, err: {err}");
-                        rocksdb::IteratorMode::From(&cursor, direction)
+                        rocksdb::IteratorMode::From(&id, direction)
                     }
                 }
             }
@@ -378,6 +382,6 @@ impl DbCore {
                     None
                 }
             })
-            .take(filter.limit.unwrap_or(1000) as usize)
+            .take(filter.limit.unwrap_or(16) as usize)
     }
 }

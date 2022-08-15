@@ -26,8 +26,8 @@ impl DbFacade {
         let inner = DbCore::open(path)?;
 
         Ok(DbFacade {
-            cns: AtomicU64::new(inner.total(0)?),
-            messages: Arc::new(AtomicU64::new(inner.total(2)?)),
+            cns: AtomicU64::new(inner.total::<{ DbCore::CONNECTIONS_CNT }>()?),
+            messages: Arc::new(AtomicU64::new(inner.total::<{ DbCore::MESSAGES_CNT }>()?)),
             inner,
         })
     }
@@ -45,7 +45,7 @@ impl DbFacade {
             timestamp,
         };
         self.inner.put_cn(id, v)?;
-        self.inner.set_total(0, id.0)?;
+        self.inner.set_total::<{ DbCore::CONNECTIONS_CNT }>(id.0)?;
 
         Ok(DbGroup {
             id,
@@ -107,7 +107,7 @@ impl DbStream {
             size: bytes.len() as u32,
         };
         self.inner.put_message(id, v)?;
-        self.inner.set_total(2, id.0)?;
+        self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(())
     }
