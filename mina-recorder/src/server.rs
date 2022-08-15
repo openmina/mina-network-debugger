@@ -1,10 +1,12 @@
+use std::thread;
+
 use warp::{
     Filter, Rejection, Reply,
     reply::{WithStatus, Json, self},
     http::StatusCode,
 };
 
-use super::rocksdb::DbCore;
+use super::database::{DbCore, DbFacade};
 
 fn connections(
     db: DbCore,
@@ -59,8 +61,7 @@ fn openapi(
         })
 }
 
-#[allow(dead_code)]
-pub fn routes(
+fn routes(
     db: DbCore,
 ) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
@@ -74,4 +75,22 @@ pub fn routes(
         )
         .with(with::header("Content-Type", "application/json"))
         .with(with::header("Access-Control-Allow-Origin", "*"))
+}
+
+pub fn run() -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>) {
+    use tokio::{sync::oneshot, runtime::Runtime};
+
+    let rt = Runtime::new().unwrap();
+    let _guard = rt.enter();
+    let (tx, rx) = oneshot::channel();
+
+    let db = DbFacade::open("target/db").unwrap();
+    let addr = ([0, 0, 0, 0], 8000u16);
+    let (_, server) =
+        warp::serve(routes(db.core())).bind_with_graceful_shutdown(addr, async move {
+            rx.await.unwrap();
+            log::info!("terminating http server...");
+        });
+    let handle = thread::spawn(move || rt.block_on(server));
+    (db, move || tx.send(()).unwrap(), handle)
 }

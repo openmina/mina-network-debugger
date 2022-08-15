@@ -5,7 +5,9 @@ mod connection;
 
 mod custom_coding;
 
-pub mod database;
+mod database;
+
+pub mod server;
 
 use std::{
     net::SocketAddr,

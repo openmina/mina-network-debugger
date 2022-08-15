@@ -543,7 +543,7 @@ fn main() {
     let env = env_logger::Env::default().default_filter_or("info");
     env_logger::init_from_env(env);
     sudo::escalate_if_needed().expect("failed to obtain superuser permission");
-    let (db, callback, server_thread) = mina_recorder::database::run_server();
+    let (db, callback, server_thread) = mina_recorder::server::run();
     let terminating = Arc::new(AtomicBool::new(false));
     {
         let terminating = terminating.clone();
