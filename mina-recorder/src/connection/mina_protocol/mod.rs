@@ -20,17 +20,9 @@ impl DynamicProtocol for State {
         } else {
             StreamMeta::Backward(id)
         };
-        let kind = match name {
-            "/meshsub/1.1.0" => StreamKind::Meshsub,
-            "coda/rpcs/0.0.1" => StreamKind::Rpc,
-            "/ipfs/id/1.0.0" => StreamKind::IpfsId,
-            "/coda/kad/1.0.0" => StreamKind::Kad,
-            "/mina/peer-exchange" => StreamKind::PeerExchange,
-            name => panic!("unknown protocol {name}"),
-        };
         State {
             meta,
-            kind,
+            kind: name.parse().unwrap(),
             stream: None,
         }
     }
