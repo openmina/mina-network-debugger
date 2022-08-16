@@ -109,18 +109,20 @@ pub struct Params {
     // ... or timestamp
     timestamp: Option<u64>,
     // wether go `forward` or `reverse`, default is `forward`
-    #[serde(default = "default_direction")]
+    #[serde(default)]
     direction: Direction,
-    // how many records to read, default is 16
-    #[serde(default = "default_limit")]
-    limit: usize,
+    // how many records to read, default is 1 for connections and 16 for messages
+    // if `limit_timestamp` is specified, default limit is `usize::MAX`
+    limit: Option<usize>,
+    limit_timestamp: Option<u64>,
     // what streams to read, comma separated
     // streams: Option<String>,
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Default, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
+    #[default]
     Forward,
     Reverse,
 }
@@ -132,14 +134,6 @@ impl From<Direction> for rocksdb::Direction {
             Direction::Reverse => rocksdb::Direction::Reverse,
         }
     }
-}
-
-const fn default_direction() -> Direction {
-    Direction::Forward
-}
-
-const fn default_limit() -> usize {
-    16
 }
 
 impl DbCore {
@@ -302,7 +296,7 @@ impl DbCore {
         self.inner
             .iterator_cf(self.connections(), mode)
             .filter_map(Self::decode)
-            .take(filter.limit)
+            .take(filter.limit.unwrap_or(1))
     }
 
     pub fn get_stream(
@@ -384,6 +378,13 @@ impl DbCore {
             }
         };
 
+        let limit_timestamp = filter.limit_timestamp;
+        let limit = if limit_timestamp.is_some() {
+            filter.limit.unwrap_or(usize::MAX)
+        } else {
+            filter.limit.unwrap_or(16)
+        };
+
         self.inner
             .iterator_cf(self.messages(), mode)
             .filter_map(Self::decode)
@@ -394,6 +395,14 @@ impl DbCore {
                     None
                 }
             })
-            .take(filter.limit)
+            .take_while(move |(_, msg)| {
+                if let Some(limit_timestamp) = limit_timestamp {
+                    let d = msg.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+                    d.as_secs() < limit_timestamp
+                } else {
+                    true
+                }
+            })
+            .take(limit)
     }
 }
