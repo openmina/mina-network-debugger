@@ -14,7 +14,7 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
     pub enum Event {
         Subscribe(String),
         Unsubscribe(String),
-        Publish { topic: String, msg: Msg },
+        Publish { topic: String, message: Msg },
         Control,
     }
 
@@ -22,15 +22,9 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
     pub enum Msg {
-        Transition {
-            body: Box<ExternalTransitionV1>,
-        },
-        TransactionsPoolDiff {
-            hex: String,
-        },
-        SnarkPoolDiff {
-            hex: String,
-        },
+        Transition { body: Box<ExternalTransitionV1> },
+        TransactionsPoolDiff { hex: String },
+        SnarkPoolDiff { hex: String },
         Unrecognized { tag: u8, hex: String },
     }
 
@@ -55,12 +49,10 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
         .into_iter()
         .filter_map(|msg| msg.data.map(|d| (d, msg.topic)))
         .map(|(data, topic)| {
-            let msg = match data[8] {
+            let message = match data[8] {
                 0 => {
                     let v = ExternalTransitionV1::try_decode_binprot(&data[9..]).unwrap();
-                    Msg::Transition {
-                        body: Box::new(v),
-                    }
+                    Msg::Transition { body: Box::new(v) }
                 }
                 1 => Msg::TransactionsPoolDiff {
                     hex: hex::encode(&data[9..]),
@@ -73,7 +65,7 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
                     hex: hex::encode(&data[9..]),
                 },
             };
-            Event::Publish { topic, msg }
+            Event::Publish { topic, message }
         });
     let control = control.into_iter().map(|_c| Event::Control);
     subscriptions

@@ -66,15 +66,13 @@ pub struct DbGroup {
 }
 
 impl DbGroup {
-    pub fn add(&self, id: StreamId, kind: StreamKind) -> Result<DbStream, DbError> {
-        let id = StreamFullId { cn: self.id, id };
-
-        Ok(DbStream {
-            id,
+    pub fn add(&self, id: StreamId, kind: StreamKind) -> DbStream {
+        DbStream {
+            id: StreamFullId { cn: self.id, id },
             kind,
             messages: self.messages.clone(),
             inner: self.inner.clone(),
-        })
+        }
     }
 }
 
@@ -94,7 +92,9 @@ impl Drop for DbStream {
 impl DbStream {
     pub fn add(&self, incoming: bool, timestamp: SystemTime, bytes: &[u8]) -> Result<(), DbError> {
         let sb = self.inner.get_stream(self.id)?;
-        let offset = sb.lock().expect("poisoned").write(bytes)?;
+        let mut file = sb.lock().expect("poisoned");
+        let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
+        drop(file);
 
         let id = MessageId(self.messages.fetch_add(1, SeqCst));
         let v = Message {

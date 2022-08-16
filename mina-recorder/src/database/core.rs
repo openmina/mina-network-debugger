@@ -15,12 +15,16 @@ use radiation::{AbsorbExt, nom, ParseError, Emit};
 
 use thiserror::Error;
 
-use super::types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId};
+use super::types::{
+    Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
+};
 
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("{_0}")]
-    Io(io::Error),
+    CreateDirError(io::Error),
+    #[error("{_0} {_1}")]
+    Io(StreamFullId, io::Error),
     #[error("{_0}")]
     Inner(rocksdb::Error),
     #[error("{_0}")]
@@ -37,12 +41,6 @@ pub enum DbError {
     },
     #[error("no item at id {_0}")]
     NoItemAtCursor(u64),
-}
-
-impl From<io::Error> for DbError {
-    fn from(v: io::Error) -> Self {
-        DbError::Io(v)
-    }
 }
 
 impl From<rocksdb::Error> for DbError {
@@ -81,6 +79,17 @@ impl StreamBytes {
         self.file.write_all(bytes)?;
         self.offset += bytes.len() as u64;
         Ok(offset)
+    }
+
+    pub fn read(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
+        let size = self.offset;
+        let border = offset + buf.len() as u64;
+        if border > size {
+            let msg = format!("read beyond end {border} > {size}");
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, msg));
+        }
+        self.file.read_exact_at(buf, offset)?;
+        Ok(())
     }
 }
 
@@ -157,13 +166,15 @@ impl DbCore {
         opts.create_missing_column_families(true);
         let inner =
             rocksdb::DB::open_cf_with_ttl(&opts, path.join("rocksdb"), Self::CFS, Self::TTL)?;
-        fs::create_dir(path.join("streams")).or_else(|e| {
-            if e.kind() == io::ErrorKind::AlreadyExists {
-                Ok(())
-            } else {
-                Err(e)
-            }
-        })?;
+        fs::create_dir(path.join("streams"))
+            .or_else(|e| {
+                if e.kind() == io::ErrorKind::AlreadyExists {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            })
+            .map_err(DbError::CreateDirError)?;
 
         Ok(DbCore {
             path,
@@ -294,22 +305,22 @@ impl DbCore {
             .take(filter.limit)
     }
 
-    pub fn get_stream(&self, stream_full_id: StreamFullId) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
+    pub fn get_stream(
+        &self,
+        stream_full_id: StreamFullId,
+    ) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
         let mut lock = self.stream_bytes.lock().expect("poisoned");
         let sb = lock.get(&stream_full_id).cloned();
-        let sb = match sb {
+        match sb {
             None => {
                 let path = self.path.join("streams").join(stream_full_id.to_string());
-                let sb = StreamBytes::new(path)?;
+                let sb = StreamBytes::new(path).map_err(|err| DbError::Io(stream_full_id, err))?;
                 lock.insert(stream_full_id, sb.clone());
-                sb
+                drop(lock);
+                Ok(sb)
             }
-            Some(sb) => sb,
-        };
-
-        drop(lock);
-
-        Ok(sb)
+            Some(sb) => Ok(sb),
+        }
     }
 
     pub fn remove_stream(&self, stream_full_id: StreamFullId) {
@@ -319,29 +330,17 @@ impl DbCore {
             .remove(&stream_full_id);
     }
 
-    fn read_stream(&self, stream_full_id: StreamFullId, offset: u64, buf: &mut [u8]) -> Result<(), DbError> {
-        let sb = self.get_stream(stream_full_id)?;
-        let lock = sb.lock().expect("poisoned");
-        let size = lock.offset;
-        let border = offset + buf.len() as u64;
-        if border > size {
-            return Err(DbError::BeyondStreamEnd {
-                stream_full_id,
-                border,
-                size,
-            });
-        }
-        lock.file.read_exact_at(buf, offset).unwrap();
-        Ok(())
-    }
-
     fn fetch_details(&self, msg: Message) -> Result<FullMessage, DbError> {
         let stream_full_id = StreamFullId {
             cn: msg.connection_id,
             id: msg.stream_id,
         };
         let mut buf = vec![0; msg.size as usize];
-        self.read_stream(stream_full_id, msg.offset, &mut buf)?;
+        let sb = self.get_stream(stream_full_id)?;
+        let mut file = sb.lock().expect("poisoned");
+        file.read(msg.offset, &mut buf)
+            .map_err(|err| DbError::Io(stream_full_id, err))?;
+        drop(file);
         let message = match msg.stream_kind {
             StreamKind::Kad => {
                 let v = crate::connection::mina_protocol::kademlia::parse(buf);

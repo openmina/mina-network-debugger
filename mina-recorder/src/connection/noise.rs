@@ -128,7 +128,6 @@ where
                     Msg::Second => {
                         let stream = self.stream.get_or_insert_with(|| {
                             db.add(StreamId::Handshake, StreamKind::Handshake)
-                                .unwrap()
                         });
                         stream.add(id.incoming, id.metadata.time, bytes).unwrap();
                     }

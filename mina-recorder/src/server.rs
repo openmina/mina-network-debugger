@@ -45,7 +45,8 @@ fn openapi(
         .and(warp::query::query())
         .map(move |()| -> reply::WithStatus<Json> {
             let s = include_str!("openapi.json");
-            let d = serde_json::from_str::<serde_json::Value>(s).unwrap();
+            let d = serde_json::from_str::<serde_json::Value>(s)
+                .expect("static file \"openapi.json\" must be valid json");
             reply::with_status(reply::json(&d), StatusCode::OK)
         })
 }
