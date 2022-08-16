@@ -1,5 +1,3 @@
-use std::{fmt, mem};
-
 use salsa20::cipher::generic_array::{typenum, GenericArray};
 use salsa20::{
     cipher::{KeyIvInit as _, StreamCipher},
@@ -55,75 +53,29 @@ impl<Inner> State<Inner> {
     }
 }
 
-pub enum Output<Inner> {
-    Nothing,
-    HaveNonce,
-    Inner(Inner),
-}
-
-impl<Inner> fmt::Display for Output<Inner>
-where
-    Inner: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Output::Nothing => Ok(()),
-            Output::HaveNonce => write!(f, "24 byte nonce"),
-            Output::Inner(inner) => inner.fmt(f),
-        }
-    }
-}
-
-impl<Inner> Iterator for Output<Inner>
-where
-    Inner: Iterator,
-{
-    type Item = Output<Inner::Item>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match mem::replace(self, Output::Nothing) {
-            Output::Nothing => None,
-            Output::HaveNonce => Some(Output::HaveNonce),
-            Output::Inner(mut inner) => {
-                let inner_item = inner.next()?;
-                *self = Output::Inner(inner);
-                Some(Output::Inner(inner_item))
-            }
-        }
-    }
-}
-
 impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData,
-    Inner::Output: IntoIterator,
 {
-    type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
-
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
-        if self.skip {
-            return Output::Nothing;
-        }
-
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
         let cipher = if id.incoming {
             &mut self.cipher_in
         } else {
             &mut self.cipher_out
         };
         if let Some(cipher) = cipher {
+            // TODO: raw
             // self.stream.as_ref().unwrap().add(id.incoming, id.metadata.time, bytes).unwrap();
             cipher.apply_keystream(bytes);
-            let inner_out = self.inner.on_data(id, bytes, cx, db);
-            Output::Inner(inner_out.into_iter())
+            self.inner.on_data(id, bytes, cx, db);
         } else if bytes.len() != 24 {
             self.skip = true;
-            Output::Nothing
+            log::warn!("skip connection {id}, bytes: {}", hex::encode(bytes));
         } else {
             let key = Self::shared_secret();
             *cipher = Some(XSalsa20::new(&key, GenericArray::from_slice(bytes)));
             // self.stream = Some(db.add(StreamMeta::Raw, StreamKind::Raw).unwrap());
-            Output::HaveNonce
         }
     }
 }

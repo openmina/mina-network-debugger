@@ -1,5 +1,3 @@
-use std::{fmt, mem, iter::Flatten};
-
 use curve25519_dalek::{
     scalar::Scalar, constants::ED25519_BASEPOINT_TABLE, montgomery::MontgomeryPoint,
 };
@@ -36,78 +34,32 @@ where
     }
 }
 
-pub enum ChunkOutput<Inner> {
-    Nothing,
-    Inner(Inner),
-}
-
-impl<Inner> fmt::Display for ChunkOutput<Inner>
-where
-    Inner: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ChunkOutput::Nothing => Ok(()),
-            ChunkOutput::Inner(inner) => inner.fmt(f),
-        }
-    }
-}
-
-impl<Inner> Iterator for ChunkOutput<Inner>
-where
-    Inner: Iterator,
-{
-    type Item = ChunkOutput<Inner::Item>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match mem::replace(self, ChunkOutput::Nothing) {
-            ChunkOutput::Nothing => None,
-            ChunkOutput::Inner(mut inner) => {
-                let inner_item = inner.next()?;
-                *self = ChunkOutput::Inner(inner);
-                Some(ChunkOutput::Inner(inner_item))
-            }
-        }
-    }
-}
-
 impl<Inner> HandleData for ChunkState<Inner>
 where
     Inner: HandleData,
-    Inner::Output: IntoIterator,
 {
-    type Output = ChunkOutput<Flatten<<Vec<Inner::Output> as IntoIterator>::IntoIter>>;
-
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
-                let inner_out = self.inner.on_data(id, bytes, cx, db);
-                return ChunkOutput::Inner(vec![inner_out].into_iter().flatten());
+                self.inner.on_data(id.clone(), bytes, cx, db);
+                return;
             }
         }
 
         self.accumulator.extend_from_slice(bytes);
-        let mut inner_outs = vec![];
         loop {
             if self.accumulator.len() >= 2 {
                 let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
                 if self.accumulator.len() >= 2 + len {
                     let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
-                    let inner_out = self.inner.on_data(id.clone(), chunk, cx, db);
-                    inner_outs.push(inner_out);
+                    self.inner.on_data(id.clone(), chunk, cx, db);
                     self.accumulator = remaining.to_vec();
                     continue;
                 }
             }
             break;
-        }
-
-        if inner_outs.is_empty() {
-            ChunkOutput::Nothing
-        } else {
-            ChunkOutput::Inner(inner_outs.into_iter().flatten())
         }
     }
 }
@@ -135,50 +87,6 @@ where
     }
 }
 
-pub enum NoiseOutput<Inner> {
-    Nothing,
-    CannotDecrypt(Vec<u8>),
-    FirstMessage,
-    HandshakePayload(Vec<u8>),
-    Inner(Inner),
-}
-
-impl<Inner> fmt::Display for NoiseOutput<Inner>
-where
-    Inner: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NoiseOutput::Nothing => Ok(()),
-            NoiseOutput::CannotDecrypt(bytes) => write!(f, "cannot decrypt {}", hex::encode(bytes)),
-            NoiseOutput::FirstMessage => write!(f, "handshake"),
-            NoiseOutput::HandshakePayload(p) => write!(f, "handshake {}", hex::encode(p)),
-            NoiseOutput::Inner(inner) => inner.fmt(f),
-        }
-    }
-}
-
-impl<Inner> Iterator for NoiseOutput<Inner>
-where
-    Inner: Iterator,
-{
-    type Item = NoiseOutput<Inner::Item>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match mem::replace(self, NoiseOutput::Nothing) {
-            NoiseOutput::Nothing => None,
-            NoiseOutput::CannotDecrypt(bytes) => Some(NoiseOutput::CannotDecrypt(bytes)),
-            NoiseOutput::FirstMessage => Some(NoiseOutput::FirstMessage),
-            NoiseOutput::HandshakePayload(payload) => Some(NoiseOutput::HandshakePayload(payload)),
-            NoiseOutput::Inner(mut inner) => {
-                let inner_item = inner.next()?;
-                *self = NoiseOutput::Inner(inner);
-                Some(NoiseOutput::Inner(inner_item))
-            }
-        }
-    }
-}
-
 enum St {
     FirstMessage {
         st: SymmetricState<C, ChainingKey<C>>,
@@ -197,12 +105,9 @@ enum St {
 impl<Inner> HandleData for NoiseState<Inner>
 where
     Inner: HandleData,
-    Inner::Output: IntoIterator,
 {
-    type Output = NoiseOutput<<Inner::Output as IntoIterator>::IntoIter>;
-
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
         enum Msg {
             First,
             Second,
@@ -219,28 +124,26 @@ where
         if !self.error {
             match self.on_data_(id.incoming, bytes, cx) {
                 Some(bytes) => match msg {
-                    Msg::First => NoiseOutput::FirstMessage,
+                    Msg::First => (),
                     Msg::Second => {
                         let stream = self.stream.get_or_insert_with(|| {
                             db.add(StreamMeta::Handshake, StreamKind::Handshake)
                                 .unwrap()
                         });
                         stream.add(id.incoming, id.metadata.time, bytes).unwrap();
-                        NoiseOutput::HandshakePayload(bytes.to_vec())
                     }
                     Msg::Third => {
                         let stream = self.stream.as_ref().unwrap();
                         stream.add(id.incoming, id.metadata.time, bytes).unwrap();
-                        NoiseOutput::HandshakePayload(bytes.to_vec())
                     }
                     Msg::Other => {
-                        NoiseOutput::Inner(self.inner.on_data(id, bytes, cx, db).into_iter())
+                        self.inner.on_data(id, bytes, cx, db);
                     }
                 },
-                None => NoiseOutput::CannotDecrypt(bytes.to_vec()),
+                None => log::error!("cannot decrypt {id}, bytes: {}", hex::encode(bytes)),
             }
         } else {
-            NoiseOutput::CannotDecrypt(bytes.to_vec())
+            log::error!("cannot decrypt {id}, bytes: {}", hex::encode(bytes));
         }
     }
 }

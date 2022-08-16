@@ -1,4 +1,4 @@
-use std::{fmt, collections::BTreeMap, mem, iter::Flatten, ops::Range};
+use std::{fmt, collections::BTreeMap, ops::Range};
 
 use unsigned_varint::decode;
 
@@ -25,75 +25,21 @@ pub struct StreamId {
     pub initiator_is_incoming: bool,
 }
 
-pub enum Body<Inner> {
-    Nothing,
+pub enum Body {
     NewStream(String),
-    Message { initiator: bool, inner: Inner },
+    Message { initiator: bool },
     Close { initiator: bool },
     Reset { initiator: bool },
 }
 
-impl<Inner> fmt::Display for Body<Inner>
-where
-    Inner: fmt::Display,
-{
+impl fmt::Display for Body {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Body::Nothing => Ok(()),
             Body::NewStream(name) => write!(f, "new stream: \"{name}\""),
-            Body::Message { inner, .. } => inner.fmt(f),
+            Body::Message { .. } => write!(f, "message"),
             Body::Close { .. } => write!(f, "close"),
             Body::Reset { .. } => write!(f, "reset"),
         }
-    }
-}
-
-pub struct Output<Inner> {
-    pub stream_id: StreamId,
-    pub body: Body<Inner>,
-}
-
-impl<Inner> Iterator for Output<Inner>
-where
-    Inner: Iterator,
-{
-    type Item = Output<Inner::Item>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let stream_id = self.stream_id;
-        let out = |body| Some(Output { stream_id, body });
-        match mem::replace(&mut self.body, Body::Nothing) {
-            Body::Nothing => None,
-            Body::NewStream(n) => out(Body::NewStream(n)),
-            Body::Message {
-                initiator,
-                mut inner,
-            } => {
-                let inner_item = inner.next()?;
-                self.body = Body::Message { initiator, inner };
-                out(Body::Message {
-                    initiator,
-                    inner: inner_item,
-                })
-            }
-            Body::Close { initiator } => out(Body::Close { initiator }),
-            Body::Reset { initiator } => out(Body::Reset { initiator }),
-        }
-    }
-}
-
-impl<Inner> fmt::Display for Output<Inner>
-where
-    Inner: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Output { stream_id, body } = self;
-        let StreamId {
-            i,
-            initiator_is_incoming,
-        } = stream_id;
-        let mark = if *initiator_is_incoming { "~" } else { "" };
-        write!(f, "stream_id: {mark}{i}, {body}")
     }
 }
 
@@ -134,7 +80,6 @@ impl Header {
 impl<Inner> State<Inner>
 where
     Inner: HandleData + From<(u64, bool)>,
-    Inner::Output: IntoIterator,
 {
     fn out(
         &mut self,
@@ -143,7 +88,7 @@ where
         db: &Db,
         header: Header,
         range: Range<usize>,
-    ) -> Output<<Inner::Output as IntoIterator>::IntoIter> {
+    ) {
         let bytes = &mut self.accumulating[range];
         let Header {
             tag,
@@ -153,13 +98,12 @@ where
         let body = match tag {
             Tag::New => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
             Tag::Msg => {
-                let inner = self
+                self
                     .inners
                     .entry(stream_id)
                     .or_insert_with(|| Inner::from((stream_id.i, stream_id.initiator_is_incoming)))
-                    .on_data(id, bytes, cx, db)
-                    .into_iter();
-                Body::Message { initiator, inner }
+                    .on_data(id, bytes, cx, db);
+                Body::Message { initiator }
             }
             Tag::Close => {
                 self.inners.remove(&stream_id);
@@ -170,20 +114,21 @@ where
                 Body::Reset { initiator }
             }
         };
-        Output { stream_id, body }
+        let StreamId {
+            i,
+            initiator_is_incoming,
+        } = stream_id;
+        let mark = if initiator_is_incoming { "~" } else { "" };
+        log::info!("stream_id: {mark}{i}, {body}")
     }
 }
 
 impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData + From<(u64, bool)>,
-    Inner::Output: IntoIterator,
 {
-    type Output =
-        Flatten<<Vec<Output<<Inner::Output as IntoIterator>::IntoIter>> as IntoIterator>::IntoIter>;
-
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
         self.accumulating.extend_from_slice(bytes);
 
         let (header, len, offset) = {
@@ -198,12 +143,9 @@ where
         #[allow(clippy::comparison_chain)]
         if offset + len == self.accumulating.len() {
             // good case, we have all data in one chunk
-            let out = self.out(id, cx, db, header, offset..(len + offset));
+            self.out(id, cx, db, header, offset..(len + offset));
             self.accumulating.clear();
-            vec![out].into_iter().flatten()
-        } else if offset + len > self.accumulating.len() {
-            vec![].into_iter().flatten()
-        } else {
+        } else if offset + len <= self.accumulating.len() {
             // TODO:
             panic!("{} < {}", offset + len, self.accumulating.len());
         }

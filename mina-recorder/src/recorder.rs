@@ -78,7 +78,7 @@ impl P2pRecorder {
                 alias,
                 incoming,
             };
-            let _ = cn.on_data(id, &mut bytes, &mut self.cx, &*group);
+            cn.on_data(id, &mut bytes, &mut self.cx, &*group);
         }
     }
 

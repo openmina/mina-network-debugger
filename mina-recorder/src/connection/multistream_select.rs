@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::mem;
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
 
@@ -40,53 +40,12 @@ fn take_msg<'a>(cursor: &mut &'a [u8]) -> Option<&'a [u8]> {
     Some(msg)
 }
 
-pub enum Output<Inner> {
-    Nothing,
-    Protocol(String),
-    Inner(String, Inner),
-}
-
-impl<Inner> fmt::Display for Output<Inner>
-where
-    Inner: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Output::Nothing => Ok(()),
-            Output::Protocol(p) => write!(f, "{p} suggested"),
-            Output::Inner(p, inner) => write!(f, "{p} {inner}"),
-        }
-    }
-}
-
-impl<Inner> Iterator for Output<Inner>
-where
-    Inner: Iterator,
-{
-    type Item = Output<Inner::Item>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match mem::replace(self, Output::Nothing) {
-            Output::Nothing => None,
-            Output::Protocol(p) => Some(Output::Protocol(p)),
-            Output::Inner(p, mut inner) => {
-                let inner_item = inner.next()?;
-                *self = Output::Inner(p.clone(), inner);
-                Some(Output::Inner(p, inner_item))
-            }
-        }
-    }
-}
-
 impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData + DynamicProtocol,
-    Inner::Output: IntoIterator,
 {
-    type Output = Output<<Inner::Output as IntoIterator>::IntoIter>;
-
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
         let (accumulator, done) = if id.incoming {
             (&mut self.accumulator_incoming, &mut self.incoming)
         } else {
@@ -96,14 +55,13 @@ where
             let inner = self.inner.get_or_insert_with(|| {
                 Inner::from_name(protocol, self.stream_id, self.stream_forward)
             });
-            let inner_out = if accumulator.is_empty() {
+            if accumulator.is_empty() {
                 inner.on_data(id, bytes, cx, db)
             } else {
                 let mut total = mem::take(accumulator);
                 total.extend_from_slice(bytes);
                 inner.on_data(id, &mut total, cx, db)
-            };
-            Output::Inner(protocol.clone(), inner_out.into_iter())
+            }
         } else {
             accumulator.extend_from_slice(bytes);
             let cursor = &mut accumulator.as_slice();
@@ -126,10 +84,6 @@ where
                 }
             }
             *accumulator = (*cursor).to_vec();
-            match done {
-                None => Output::Nothing,
-                Some(p) => Output::Protocol(p.clone()),
-            }
         }
     }
 }

@@ -5,9 +5,7 @@ pub trait DynamicProtocol {
 }
 
 pub trait HandleData {
-    type Output;
-
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> Self::Output;
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db);
 }
 
 pub mod pnet;
