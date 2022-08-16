@@ -33,20 +33,20 @@ impl AsRef<SystemTime> for Connection {
 
 /// Positive ids are streams from initiator, negatives are from responder
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StreamId {
+pub struct StreamFullId {
     pub cn: ConnectionId,
     #[custom_absorb(custom_coding::stream_meta_absorb)]
     #[custom_emit(custom_coding::stream_meta_emit)]
-    pub meta: StreamMeta,
+    pub id: StreamId,
 }
 
-impl fmt::Display for StreamId {
+impl fmt::Display for StreamFullId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let StreamId {
-            cn: ConnectionId(id),
-            meta,
+        let StreamFullId {
+            cn: ConnectionId(cn),
+            id,
         } = self;
-        write!(f, "stream_{id:08x}_{meta}")
+        write!(f, "stream_{cn:08x}_{id}")
     }
 }
 
@@ -104,18 +104,18 @@ impl StreamKind {
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-pub enum StreamMeta {
+pub enum StreamId {
     Handshake,
     Forward(u64),
     Backward(u64),
 }
 
-impl fmt::Display for StreamMeta {
+impl fmt::Display for StreamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamMeta::Handshake => write!(f, "handshake"),
-            StreamMeta::Forward(a) => write!(f, "forward_{a:08x}"),
-            StreamMeta::Backward(a) => write!(f, "backward_{a:08x}"),
+            StreamId::Handshake => write!(f, "handshake"),
+            StreamId::Forward(a) => write!(f, "forward_{a:08x}"),
+            StreamId::Backward(a) => write!(f, "backward_{a:08x}"),
         }
     }
 }
@@ -128,7 +128,7 @@ pub struct Message {
     pub connection_id: ConnectionId,
     #[custom_absorb(custom_coding::stream_meta_absorb)]
     #[custom_emit(custom_coding::stream_meta_emit)]
-    pub stream_meta: StreamMeta,
+    pub stream_id: StreamId,
     #[custom_absorb(custom_coding::stream_kind_absorb)]
     #[custom_emit(custom_coding::stream_kind_emit)]
     pub stream_kind: StreamKind,
@@ -151,7 +151,7 @@ pub struct FullMessage {
     pub connection_id: ConnectionId,
     pub incoming: bool,
     pub timestamp: SystemTime,
-    pub stream_meta: StreamMeta,
+    pub stream_id: StreamId,
     pub stream_kind: StreamKind,
     // dynamic type, the type is depend on `stream_kind`
     pub message: serde_json::Value,

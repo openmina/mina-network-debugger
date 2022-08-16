@@ -10,7 +10,7 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use crate::database::{DbStream, StreamMeta, StreamKind};
+use crate::database::{DbStream, StreamId, StreamKind};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
 
@@ -127,7 +127,7 @@ where
                     Msg::First => (),
                     Msg::Second => {
                         let stream = self.stream.get_or_insert_with(|| {
-                            db.add(StreamMeta::Handshake, StreamKind::Handshake)
+                            db.add(StreamId::Handshake, StreamKind::Handshake)
                                 .unwrap()
                         });
                         stream.add(id.incoming, id.metadata.time, bytes).unwrap();

@@ -15,7 +15,7 @@ use radiation::{AbsorbExt, nom, ParseError, Emit};
 
 use thiserror::Error;
 
-use super::types::{Connection, ConnectionId, StreamId, Message, StreamKind, FullMessage, MessageId};
+use super::types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -26,12 +26,12 @@ pub enum DbError {
     #[error("{_0}")]
     Parse(nom::Err<ParseError<Vec<u8>>>),
     #[error("no such stream {_0}")]
-    NoSuchStream(StreamId),
+    NoSuchStream(StreamFullId),
     #[error("no such connection {_0}")]
     NoSuchConnection(ConnectionId),
-    #[error("read beyond stream {stream_id} end {border} > {size}")]
+    #[error("read beyond stream {stream_full_id} end {border} > {size}")]
     BeyondStreamEnd {
-        stream_id: StreamId,
+        stream_full_id: StreamFullId,
         border: u64,
         size: u64,
     },
@@ -89,7 +89,7 @@ type StreamBytesSync = Arc<Mutex<StreamBytes>>;
 #[derive(Clone)]
 pub struct DbCore {
     path: PathBuf,
-    stream_bytes: Arc<Mutex<BTreeMap<StreamId, StreamBytesSync>>>,
+    stream_bytes: Arc<Mutex<BTreeMap<StreamFullId, StreamBytesSync>>>,
     inner: Arc<rocksdb::DB>,
 }
 
@@ -294,14 +294,14 @@ impl DbCore {
             .take(filter.limit)
     }
 
-    pub fn get_stream(&self, stream_id: StreamId) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
+    pub fn get_stream(&self, stream_full_id: StreamFullId) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
         let mut lock = self.stream_bytes.lock().expect("poisoned");
-        let sb = lock.get(&stream_id).cloned();
+        let sb = lock.get(&stream_full_id).cloned();
         let sb = match sb {
             None => {
-                let path = self.path.join("streams").join(stream_id.to_string());
+                let path = self.path.join("streams").join(stream_full_id.to_string());
                 let sb = StreamBytes::new(path)?;
-                lock.insert(stream_id, sb.clone());
+                lock.insert(stream_full_id, sb.clone());
                 sb
             }
             Some(sb) => sb,
@@ -312,21 +312,21 @@ impl DbCore {
         Ok(sb)
     }
 
-    pub fn remove_stream(&self, stream_id: StreamId) {
+    pub fn remove_stream(&self, stream_full_id: StreamFullId) {
         self.stream_bytes
             .lock()
             .expect("poisoned")
-            .remove(&stream_id);
+            .remove(&stream_full_id);
     }
 
-    fn read_stream(&self, stream_id: StreamId, offset: u64, buf: &mut [u8]) -> Result<(), DbError> {
-        let sb = self.get_stream(stream_id)?;
+    fn read_stream(&self, stream_full_id: StreamFullId, offset: u64, buf: &mut [u8]) -> Result<(), DbError> {
+        let sb = self.get_stream(stream_full_id)?;
         let lock = sb.lock().expect("poisoned");
         let size = lock.offset;
         let border = offset + buf.len() as u64;
         if border > size {
             return Err(DbError::BeyondStreamEnd {
-                stream_id,
+                stream_full_id,
                 border,
                 size,
             });
@@ -336,12 +336,12 @@ impl DbCore {
     }
 
     fn fetch_details(&self, msg: Message) -> Result<FullMessage, DbError> {
-        let stream_id = StreamId {
+        let stream_full_id = StreamFullId {
             cn: msg.connection_id,
-            meta: msg.stream_meta,
+            id: msg.stream_id,
         };
         let mut buf = vec![0; msg.size as usize];
-        self.read_stream(stream_id, msg.offset, &mut buf)?;
+        self.read_stream(stream_full_id, msg.offset, &mut buf)?;
         let message = match msg.stream_kind {
             StreamKind::Kad => {
                 let v = crate::connection::mina_protocol::kademlia::parse(buf);
@@ -357,7 +357,7 @@ impl DbCore {
             connection_id: msg.connection_id,
             incoming: msg.incoming,
             timestamp: msg.timestamp,
-            stream_meta: msg.stream_meta,
+            stream_id: msg.stream_id,
             stream_kind: msg.stream_kind,
             message,
         })

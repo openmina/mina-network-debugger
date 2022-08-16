@@ -10,7 +10,7 @@ use std::{
 use crate::ConnectionInfo;
 
 use super::core::{DbCore, DbError};
-use super::types::{Connection, ConnectionId, StreamId, Message, MessageId, StreamMeta, StreamKind};
+use super::types::{Connection, ConnectionId, StreamFullId, Message, MessageId, StreamId, StreamKind};
 
 pub struct DbFacade {
     cns: AtomicU64,
@@ -66,8 +66,8 @@ pub struct DbGroup {
 }
 
 impl DbGroup {
-    pub fn add(&self, meta: StreamMeta, kind: StreamKind) -> Result<DbStream, DbError> {
-        let id = StreamId { cn: self.id, meta };
+    pub fn add(&self, id: StreamId, kind: StreamKind) -> Result<DbStream, DbError> {
+        let id = StreamFullId { cn: self.id, id };
 
         Ok(DbStream {
             id,
@@ -79,7 +79,7 @@ impl DbGroup {
 }
 
 pub struct DbStream {
-    id: StreamId,
+    id: StreamFullId,
     kind: StreamKind,
     messages: Arc<AtomicU64>,
     inner: DbCore,
@@ -99,7 +99,7 @@ impl DbStream {
         let id = MessageId(self.messages.fetch_add(1, SeqCst));
         let v = Message {
             connection_id: self.id.cn,
-            stream_meta: self.id.meta,
+            stream_id: self.id.id,
             stream_kind: self.kind,
             incoming,
             timestamp,
