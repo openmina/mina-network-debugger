@@ -68,6 +68,7 @@ pub enum StreamKind {
 }
 
 impl FromStr for StreamKind {
+    // TODO: use nevertype `!`
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -82,7 +83,7 @@ impl FromStr for StreamKind {
             "/mina/node-status" => Ok(StreamKind::NodeStatus),
             "/meshsub/1.1.0" => Ok(StreamKind::Meshsub),
             "coda/rpcs/0.0.1" => Ok(StreamKind::Rpc),
-            _ => Err(()),
+            _ => Ok(StreamKind::Unknown),
         }
     }
 }

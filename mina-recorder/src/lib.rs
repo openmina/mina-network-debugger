@@ -48,7 +48,7 @@ impl DirectedId {
         DirectedId {
             metadata: EventMetadata {
                 id: ConnectionInfo {
-                    addr: "127.0.0.1:0".parse().unwrap(),
+                    addr: "127.0.0.1:0".parse().expect("valid constant"),
                     pid: 1,
                     fd: 1,
                 },

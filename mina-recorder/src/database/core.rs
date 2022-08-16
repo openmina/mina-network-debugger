@@ -397,7 +397,10 @@ impl DbCore {
             })
             .take_while(move |(_, msg)| {
                 if let Some(limit_timestamp) = limit_timestamp {
-                    let d = msg.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+                    let d = msg
+                        .timestamp
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .expect("after unix epoch");
                     d.as_secs() < limit_timestamp
                 } else {
                     true

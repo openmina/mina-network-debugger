@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::{collections::{BTreeMap, VecDeque}, env};
 
 use super::{
     EventMetadata, ConnectionInfo, DirectedId,
@@ -59,7 +59,9 @@ impl P2pRecorder {
             .db
             .add(metadata.id.clone(), incoming, metadata.time)
             .unwrap();
-        self.cns.insert(metadata.id, (Default::default(), group));
+        let chain_id = env::var("CHAIN_ID");
+        let chain_id = chain_id.as_ref().map(|s| s.as_bytes()).unwrap_or(Cn::MAINNET_CHAIN);
+        self.cns.insert(metadata.id, (Cn::new(chain_id), group));
     }
 
     pub fn on_disconnect(&mut self, metadata: EventMetadata) {

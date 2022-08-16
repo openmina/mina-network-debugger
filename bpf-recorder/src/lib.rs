@@ -42,12 +42,16 @@ impl Event {
     pub fn from_bytes(b: &[u8]) -> Self {
         assert_eq!(b.len(), 32);
         Event {
-            fd: u32::from_ne_bytes(b[0..4].try_into().unwrap()),
-            pid: u32::from_ne_bytes(b[4..8].try_into().unwrap()),
-            ts0: u64::from_ne_bytes(b[8..16].try_into().unwrap()),
-            ts1: u64::from_ne_bytes(b[16..24].try_into().unwrap()),
-            tag: DataTag::from_u32(u32::from_ne_bytes(b[24..28].try_into().unwrap())).unwrap(),
-            size: i32::from_ne_bytes(b[28..32].try_into().unwrap()),
+            fd: u32::from_ne_bytes(b[0..4].try_into().expect("cannot fail, asserted above")),
+            pid: u32::from_ne_bytes(b[4..8].try_into().expect("cannot fail, asserted above")),
+            ts0: u64::from_ne_bytes(b[8..16].try_into().expect("cannot fail, asserted above")),
+            ts1: u64::from_ne_bytes(b[16..24].try_into().expect("cannot fail, asserted above")),
+            tag: {
+                let tag = b[24..28].try_into().expect("cannot fail, asserted above");
+                // TODO: handle
+                DataTag::from_u32(u32::from_ne_bytes(tag)).unwrap()
+            },
+            size: i32::from_ne_bytes(b[28..32].try_into().expect("cannot fail, asserted above")),
         }
     }
 }

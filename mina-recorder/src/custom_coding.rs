@@ -48,7 +48,7 @@ where
     W: Extend<u8>,
 {
     duration_emit(
-        &value.duration_since(SystemTime::UNIX_EPOCH).unwrap(),
+        &value.duration_since(SystemTime::UNIX_EPOCH).expect("after unix epoch"),
         buffer,
     )
 }

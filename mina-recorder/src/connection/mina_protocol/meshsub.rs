@@ -79,15 +79,15 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
 fn tag0_msg() {
     use prost::{bytes::Bytes, Message as _};
 
-    let buf = Bytes::from(hex::decode(include_str!("tag_0.hex")).unwrap());
-    let msg = pb::Rpc::decode_length_delimited(buf).unwrap();
+    let buf = Bytes::from(hex::decode(include_str!("tag_0.hex")).expect("test"));
+    let msg = pb::Rpc::decode_length_delimited(buf).expect("test");
     for a in msg
         .publish
         .into_iter()
         .filter_map(|msg| msg.data)
         .map(|data| {
             if data[8] == 0 {
-                Some(ExternalTransitionV1::try_decode_binprot(&data[9..]).unwrap())
+                Some(ExternalTransitionV1::try_decode_binprot(&data[9..]).expect("test"))
             } else {
                 None
             }

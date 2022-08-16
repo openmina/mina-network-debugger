@@ -20,7 +20,7 @@ impl DynamicProtocol for State {
         };
         State {
             stream_id,
-            kind: name.parse().unwrap(),
+            kind: name.parse().expect("cannot fail"),
             stream: None,
         }
     }

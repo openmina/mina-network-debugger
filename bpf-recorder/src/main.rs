@@ -542,20 +542,26 @@ fn main() {
 
     let env = env_logger::Env::default().default_filter_or("warn");
     env_logger::init_from_env(env);
-    sudo::escalate_if_needed().expect("failed to obtain superuser permission");
+    if let Err(err) = sudo::escalate_if_needed() {
+        log::error!("failed to obtain superuser permission {err}");
+        return;
+    }
     let (db, callback, server_thread) = mina_recorder::server::run(8001, "target/db");
     let terminating = Arc::new(AtomicBool::new(false));
     {
         let terminating = terminating.clone();
         let mut callback = Some(callback);
-        ctrlc::set_handler(move || {
+        let user_handler = move || {
             log::info!("ctrlc");
             if let Some(cb) = callback.take() {
                 cb();
             }
             terminating.store(true, Ordering::Relaxed);
-        })
-        .expect("Error setting Ctrl-C handler");
+        };
+        if let Err(err) = ctrlc::set_handler(user_handler) {
+            log::error!("failed to set ctrlc handler {err}");
+            return;
+        }
     }
 
     static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
@@ -584,7 +590,13 @@ fn main() {
             &mut len as _,
         )
     };
-    let mut rb = RingBuffer::new(fd, info.max_entries as usize).unwrap();
+    let mut rb = match RingBuffer::new(fd, info.max_entries as usize) {
+        Ok(v) => v,
+        Err(err) => {
+            log::error!("failed to create userspace part of the ring buffer: {err}");
+            return;
+        }
+    };
 
     const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
@@ -722,7 +734,10 @@ fn main() {
             }
         }
     }
-    server_thread.join().unwrap();
+
+    if let Err(_) = server_thread.join() {
+        log::error!("server thread panic, this is a bug, must not happen");
+    }
     log::info!("terminated");
     drop(skeleton);
 }

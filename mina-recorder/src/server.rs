@@ -80,9 +80,10 @@ where
     let addr = ([0, 0, 0, 0], port);
     let (_, server) =
         warp::serve(routes(db.core())).bind_with_graceful_shutdown(addr, async move {
-            rx.await.unwrap();
+            rx.await.expect("corresponding sender should exist");
             log::info!("terminating http server...");
         });
     let handle = thread::spawn(move || rt.block_on(server));
-    (db, move || tx.send(()).unwrap(), handle)
+    let callback = move || tx.send(()).expect("corresponding receiver should exist");
+    (db, callback, handle)
 }

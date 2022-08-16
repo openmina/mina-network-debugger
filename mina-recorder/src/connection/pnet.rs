@@ -9,6 +9,7 @@ use crate::database::DbStream;
 use super::{HandleData, DirectedId, Cx, Db};
 
 pub struct State<Inner> {
+    shared_secret: GenericArray<u8, typenum::U32>,
     cipher_in: Option<XSalsa20>,
     cipher_out: Option<XSalsa20>,
     // TODO: raw stream in separate cf
@@ -17,12 +18,17 @@ pub struct State<Inner> {
     inner: Inner,
 }
 
-impl<Inner> Default for State<Inner>
+impl<Inner> State<Inner>
 where
     Inner: From<(u64, bool)>,
 {
-    fn default() -> Self {
+    // local sandbox /coda/0.0.1/dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
+    pub const MAINNET_CHAIN: &'static [u8] =
+        b"/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
+
+    pub fn new(chain_id: &[u8]) -> Self {
         State {
+            shared_secret: Self::shared_secret(chain_id),
             cipher_in: None,
             cipher_out: None,
             _stream: None,
@@ -33,22 +39,18 @@ where
 }
 
 impl<Inner> State<Inner> {
-    pub fn shared_secret() -> GenericArray<u8, typenum::U32> {
+    pub fn shared_secret(chain_id: &[u8]) -> GenericArray<u8, typenum::U32> {
         use blake2::{
             digest::{Update, VariableOutput},
             Blake2bVar,
         };
 
-        // TODO: seed
-        // local sandbox dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
-        // mainnet 5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1
-        let seed = b"/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
         let mut key = GenericArray::default();
         Blake2bVar::new(32)
-            .unwrap()
-            .chain(seed)
+            .expect("valid constant")
+            .chain(chain_id)
             .finalize_variable(&mut key)
-            .unwrap();
+            .expect("good buffer size");
         key
     }
 }
@@ -73,8 +75,7 @@ where
             self.skip = true;
             log::warn!("skip connection {id}, bytes: {}", hex::encode(bytes));
         } else {
-            let key = Self::shared_secret();
-            *cipher = Some(XSalsa20::new(&key, GenericArray::from_slice(bytes)));
+            *cipher = Some(XSalsa20::new(&self.shared_secret, GenericArray::from_slice(bytes)));
             // self.stream = Some(db.add(StreamMeta::Raw, StreamKind::Raw).unwrap());
         }
     }
