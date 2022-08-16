@@ -12,8 +12,8 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
     pub enum Event {
-        Subscribe(String),
-        Unsubscribe(String),
+        Subscribe { topic: String },
+        Unsubscribe { topic: String },
         Publish { topic: String, message: Msg },
         Control,
     }
@@ -40,9 +40,9 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
         let subscribe = v.subscribe();
         let topic = v.topic_id.unwrap_or_default();
         if subscribe {
-            Event::Subscribe(topic)
+            Event::Subscribe { topic }
         } else {
-            Event::Unsubscribe(topic)
+            Event::Unsubscribe { topic }
         }
     });
     let publish = publish
