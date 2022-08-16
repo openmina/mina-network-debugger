@@ -76,7 +76,6 @@ where
     W: Extend<u8>,
 {
     let d = match value {
-        StreamMeta::Raw => i64::MAX,
         StreamMeta::Handshake => i64::MIN,
         StreamMeta::Forward(s) => *s as i64,
         StreamMeta::Backward(s) => -((*s + 1) as i64),
@@ -86,7 +85,6 @@ where
 
 pub fn stream_meta_absorb(input: &[u8]) -> nom::IResult<&[u8], StreamMeta, ParseError<&[u8]>> {
     nom::combinator::map(i64::absorb::<()>, |d| match d {
-        i64::MAX => StreamMeta::Raw,
         i64::MIN => StreamMeta::Handshake,
         d => {
             if d >= 0 {

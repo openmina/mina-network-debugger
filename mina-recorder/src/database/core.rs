@@ -99,12 +99,38 @@ pub struct Params {
     id: Option<u64>,
     // ... or timestamp
     timestamp: Option<u64>,
-    // wether go forward or backward
-    reverse: Option<bool>,
-    // how many records to read
-    limit: Option<u64>,
+    // wether go forward or backward, default is `Forward`
+    #[serde(default = "default_direction")]
+    direction: Direction,
+    // how many records to read, default is 16
+    #[serde(default = "default_limit")]
+    limit: usize,
     // what streams to read, comma separated
     // streams: Option<String>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    Forward,
+    Reverse,
+}
+
+impl From<Direction> for rocksdb::Direction {
+    fn from(v: Direction) -> Self {
+        match v {
+            Direction::Forward => rocksdb::Direction::Forward,
+            Direction::Reverse => rocksdb::Direction::Reverse,
+        }
+    }
+}
+
+const fn default_direction() -> Direction {
+    Direction::Forward
+}
+
+const fn default_limit() -> usize {
+    16
 }
 
 impl DbCore {
@@ -241,16 +267,11 @@ impl DbCore {
         &self,
         filter: &Params,
     ) -> impl Iterator<Item = (u64, Connection)> + '_ {
-        let reverse = filter.reverse.unwrap_or(false);
-        let direction = if reverse {
-            rocksdb::Direction::Reverse
-        } else {
-            rocksdb::Direction::Forward
-        };
+        let direction = filter.direction.into();
         let mut id = filter.id.unwrap_or(0).to_be_bytes();
-        let mode = match (reverse, filter.timestamp, filter.id) {
-            (false, None, None) => rocksdb::IteratorMode::Start,
-            (true, None, None) => rocksdb::IteratorMode::End,
+        let mode = match (direction, filter.timestamp, filter.id) {
+            (rocksdb::Direction::Forward, None, None) => rocksdb::IteratorMode::Start,
+            (rocksdb::Direction::Reverse, None, None) => rocksdb::IteratorMode::End,
             (_, None, Some(_)) => rocksdb::IteratorMode::From(&id, direction),
             (_, Some(timestamp), _) => {
                 let total = self.total::<{ Self::CONNECTIONS_CNT }>().unwrap_or(0);
@@ -270,7 +291,7 @@ impl DbCore {
         self.inner
             .iterator_cf(self.connections(), mode)
             .filter_map(Self::decode)
-            .take(filter.limit.unwrap_or(16) as usize)
+            .take(filter.limit)
     }
 
     pub fn get_stream(&self, stream_id: StreamId) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
@@ -322,7 +343,6 @@ impl DbCore {
         let mut buf = vec![0; msg.size as usize];
         self.read_stream(stream_id, msg.offset, &mut buf)?;
         let message = match msg.stream_kind {
-            StreamKind::Raw => serde_json::Value::String(hex::encode(&buf)),
             StreamKind::Kad => {
                 let v = crate::connection::mina_protocol::kademlia::parse(buf);
                 serde_json::to_value(&v).unwrap()
@@ -344,16 +364,11 @@ impl DbCore {
     }
 
     pub fn fetch_messages(&self, filter: &Params) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
-        let reverse = filter.reverse.unwrap_or(false);
-        let direction = if reverse {
-            rocksdb::Direction::Reverse
-        } else {
-            rocksdb::Direction::Forward
-        };
+        let direction = filter.direction.into();
         let mut id = filter.id.unwrap_or(0).to_be_bytes();
-        let mode = match (reverse, filter.timestamp, filter.id) {
-            (false, None, None) => rocksdb::IteratorMode::Start,
-            (true, None, None) => rocksdb::IteratorMode::End,
+        let mode = match (direction, filter.timestamp, filter.id) {
+            (rocksdb::Direction::Forward, None, None) => rocksdb::IteratorMode::Start,
+            (rocksdb::Direction::Reverse, None, None) => rocksdb::IteratorMode::End,
             (_, None, Some(_)) => rocksdb::IteratorMode::From(&id, direction),
             (_, Some(timestamp), _) => {
                 let total = self.total::<{ Self::MESSAGES_CNT }>().unwrap_or(0);
@@ -380,6 +395,6 @@ impl DbCore {
                     None
                 }
             })
-            .take(filter.limit.unwrap_or(16) as usize)
+            .take(filter.limit)
     }
 }

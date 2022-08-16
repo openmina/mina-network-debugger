@@ -7,6 +7,7 @@ mod pb {
 
 pub fn parse(bytes: Vec<u8>) -> impl Serialize {
     #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
     pub enum MessageType {
         PutValue = 0,
         GetValue = 1,
@@ -36,6 +37,7 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
     }
 
     #[derive(Serialize)]
+    #[serde(rename_all = "snake_case")]
     pub enum ConnectionType {
         /// sender does not have a connection to peer, and no extra information (default)
         NotConnected = 0,
@@ -92,7 +94,7 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
 
     #[derive(Serialize)]
     pub struct T {
-        ty: MessageType,
+        r#type: MessageType,
         // TODO: parse further
         key: String,
         record: Option<Record>,
@@ -106,7 +108,7 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
     let msg = <pb::Message as Message>::decode_length_delimited(buf).unwrap();
 
     T {
-        ty: match msg.r#type() {
+        r#type: match msg.r#type() {
             pb::message::MessageType::PutValue => MessageType::PutValue,
             pb::message::MessageType::GetValue => MessageType::GetValue,
             pb::message::MessageType::AddProvider => MessageType::AddProvider,

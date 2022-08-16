@@ -1,4 +1,4 @@
-use std::thread;
+use std::{thread, path::Path};
 
 use warp::{
     Filter, Rejection, Reply,
@@ -65,15 +65,18 @@ fn routes(
         .with(with::header("Access-Control-Allow-Origin", "*"))
 }
 
-pub fn run() -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>) {
+pub fn run<P>(port: u16, path: P) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
+where
+    P: AsRef<Path>,
+{
     use tokio::{sync::oneshot, runtime::Runtime};
 
     let rt = Runtime::new().unwrap();
     let _guard = rt.enter();
     let (tx, rx) = oneshot::channel();
 
-    let db = DbFacade::open("target/db").unwrap();
-    let addr = ([0, 0, 0, 0], 8000u16);
+    let db = DbFacade::open(path).unwrap();
+    let addr = ([0, 0, 0, 0], port);
     let (_, server) =
         warp::serve(routes(db.core())).bind_with_graceful_shutdown(addr, async move {
             rx.await.unwrap();

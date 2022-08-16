@@ -52,10 +52,9 @@ impl fmt::Display for StreamId {
 
 #[repr(u16)]
 #[derive(Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum StreamKind {
     Unknown = 0xffff,
-    Raw = 0x0000,
     Handshake = 0x0001,
     Kad = 0x0100,
     IpfsId = 0x0200,
@@ -91,7 +90,6 @@ impl FromStr for StreamKind {
 impl StreamKind {
     pub fn iter() -> impl Iterator<Item = Self> {
         [
-            StreamKind::Raw,
             StreamKind::Handshake,
             StreamKind::Kad,
             StreamKind::IpfsId,
@@ -105,9 +103,8 @@ impl StreamKind {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum StreamMeta {
-    Raw,
     Handshake,
     Forward(u64),
     Backward(u64),
@@ -116,7 +113,6 @@ pub enum StreamMeta {
 impl fmt::Display for StreamMeta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamMeta::Raw => write!(f, "raw"),
             StreamMeta::Handshake => write!(f, "handshake"),
             StreamMeta::Forward(a) => write!(f, "forward_{a:08x}"),
             StreamMeta::Backward(a) => write!(f, "backward_{a:08x}"),
