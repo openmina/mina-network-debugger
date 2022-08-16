@@ -230,6 +230,7 @@ impl DbCore {
     where
         T: for<'pa> AbsorbExt<'pa> + AsRef<SystemTime>,
     {
+        let timestamp = Duration::from_secs(timestamp);
         if total == 0 {
             return Err(DbError::NoItemAtCursor(0));
         }
@@ -244,8 +245,7 @@ impl DbCore {
             let this_timestamp = v
                 .as_ref()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("after unix epoch")
-                .as_secs();
+                .expect("after unix epoch");
 
             r /= 2;
             match this_timestamp.cmp(&timestamp) {
