@@ -81,14 +81,7 @@ impl<Inner> State<Inner>
 where
     Inner: HandleData + From<(u64, bool)>,
 {
-    fn out(
-        &mut self,
-        id: DirectedId,
-        cx: &mut Cx,
-        db: &Db,
-        header: Header,
-        range: Range<usize>,
-    ) {
+    fn out(&mut self, id: DirectedId, cx: &mut Cx, db: &Db, header: Header, range: Range<usize>) {
         let bytes = &mut self.accumulating[range];
         let Header {
             tag,
@@ -98,11 +91,10 @@ where
         let body = match tag {
             Tag::New => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
             Tag::Msg => {
-                self
-                    .inners
+                self.inners
                     .entry(stream_id)
                     .or_insert_with(|| Inner::from((stream_id.i, stream_id.initiator_is_incoming)))
-                    .on_data(id, bytes, cx, db);
+                    .on_data(id.clone(), bytes, cx, db);
                 Body::Message { initiator }
             }
             Tag::Close => {
@@ -119,7 +111,7 @@ where
             initiator_is_incoming,
         } = stream_id;
         let mark = if initiator_is_incoming { "~" } else { "" };
-        log::info!("stream_id: {mark}{i}, {body}")
+        log::info!("{id} stream_id: {mark}{i}, {body}")
     }
 }
 

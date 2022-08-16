@@ -540,7 +540,7 @@ fn main() {
     use mina_recorder::{EventMetadata, ConnectionInfo};
     use ebpf::{kind::AppItem, Skeleton};
 
-    let env = env_logger::Env::default().default_filter_or("info");
+    let env = env_logger::Env::default().default_filter_or("warn");
     env_logger::init_from_env(env);
     sudo::escalate_if_needed().expect("failed to obtain superuser permission");
     let (db, callback, server_thread) = mina_recorder::server::run();

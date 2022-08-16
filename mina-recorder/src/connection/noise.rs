@@ -43,7 +43,7 @@ where
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
-                self.inner.on_data(id.clone(), bytes, cx, db);
+                self.inner.on_data(id, bytes, cx, db);
                 return;
             }
         }
@@ -140,10 +140,20 @@ where
                         self.inner.on_data(id, bytes, cx, db);
                     }
                 },
-                None => log::error!("cannot decrypt {id}, bytes: {}", hex::encode(bytes)),
+                None => {
+                    log::error!(
+                        "{id}, cannot decrypt: {} {}...",
+                        bytes.len(),
+                        hex::encode(&bytes[..4])
+                    )
+                }
             }
         } else {
-            log::error!("cannot decrypt {id}, bytes: {}", hex::encode(bytes));
+            log::error!(
+                "{id}, cannot decrypt: {} {}...",
+                bytes.len(),
+                hex::encode(&bytes[..4])
+            );
         }
     }
 }
