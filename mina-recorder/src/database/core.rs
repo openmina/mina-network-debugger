@@ -108,7 +108,7 @@ pub struct Params {
     id: Option<u64>,
     // ... or timestamp
     timestamp: Option<u64>,
-    // wether go forward or backward, default is `Forward`
+    // wether go `forward` or `reverse`, default is `forward`
     #[serde(default = "default_direction")]
     direction: Direction,
     // how many records to read, default is 16
