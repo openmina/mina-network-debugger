@@ -533,6 +533,7 @@ fn main() {
             Arc,
         },
         time::{SystemTime, Duration},
+        env,
     };
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
@@ -540,13 +541,18 @@ fn main() {
     use mina_recorder::{EventMetadata, ConnectionInfo};
     use ebpf::{kind::AppItem, Skeleton};
 
-    let env = env_logger::Env::default().default_filter_or("warn");
-    env_logger::init_from_env(env);
+    env_logger::init();
+    // let env = env_logger::Env::default().default_filter_or("warn");
+    // env_logger::init_from_env(env);
     if let Err(err) = sudo::escalate_if_needed() {
         log::error!("failed to obtain superuser permission {err}");
         return;
     }
-    let (db, callback, server_thread) = mina_recorder::server::run(8001, "target/db");
+
+    let port = env::var("HTTP_PORT").unwrap_or(8000.to_string()).parse().unwrap_or(8000);
+    let db_path = env::var("DB_PATH").unwrap_or("target/db".to_string());
+
+    let (db, callback, server_thread) = mina_recorder::server::run(port, db_path);
     let terminating = Arc::new(AtomicBool::new(false));
     {
         let terminating = terminating.clone();
@@ -598,10 +604,16 @@ fn main() {
         }
     };
 
+    // my local sandbox
+    // /coda/0.0.1/dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
+    const MAINNET_CHAIN: &'static str =
+        "/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
+    let chain_id = env::var("CHAIN_ID").unwrap_or(MAINNET_CHAIN.to_string());
+
     const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
     let mut ignored_cns = BTreeMap::new();
-    let mut recorder = mina_recorder::P2pRecorder::new(db);
+    let mut recorder = mina_recorder::P2pRecorder::new(db, chain_id);
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     while !terminating.load(Ordering::Relaxed) {

@@ -1,4 +1,4 @@
-use std::{collections::{BTreeMap, VecDeque}, env};
+use std::collections::{BTreeMap, VecDeque};
 
 use super::{
     EventMetadata, ConnectionInfo, DirectedId,
@@ -12,6 +12,7 @@ type Encrypted = multistream_select::State<mplex::State<Inner>>;
 type Inner = multistream_select::State<mina_protocol::State>;
 
 pub struct P2pRecorder {
+    chain_id: String,
     db: DbFacade,
     cns: BTreeMap<ConnectionInfo, (Cn, DbGroup)>,
     cx: Cx,
@@ -34,8 +35,9 @@ impl Cx {
 }
 
 impl P2pRecorder {
-    pub fn new(db: DbFacade) -> Self {
+    pub fn new(db: DbFacade, chain_id: String) -> Self {
         P2pRecorder {
+            chain_id,
             db,
             cns: BTreeMap::default(),
             cx: Cx::default(),
@@ -59,9 +61,7 @@ impl P2pRecorder {
             .db
             .add(metadata.id.clone(), incoming, metadata.time)
             .unwrap();
-        let chain_id = env::var("CHAIN_ID");
-        let chain_id = chain_id.as_ref().map(|s| s.as_bytes()).unwrap_or(Cn::MAINNET_CHAIN);
-        self.cns.insert(metadata.id, (Cn::new(chain_id), group));
+        self.cns.insert(metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
     }
 
     pub fn on_disconnect(&mut self, metadata: EventMetadata) {

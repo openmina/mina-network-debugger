@@ -22,10 +22,6 @@ impl<Inner> State<Inner>
 where
     Inner: From<(u64, bool)>,
 {
-    // local sandbox /coda/0.0.1/dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
-    pub const MAINNET_CHAIN: &'static [u8] =
-        b"/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
-
     pub fn new(chain_id: &[u8]) -> Self {
         State {
             shared_secret: Self::shared_secret(chain_id),
