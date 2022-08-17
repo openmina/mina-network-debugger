@@ -1,4 +1,8 @@
-use super::{recorder::Cx, DirectedId, database::{DbGroup as Db, DbResult}};
+use super::{
+    recorder::Cx,
+    DirectedId,
+    database::{DbGroup as Db, DbResult},
+};
 
 pub trait DynamicProtocol {
     fn from_name(name: &str, id: u64, forward: bool) -> Self;

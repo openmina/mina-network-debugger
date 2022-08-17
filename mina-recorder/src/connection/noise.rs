@@ -201,7 +201,8 @@ impl<Inner> NoiseState<Inner> {
                     return None;
                 }
 
-                let i_epk = MontgomeryPoint(bytes[2..34].try_into().expect("cannot fail, checked above"));
+                let i_epk =
+                    MontgomeryPoint(bytes[2..34].try_into().expect("cannot fail, checked above"));
                 let st = SymmetricState::new("Noise_XX_25519_ChaChaPoly_SHA256")
                     .mix_hash(&[])
                     .mix_hash(i_epk.as_bytes())
@@ -215,13 +216,16 @@ impl<Inner> NoiseState<Inner> {
                     return None;
                 }
 
-                let r_epk = MontgomeryPoint(bytes[2..34].try_into().expect("cannot fail, checked above"));
+                let r_epk =
+                    MontgomeryPoint(bytes[2..34].try_into().expect("cannot fail, checked above"));
                 let ee = try_dh(&r_epk, &i_epk, cx).or_else(|| {
                     self.error = true;
                     None
                 })?;
 
-                let mut r_spk_bytes: [u8; 32] = bytes[34..66].try_into().expect("cannot fail, checked above");
+                let mut r_spk_bytes: [u8; 32] = bytes[34..66]
+                    .try_into()
+                    .expect("cannot fail, checked above");
                 let tag = *GenericArray::from_slice(&bytes[66..82]);
                 let r_spk;
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
@@ -252,7 +256,8 @@ impl<Inner> NoiseState<Inner> {
                     return None;
                 }
 
-                let mut i_spk_bytes: [u8; 32] = bytes[2..34].try_into().expect("cannot fail, checked above");
+                let mut i_spk_bytes: [u8; 32] =
+                    bytes[2..34].try_into().expect("cannot fail, checked above");
                 let tag = *GenericArray::from_slice(&bytes[34..50]);
                 let i_spk;
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);

@@ -549,8 +549,11 @@ fn main() {
         return;
     }
 
-    let port = env::var("HTTP_PORT").unwrap_or(8000.to_string()).parse().unwrap_or(8000);
-    let db_path = env::var("DB_PATH").unwrap_or("target/db".to_string());
+    let port = env::var("HTTP_PORT")
+        .unwrap_or_else(|_| 8000.to_string())
+        .parse()
+        .unwrap_or(8000);
+    let db_path = env::var("DB_PATH").unwrap_or_else(|_| "target/db".to_string());
 
     let (db, callback, server_thread) = mina_recorder::server::run(port, db_path);
     let terminating = Arc::new(AtomicBool::new(false));
@@ -606,9 +609,9 @@ fn main() {
 
     // my local sandbox
     // /coda/0.0.1/dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
-    const MAINNET_CHAIN: &'static str =
+    const MAINNET_CHAIN: &str =
         "/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
-    let chain_id = env::var("CHAIN_ID").unwrap_or(MAINNET_CHAIN.to_string());
+    let chain_id = env::var("CHAIN_ID").unwrap_or_else(|_| MAINNET_CHAIN.to_string());
 
     const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
@@ -747,7 +750,7 @@ fn main() {
         }
     }
 
-    if let Err(_) = server_thread.join() {
+    if server_thread.join().is_err() {
         log::error!("server thread panic, this is a bug, must not happen");
     }
     log::info!("terminated");

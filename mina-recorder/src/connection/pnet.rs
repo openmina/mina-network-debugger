@@ -71,7 +71,10 @@ where
             self.skip = true;
             log::warn!("skip connection {id}, bytes: {}", hex::encode(bytes));
         } else {
-            *cipher = Some(XSalsa20::new(&self.shared_secret, GenericArray::from_slice(bytes)));
+            *cipher = Some(XSalsa20::new(
+                &self.shared_secret,
+                GenericArray::from_slice(bytes),
+            ));
             // self.stream = Some(db.add(StreamMeta::Raw, StreamKind::Raw));
         }
 

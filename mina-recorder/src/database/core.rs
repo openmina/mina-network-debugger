@@ -16,9 +16,7 @@ use radiation::{AbsorbExt, nom, ParseError, Emit};
 use thiserror::Error;
 
 use super::{
-    types::{
-        Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-    },
+    types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId},
     index,
 };
 
@@ -211,7 +209,9 @@ impl DbCore {
     }
 
     fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
-        self.inner.cf_handle(Self::CONNECTION_ID_INDEX).expect("must exist")
+        self.inner
+            .cf_handle(Self::CONNECTION_ID_INDEX)
+            .expect("must exist")
     }
 
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
@@ -227,7 +227,8 @@ impl DbCore {
             connection_id: v.connection_id,
             id,
         };
-        self.inner.put_cf(self.connection_id_index(), index.emit(vec![]), vec![])?;
+        self.inner
+            .put_cf(self.connection_id_index(), index.emit(vec![]), vec![])?;
         Ok(())
     }
 
@@ -331,10 +332,7 @@ impl DbCore {
         Ok(self.inner.put([K], v.emit(vec![]))?)
     }
 
-    pub fn fetch_connection(
-        &self,
-        id: u64,
-    ) -> Result<Connection, DbError> {
+    pub fn fetch_connection(&self, id: u64) -> Result<Connection, DbError> {
         self.get(self.connections(), id)
     }
 
@@ -421,10 +419,7 @@ impl DbCore {
         }
     }
 
-    fn limit<'a, It>(
-        params: &Params,
-        it: It,
-    ) -> impl Iterator<Item = (u64, FullMessage)> + 'a
+    fn limit<'a, It>(params: &Params, it: It) -> impl Iterator<Item = (u64, FullMessage)> + 'a
     where
         It: Iterator<Item = (u64, FullMessage)> + 'a,
     {
@@ -434,19 +429,18 @@ impl DbCore {
         } else {
             params.limit.unwrap_or(16)
         };
-        it
-            .take_while(move |(_, msg)| {
-                if let Some(limit_timestamp) = limit_timestamp {
-                    let d = msg
-                        .timestamp
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .expect("after unix epoch");
-                    d.as_secs() < limit_timestamp
-                } else {
-                    true
-                }
-            })
-            .take(limit)
+        it.take_while(move |(_, msg)| {
+            if let Some(limit_timestamp) = limit_timestamp {
+                let d = msg
+                    .timestamp
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .expect("after unix epoch");
+                d.as_secs() < limit_timestamp
+            } else {
+                true
+            }
+        })
+        .take(limit)
     }
 
     pub fn fetch_messages(&self, params: &Params) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
@@ -469,25 +463,21 @@ impl DbCore {
             let id = id.emit(vec![]);
             let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
-            let indexes_it = self.inner
+            let indexes_it = self
+                .inner
                 .iterator_cf(self.connection_id_index(), mode)
                 .filter_map(Self::decode_index::<index::Connection>)
                 .take_while(move |index| index.connection_id == connection_id)
                 .map(|index::Connection { id, .. }| id);
             // add more filters here
 
-            let it = indexes_it
-                .filter_map(|id| {
-                    match self.get(self.messages(), id.0) {
-                        Ok(v) => {
-                            Some((id.0, v))
-                        },
-                        Err(err) => {
-                            log::error!("{err}");
-                            None
-                        }
-                    }
-                });
+            let it = indexes_it.filter_map(|id| match self.get(self.messages(), id.0) {
+                Ok(v) => Some((id.0, v)),
+                Err(err) => {
+                    log::error!("{err}");
+                    None
+                }
+            });
             Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
         } else {
             let id = id.to_be_bytes();
@@ -497,7 +487,8 @@ impl DbCore {
                 params.direction.into()
             };
 
-            let it = self.inner
+            let it = self
+                .inner
                 .iterator_cf(self.messages(), mode)
                 .filter_map(Self::decode);
             Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>

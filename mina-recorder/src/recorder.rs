@@ -59,8 +59,9 @@ impl P2pRecorder {
         }
         match self.db.add(metadata.id.clone(), incoming, metadata.time) {
             Ok(group) => {
-                self.cns.insert(metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
-            },
+                self.cns
+                    .insert(metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
+            }
             Err(err) => {
                 log::error!("cannot process connection: {err}");
             }
