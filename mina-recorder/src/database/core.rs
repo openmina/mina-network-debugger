@@ -15,8 +15,10 @@ use radiation::{AbsorbExt, nom, ParseError, Emit};
 
 use thiserror::Error;
 
-use super::types::{
-    Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
+use super::{
+    types::{
+        Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
+    },
 };
 
 #[derive(Debug, Error)]
@@ -117,6 +119,7 @@ pub struct Params {
     limit_timestamp: Option<u64>,
     // what streams to read, comma separated
     // streams: Option<String>,
+    // filter by connection id
 }
 
 #[derive(Default, Clone, Copy, Deserialize)]
@@ -221,6 +224,27 @@ impl DbCore {
         }
     }
 
+    #[allow(dead_code)]
+    #[allow(clippy::type_complexity)]
+    fn decode_index<I>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<I>
+    where
+        I: for<'pa> AbsorbExt<'pa>,
+    {
+        match item {
+            Ok((key, _)) => match I::absorb_ext(&key) {
+                Ok(key) => Some(key),
+                Err(err) => {
+                    log::error!("key is unknown, err: {err}");
+                    None
+                }
+            },
+            Err(err) => {
+                log::error!("{err}");
+                None
+            }
+        }
+    }
+
     fn search_timestamp<T>(
         &self,
         cf: &rocksdb::ColumnFamily,
@@ -268,35 +292,15 @@ impl DbCore {
         Ok(self.inner.put([K], v.emit(vec![]))?)
     }
 
-    pub fn fetch_connections(
+    pub fn fetch_connection(
         &self,
-        filter: &Params,
-    ) -> impl Iterator<Item = (u64, Connection)> + '_ {
-        let direction = filter.direction.into();
-        let mut id = filter.id.unwrap_or(0).to_be_bytes();
-        let mode = match (direction, filter.timestamp, filter.id) {
-            (rocksdb::Direction::Forward, None, None) => rocksdb::IteratorMode::Start,
-            (rocksdb::Direction::Reverse, None, None) => rocksdb::IteratorMode::End,
-            (_, None, Some(_)) => rocksdb::IteratorMode::From(&id, direction),
-            (_, Some(timestamp), _) => {
-                let total = self.total::<{ Self::CONNECTIONS_CNT }>().unwrap_or(0);
-                match self.search_timestamp::<Connection>(self.connections(), total, timestamp) {
-                    Ok(c) => {
-                        id = c.to_be_bytes();
-                        rocksdb::IteratorMode::From(&id, direction)
-                    }
-                    Err(err) => {
-                        log::error!("cannot find timestamp {timestamp}, err: {err}");
-                        rocksdb::IteratorMode::From(&id, direction)
-                    }
-                }
-            }
-        };
-
-        self.inner
-            .iterator_cf(self.connections(), mode)
-            .filter_map(Self::decode)
-            .take(filter.limit.unwrap_or(1))
+        id: u64,
+    ) -> Result<Connection, DbError> {
+        let id = ConnectionId(id);
+        let v = self.inner.get_cf(self.connections(), id.0.to_be_bytes())?
+            .ok_or(DbError::NoSuchConnection(id))?;
+        let v = Connection::absorb_ext(&v)?;
+        Ok(v)
     }
 
     pub fn get_stream(

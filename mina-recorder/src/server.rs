@@ -6,17 +6,19 @@ use warp::{
     http::StatusCode,
 };
 
-use super::database::{DbCore, DbFacade};
+use super::database::{DbCore, DbFacade, };
 
 fn connections(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("connections")
-        .and(warp::query::query())
-        .map(move |params| -> WithStatus<Json> {
-            let v = db.fetch_connections(&params);
-            reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        })
+    warp::path!("connection" / u64).map(move |id: u64| -> reply::WithStatus<Json> {
+        match db.fetch_connection(id) {
+            Ok(v) => reply::with_status(reply::json(&v), StatusCode::OK),
+            Err(err) => {
+                reply::with_status(reply::json(&err.to_string()), StatusCode::INTERNAL_SERVER_ERROR)
+            },
+        }
+    })
 }
 
 fn messages(
