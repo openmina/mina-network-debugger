@@ -19,6 +19,7 @@ use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
     },
+    index,
 };
 
 #[derive(Debug, Error)]
@@ -120,6 +121,14 @@ pub struct Params {
     // what streams to read, comma separated
     // streams: Option<String>,
     // filter by connection id
+    connection_id: Option<u64>,
+}
+
+impl Params {
+    // id, timestamp, limit, limit_timestamp are limitations, not filters
+    pub fn has_filters(&self) -> bool {
+        self.connection_id.is_some()
+    }
 }
 
 #[derive(Default, Clone, Copy, Deserialize)]
@@ -139,8 +148,17 @@ impl From<Direction> for rocksdb::Direction {
     }
 }
 
+impl<'a> From<Direction> for rocksdb::IteratorMode<'a> {
+    fn from(v: Direction) -> Self {
+        match v {
+            Direction::Forward => rocksdb::IteratorMode::Start,
+            Direction::Reverse => rocksdb::IteratorMode::End,
+        }
+    }
+}
+
 impl DbCore {
-    const CFS: [&'static str; 2] = [Self::CONNECTIONS, Self::MESSAGES];
+    const CFS: [&'static str; 3] = [Self::CONNECTIONS, Self::MESSAGES, Self::CONNECTION_ID_INDEX];
 
     const TTL: Duration = Duration::from_secs(120);
 
@@ -151,6 +169,10 @@ impl DbCore {
     const MESSAGES: &'static str = "messages";
 
     pub const MESSAGES_CNT: u8 = 1;
+
+    // indexes
+
+    const CONNECTION_ID_INDEX: &'static str = "connection_id_index";
 
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
@@ -188,6 +210,10 @@ impl DbCore {
         self.inner.cf_handle(Self::MESSAGES).expect("must exist")
     }
 
+    fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::CONNECTION_ID_INDEX).expect("must exist")
+    }
+
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
         self.inner
             .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
@@ -197,6 +223,11 @@ impl DbCore {
     pub fn put_message(&self, id: MessageId, v: Message) -> Result<(), DbError> {
         self.inner
             .put_cf(self.messages(), id.emit(vec![]), v.emit(vec![]))?;
+        let index = index::Connection {
+            connection_id: v.connection_id,
+            id,
+        };
+        self.inner.put_cf(self.connection_id_index(), index.emit(vec![]), vec![])?;
         Ok(())
     }
 
@@ -226,13 +257,13 @@ impl DbCore {
 
     #[allow(dead_code)]
     #[allow(clippy::type_complexity)]
-    fn decode_index<I>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<I>
+    fn decode_index<T>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<T>
     where
-        I: for<'pa> AbsorbExt<'pa>,
+        T: for<'pa> AbsorbExt<'pa>,
     {
         match item {
-            Ok((key, _)) => match I::absorb_ext(&key) {
-                Ok(key) => Some(key),
+            Ok((key, _)) => match T::absorb_ext(&key) {
+                Ok(v) => Some(v),
                 Err(err) => {
                     log::error!("key is unknown, err: {err}");
                     None
@@ -243,6 +274,18 @@ impl DbCore {
                 None
             }
         }
+    }
+
+    fn get<T>(&self, cf: &rocksdb::ColumnFamily, key: u64) -> Result<T, DbError>
+    where
+        T: for<'pa> AbsorbExt<'pa>,
+    {
+        let v = self
+            .inner
+            .get_cf(cf, key.to_be_bytes())?
+            .ok_or(DbError::NoItemAtCursor(key))?;
+        let v = T::absorb_ext(&v)?;
+        Ok(v)
     }
 
     fn search_timestamp<T>(
@@ -261,11 +304,7 @@ impl DbCore {
         let mut pos = total / 2;
         let mut r = pos;
         while r > 0 {
-            let v = self
-                .inner
-                .get_cf(cf, pos.to_be_bytes())?
-                .ok_or(DbError::NoItemAtCursor(pos))?;
-            let v = T::absorb_ext(&v)?;
+            let v = self.get::<T>(cf, pos)?;
             let this_timestamp = v
                 .as_ref()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -296,11 +335,7 @@ impl DbCore {
         &self,
         id: u64,
     ) -> Result<Connection, DbError> {
-        let id = ConnectionId(id);
-        let v = self.inner.get_cf(self.connections(), id.0.to_be_bytes())?
-            .ok_or(DbError::NoSuchConnection(id))?;
-        let v = Connection::absorb_ext(&v)?;
-        Ok(v)
+        self.get(self.connections(), id)
     }
 
     pub fn get_stream(
@@ -328,7 +363,17 @@ impl DbCore {
             .remove(&stream_full_id);
     }
 
-    fn fetch_details(&self, msg: Message) -> Result<FullMessage, DbError> {
+    fn fetch_details(&self, (key, msg): (u64, Message)) -> Option<(u64, FullMessage)> {
+        match self.fetch_details_inner(msg) {
+            Ok(v) => Some((key, v)),
+            Err(err) => {
+                log::error!("{err}");
+                None
+            }
+        }
+    }
+
+    fn fetch_details_inner(&self, msg: Message) -> Result<FullMessage, DbError> {
         let stream_full_id = StreamFullId {
             cn: msg.connection_id,
             id: msg.stream_id,
@@ -360,45 +405,36 @@ impl DbCore {
         })
     }
 
-    pub fn fetch_messages(&self, filter: &Params) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
-        let direction = filter.direction.into();
-        let mut id = filter.id.unwrap_or(0).to_be_bytes();
-        let mode = match (direction, filter.timestamp, filter.id) {
-            (rocksdb::Direction::Forward, None, None) => rocksdb::IteratorMode::Start,
-            (rocksdb::Direction::Reverse, None, None) => rocksdb::IteratorMode::End,
-            (_, None, Some(_)) => rocksdb::IteratorMode::From(&id, direction),
-            (_, Some(timestamp), _) => {
+    fn message_id(&self, params: &Params) -> (bool, u64) {
+        match params.timestamp {
+            None => (params.id.is_some(), params.id.unwrap_or(0)),
+            Some(timestamp) => {
                 let total = self.total::<{ Self::MESSAGES_CNT }>().unwrap_or(0);
                 match self.search_timestamp::<Message>(self.messages(), total, timestamp) {
-                    Ok(c) => {
-                        id = c.to_be_bytes();
-                        rocksdb::IteratorMode::From(&id, direction)
-                    }
+                    Ok(c) => (true, c),
                     Err(err) => {
                         log::error!("cannot find timestamp {timestamp}, err: {err}");
-                        rocksdb::IteratorMode::From(&id, direction)
+                        (params.id.is_some(), params.id.unwrap_or(0))
                     }
                 }
             }
-        };
+        }
+    }
 
-        let limit_timestamp = filter.limit_timestamp;
+    fn limit<'a, It>(
+        params: &Params,
+        it: It,
+    ) -> impl Iterator<Item = (u64, FullMessage)> + 'a
+    where
+        It: Iterator<Item = (u64, FullMessage)> + 'a,
+    {
+        let limit_timestamp = params.limit_timestamp;
         let limit = if limit_timestamp.is_some() {
-            filter.limit.unwrap_or(usize::MAX)
+            params.limit.unwrap_or(usize::MAX)
         } else {
-            filter.limit.unwrap_or(16)
+            params.limit.unwrap_or(16)
         };
-
-        self.inner
-            .iterator_cf(self.messages(), mode)
-            .filter_map(Self::decode)
-            .filter_map(|(key, msg)| match self.fetch_details(msg) {
-                Ok(v) => Some((key, v)),
-                Err(err) => {
-                    log::error!("{err}");
-                    None
-                }
-            })
+        it
             .take_while(move |(_, msg)| {
                 if let Some(limit_timestamp) = limit_timestamp {
                     let d = msg
@@ -411,5 +447,61 @@ impl DbCore {
                 }
             })
             .take(limit)
+    }
+
+    pub fn fetch_messages(&self, params: &Params) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
+        let (present, id) = self.message_id(params);
+
+        let it = if params.has_filters() {
+            let id = if present {
+                id
+            } else {
+                match params.direction {
+                    Direction::Forward => 0,
+                    Direction::Reverse => u64::MAX,
+                }
+            };
+            let connection_id = ConnectionId(params.connection_id.unwrap());
+            let id = index::Connection {
+                connection_id,
+                id: MessageId(id),
+            };
+            let id = id.emit(vec![]);
+            let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+
+            let indexes_it = self.inner
+                .iterator_cf(self.connection_id_index(), mode)
+                .filter_map(Self::decode_index::<index::Connection>)
+                .take_while(move |index| index.connection_id == connection_id)
+                .map(|index::Connection { id, .. }| id);
+            // add more filters here
+
+            let it = indexes_it
+                .filter_map(|id| {
+                    match self.get(self.messages(), id.0) {
+                        Ok(v) => {
+                            Some((id.0, v))
+                        },
+                        Err(err) => {
+                            log::error!("{err}");
+                            None
+                        }
+                    }
+                });
+            Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
+        } else {
+            let id = id.to_be_bytes();
+            let mode = if present {
+                rocksdb::IteratorMode::From(&id, params.direction.into())
+            } else {
+                params.direction.into()
+            };
+
+            let it = self.inner
+                .iterator_cf(self.messages(), mode)
+                .filter_map(Self::decode);
+            Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
+        };
+        Self::limit(params, it.filter_map(|v| self.fetch_details(v)))
     }
 }
