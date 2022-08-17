@@ -119,7 +119,7 @@ impl Params {
             limit_timestamp: self.limit_timestamp,
             direction: self.direction,
             stream_filter,
-            kind_filter: self.stream_kind.map(|s| s.parse().unwrap()),
+            kind_filter: self.stream_kind.map(|s| s.parse().expect("cannot fail")),
         })
     }
 }

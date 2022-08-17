@@ -41,6 +41,24 @@ pub enum DbError {
     },
     #[error("no item at id {_0}")]
     NoItemAtCursor(u64),
+    #[error("decode {_0}")]
+    Decode(DecodeError),
+}
+
+#[derive(Debug, Error)]
+pub enum DecodeError {
+    #[error("{_0}")]
+    Serde(serde_json::Error),
+    #[error("{_0}")]
+    BinProt(bin_prot::error::Error),
+    #[error("{_0}")]
+    Protobuf(prost::DecodeError),
+}
+
+impl From<DecodeError> for DbError {
+    fn from(v: DecodeError) -> Self {
+        DbError::Decode(v)
+    }
 }
 
 impl From<rocksdb::Error> for DbError {
@@ -382,11 +400,11 @@ impl DbCore {
         let message = match msg.stream_kind {
             StreamKind::Kad => {
                 let v = crate::connection::mina_protocol::kademlia::parse(buf);
-                serde_json::to_value(&v).unwrap()
+                serde_json::to_value(&v).map_err(DecodeError::Serde)?
             }
             StreamKind::Meshsub => {
                 let v = crate::connection::mina_protocol::meshsub::parse(buf);
-                serde_json::to_value(&v).unwrap()
+                serde_json::to_value(&v).map_err(DecodeError::Serde)?
             }
             _ => serde_json::Value::String(hex::encode(&buf)),
         };

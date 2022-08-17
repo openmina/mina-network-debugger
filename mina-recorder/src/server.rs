@@ -81,13 +81,26 @@ pub fn run<P>(port: u16, path: P) -> (DbFacade, impl FnOnce(), thread::JoinHandl
 where
     P: AsRef<Path>,
 {
+    use std::process;
     use tokio::{sync::oneshot, runtime::Runtime};
 
-    let rt = Runtime::new().unwrap();
+    let rt = match Runtime::new() {
+        Ok(v) => v,
+        Err(err) => {
+            log::error!("fatal: {err}");
+            process::exit(1);
+        }
+    };
     let _guard = rt.enter();
     let (tx, rx) = oneshot::channel();
 
-    let db = DbFacade::open(path).unwrap();
+    let db = match DbFacade::open(path) {
+        Ok(v) => v,
+        Err(err) => {
+            log::error!("fatal: {err}");
+            process::exit(1);
+        }
+    };
     let addr = ([0, 0, 0, 0], port);
     let (_, server) =
         warp::serve(routes(db.core())).bind_with_graceful_shutdown(addr, async move {

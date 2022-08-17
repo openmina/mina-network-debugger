@@ -41,7 +41,7 @@ where
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
-            let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
+            let len = u16::from_be_bytes(bytes[..2].try_into().expect("checked above")) as usize;
             if bytes.len() == 2 + len {
                 return self.inner.on_data(id, bytes, cx, db);
             }
@@ -50,7 +50,8 @@ where
         self.accumulator.extend_from_slice(bytes);
         loop {
             if self.accumulator.len() >= 2 {
-                let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
+                let len = self.accumulator[..2].try_into().expect("checked above");
+                let len = u16::from_be_bytes(len) as usize;
                 if self.accumulator.len() >= 2 + len {
                     let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
                     self.inner.on_data(id.clone(), chunk, cx, db)?;

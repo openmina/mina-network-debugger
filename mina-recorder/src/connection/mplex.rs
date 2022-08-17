@@ -96,7 +96,9 @@ where
             initiator,
         } = header;
         let body = match tag {
-            Tag::New => Body::NewStream(String::from_utf8(bytes.to_vec()).unwrap()),
+            Tag::New => Body::NewStream(
+                String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| hex::encode(bytes)),
+            ),
             Tag::Msg => {
                 self.inners
                     .entry(stream_id)
