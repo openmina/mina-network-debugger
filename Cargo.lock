@@ -946,6 +946,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "iter-set"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d383de7eb06945341d858e79642070db6c357978a753ebf6aacf43975d73ad9b"
+
+[[package]]
 name = "itertools"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1109,6 +1115,7 @@ dependencies = [
  "chacha20poly1305",
  "curve25519-dalek",
  "hex",
+ "iter-set",
  "log",
  "mina-serialization-types",
  "multiaddr",

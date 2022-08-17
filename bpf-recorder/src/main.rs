@@ -554,9 +554,10 @@ fn main() {
         .parse()
         .unwrap_or(8000);
     let db_path = env::var("DB_PATH").unwrap_or_else(|_| "target/db".to_string());
+    let dry = env::var("DRY").is_ok();
 
     let (db, callback, server_thread) = mina_recorder::server::run(port, db_path);
-    let terminating = Arc::new(AtomicBool::new(false));
+    let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
         let mut callback = Some(callback);

@@ -9,14 +9,13 @@ use std::{
     os::unix::prelude::FileExt,
 };
 
-use serde::Deserialize;
-
 use radiation::{AbsorbExt, nom, ParseError, Emit};
 
 use thiserror::Error;
 
 use super::{
     types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId},
+    params::{ValidParams, Coordinate, StreamFilter, Direction},
     index,
 };
 
@@ -103,60 +102,14 @@ pub struct DbCore {
     inner: Arc<rocksdb::DB>,
 }
 
-#[derive(Deserialize)]
-pub struct Params {
-    // the start of the list, either id of record ...
-    id: Option<u64>,
-    // ... or timestamp
-    timestamp: Option<u64>,
-    // wether go `forward` or `reverse`, default is `forward`
-    #[serde(default)]
-    direction: Direction,
-    // how many records to read, default is 1 for connections and 16 for messages
-    // if `limit_timestamp` is specified, default limit is `usize::MAX`
-    limit: Option<usize>,
-    limit_timestamp: Option<u64>,
-    // what streams to read, comma separated
-    // streams: Option<String>,
-    // filter by connection id
-    connection_id: Option<u64>,
-}
-
-impl Params {
-    // id, timestamp, limit, limit_timestamp are limitations, not filters
-    pub fn has_filters(&self) -> bool {
-        self.connection_id.is_some()
-    }
-}
-
-#[derive(Default, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Direction {
-    #[default]
-    Forward,
-    Reverse,
-}
-
-impl From<Direction> for rocksdb::Direction {
-    fn from(v: Direction) -> Self {
-        match v {
-            Direction::Forward => rocksdb::Direction::Forward,
-            Direction::Reverse => rocksdb::Direction::Reverse,
-        }
-    }
-}
-
-impl<'a> From<Direction> for rocksdb::IteratorMode<'a> {
-    fn from(v: Direction) -> Self {
-        match v {
-            Direction::Forward => rocksdb::IteratorMode::Start,
-            Direction::Reverse => rocksdb::IteratorMode::End,
-        }
-    }
-}
-
 impl DbCore {
-    const CFS: [&'static str; 3] = [Self::CONNECTIONS, Self::MESSAGES, Self::CONNECTION_ID_INDEX];
+    const CFS: [&'static str; 5] = [
+        Self::CONNECTIONS,
+        Self::MESSAGES,
+        Self::CONNECTION_ID_INDEX,
+        Self::STREAM_ID_INDEX,
+        Self::STREAM_KIND_INDEX,
+    ];
 
     const TTL: Duration = Duration::from_secs(120);
 
@@ -172,6 +125,10 @@ impl DbCore {
 
     const CONNECTION_ID_INDEX: &'static str = "connection_id_index";
 
+    const STREAM_ID_INDEX: &'static str = "stream_id_index";
+
+    const STREAM_KIND_INDEX: &'static str = "stream_kind_index";
+
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
         P: AsRef<Path>,
@@ -181,8 +138,21 @@ impl DbCore {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
+
+        let opts_with_prefix_extractor = |prefix_len| {
+            let mut opts = rocksdb::Options::default();
+            opts.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(prefix_len));
+            opts
+        };
+        let cfs = [
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[0], Default::default()),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[1], Default::default()),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[2], opts_with_prefix_extractor(8)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], opts_with_prefix_extractor(16)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(2)),
+        ];
         let inner =
-            rocksdb::DB::open_cf_with_ttl(&opts, path.join("rocksdb"), Self::CFS, Self::TTL)?;
+            rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
         fs::create_dir(path.join("streams"))
             .or_else(|e| {
                 if e.kind() == io::ErrorKind::AlreadyExists {
@@ -214,6 +184,18 @@ impl DbCore {
             .expect("must exist")
     }
 
+    fn stream_id_index(&self) -> &rocksdb::ColumnFamily {
+        self.inner
+            .cf_handle(Self::STREAM_ID_INDEX)
+            .expect("must exist")
+    }
+
+    fn stream_kind_index(&self) -> &rocksdb::ColumnFamily {
+        self.inner
+            .cf_handle(Self::STREAM_KIND_INDEX)
+            .expect("must exist")
+    }
+
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
         self.inner
             .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
@@ -229,6 +211,21 @@ impl DbCore {
         };
         self.inner
             .put_cf(self.connection_id_index(), index.emit(vec![]), vec![])?;
+        let index = index::Stream {
+            stream_full_id: StreamFullId {
+                cn: v.connection_id,
+                id: v.stream_id,
+            },
+            id,
+        };
+        self.inner
+            .put_cf(self.stream_id_index(), index.emit(vec![]), vec![])?;
+        let index = index::StreamByKind {
+            stream_kind: v.stream_kind,
+            id,
+        };
+        self.inner
+            .put_cf(self.stream_kind_index(), index.emit(vec![]), vec![])?;
         Ok(())
     }
 
@@ -403,82 +400,116 @@ impl DbCore {
         })
     }
 
-    fn message_id(&self, params: &Params) -> (bool, u64) {
-        match params.timestamp {
-            None => (params.id.is_some(), params.id.unwrap_or(0)),
-            Some(timestamp) => {
+    fn message_id(&self, params: &ValidParams) -> (bool, u64) {
+        match params.start {
+            Coordinate::ById { id, explicit } => (explicit, id),
+            Coordinate::ByTimestamp(timestamp) => {
                 let total = self.total::<{ Self::MESSAGES_CNT }>().unwrap_or(0);
                 match self.search_timestamp::<Message>(self.messages(), total, timestamp) {
                     Ok(c) => (true, c),
                     Err(err) => {
                         log::error!("cannot find timestamp {timestamp}, err: {err}");
-                        (params.id.is_some(), params.id.unwrap_or(0))
+                        (false, 0)
                     }
                 }
             }
         }
     }
 
-    fn limit<'a, It>(params: &Params, it: It) -> impl Iterator<Item = (u64, FullMessage)> + 'a
+    fn fetch_messages_by_indexes<'a, It>(
+        &'a self,
+        it: It,
+    ) -> Box<dyn Iterator<Item = (u64, Message)> + 'a>
     where
-        It: Iterator<Item = (u64, FullMessage)> + 'a,
+        It: Iterator<Item = MessageId> + 'a,
     {
-        let limit_timestamp = params.limit_timestamp;
-        let limit = if limit_timestamp.is_some() {
-            params.limit.unwrap_or(usize::MAX)
-        } else {
-            params.limit.unwrap_or(16)
-        };
-        it.take_while(move |(_, msg)| {
-            if let Some(limit_timestamp) = limit_timestamp {
-                let d = msg
-                    .timestamp
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("after unix epoch");
-                d.as_secs() < limit_timestamp
-            } else {
-                true
+        let it = it.filter_map(|id| match self.get(self.messages(), id.0) {
+            Ok(v) => Some((id.0, v)),
+            Err(err) => {
+                log::error!("{err}");
+                None
             }
-        })
-        .take(limit)
+        });
+        Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
     }
 
-    pub fn fetch_messages(&self, params: &Params) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
+    pub fn fetch_messages(
+        &self,
+        params: &ValidParams,
+    ) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
         let (present, id) = self.message_id(params);
 
-        let it = if params.has_filters() {
-            let id = if present {
-                id
-            } else {
-                match params.direction {
-                    Direction::Forward => 0,
-                    Direction::Reverse => u64::MAX,
-                }
-            };
-            let connection_id = ConnectionId(params.connection_id.unwrap());
-            let id = index::Connection {
-                connection_id,
-                id: MessageId(id),
-            };
-            let id = id.emit(vec![]);
-            let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+        let it = if params.stream_filter.is_some() || params.kind_filter.is_some() {
+            let stream_indexes = match &params.stream_filter {
+                Some(StreamFilter::AnyStreamInConnection(connection_id)) => {
+                    let connection_id = *connection_id;
+                    let id = index::Connection {
+                        connection_id,
+                        id: MessageId(id),
+                    };
+                    let id = id.emit(vec![]);
+                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
-            let indexes_it = self
-                .inner
-                .iterator_cf(self.connection_id_index(), mode)
-                .filter_map(Self::decode_index::<index::Connection>)
-                .take_while(move |index| index.connection_id == connection_id)
-                .map(|index::Connection { id, .. }| id);
-            // add more filters here
-
-            let it = indexes_it.filter_map(|id| match self.get(self.messages(), id.0) {
-                Ok(v) => Some((id.0, v)),
-                Err(err) => {
-                    log::error!("{err}");
-                    None
+                    let it = self
+                        .inner
+                        .iterator_cf(self.connection_id_index(), mode)
+                        .filter_map(Self::decode_index::<index::Connection>)
+                        .take_while(move |index| index.connection_id == connection_id)
+                        .map(|index::Connection { id, .. }| id);
+                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
                 }
-            });
-            Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
+                Some(StreamFilter::Stream(stream_full_id)) => {
+                    let stream_full_id = *stream_full_id;
+                    let id = index::Stream {
+                        stream_full_id,
+                        id: MessageId(id),
+                    };
+                    let id = id.emit(vec![]);
+                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+
+                    let it = self
+                        .inner
+                        .iterator_cf(self.stream_id_index(), mode)
+                        .filter_map(Self::decode_index::<index::Stream>)
+                        .take_while(move |index| index.stream_full_id == stream_full_id)
+                        .map(|index::Stream { id, .. }| id);
+                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
+                }
+                None => None,
+            };
+            let kind_indexes = match &params.kind_filter {
+                Some(stream_kind) => {
+                    let stream_kind = *stream_kind;
+                    let id = index::StreamByKind {
+                        stream_kind,
+                        id: MessageId(id),
+                    };
+                    let id = id.emit(vec![]);
+                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+
+                    let it = self
+                        .inner
+                        .iterator_cf(self.stream_kind_index(), mode)
+                        .filter_map(Self::decode_index::<index::StreamByKind>)
+                        .take_while(move |index| index.stream_kind == stream_kind)
+                        .map(|index::StreamByKind { id, .. }| id);
+                    Some(it)
+                }
+                None => None,
+            };
+            match (stream_indexes, kind_indexes) {
+                (Some(a), Some(b)) => {
+                    let direction = params.direction;
+                    let it = iter_set::intersection_by(a, b, move |a, b| match direction {
+                        Direction::Forward => (*a).cmp(&*b),
+                        Direction::Reverse => (*b).cmp(&*a),
+                    });
+                    self.fetch_messages_by_indexes(it)
+                }
+                (Some(i), None) => self.fetch_messages_by_indexes(i),
+                (None, Some(i)) => self.fetch_messages_by_indexes(i),
+                (None, None) => unreachable!(),
+            }
         } else {
             let id = id.to_be_bytes();
             let mode = if present {
@@ -493,6 +524,6 @@ impl DbCore {
                 .filter_map(Self::decode);
             Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
         };
-        Self::limit(params, it.filter_map(|v| self.fetch_details(v)))
+        params.limit(it.filter_map(|v| self.fetch_details(v)))
     }
 }

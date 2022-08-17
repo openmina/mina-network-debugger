@@ -5,8 +5,6 @@ use std::{
 
 use radiation::{Absorb, Emit, nom, ParseError};
 
-use super::database::{StreamKind, StreamId};
-
 pub fn addr_absorb(input: &[u8]) -> nom::IResult<&[u8], SocketAddr, ParseError<&[u8]>> {
     let pair = nom::sequence::pair(<[u8; 16]>::absorb::<()>, u16::absorb::<()>);
     nom::combinator::map(pair, |(ip, port)| {
@@ -53,47 +51,4 @@ where
             .expect("after unix epoch"),
         buffer,
     )
-}
-
-pub fn stream_kind_emit<W>(value: &StreamKind, buffer: W) -> W
-where
-    W: Extend<u8>,
-{
-    (*value as u16).emit(buffer)
-}
-
-pub fn stream_kind_absorb(input: &[u8]) -> nom::IResult<&[u8], StreamKind, ParseError<&[u8]>> {
-    nom::combinator::map(u16::absorb::<()>, |d| {
-        for v in StreamKind::iter() {
-            if d == v as u16 {
-                return v;
-            }
-        }
-        StreamKind::Unknown
-    })(input)
-}
-
-pub fn stream_meta_emit<W>(value: &StreamId, buffer: W) -> W
-where
-    W: Extend<u8>,
-{
-    let d = match value {
-        StreamId::Handshake => i64::MIN,
-        StreamId::Forward(s) => *s as i64,
-        StreamId::Backward(s) => -((*s + 1) as i64),
-    };
-    d.emit(buffer)
-}
-
-pub fn stream_meta_absorb(input: &[u8]) -> nom::IResult<&[u8], StreamId, ParseError<&[u8]>> {
-    nom::combinator::map(i64::absorb::<()>, |d| match d {
-        i64::MIN => StreamId::Handshake,
-        d => {
-            if d >= 0 {
-                StreamId::Forward(d as u64)
-            } else {
-                StreamId::Backward((-d - 1) as u64)
-            }
-        }
-    })(input)
 }

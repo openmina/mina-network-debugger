@@ -35,8 +35,6 @@ impl AsRef<SystemTime> for Connection {
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StreamFullId {
     pub cn: ConnectionId,
-    #[custom_absorb(custom_coding::stream_meta_absorb)]
-    #[custom_emit(custom_coding::stream_meta_emit)]
     pub id: StreamId,
 }
 
@@ -111,6 +109,30 @@ pub enum StreamId {
     Backward(u64),
 }
 
+impl FromStr for StreamId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "handshake" {
+            Ok(StreamId::Handshake)
+        } else if s.starts_with("forward_") {
+            let i = s
+                .trim_start_matches("forward_")
+                .parse::<u64>()
+                .map_err(|err| err.to_string())?;
+            Ok(StreamId::Forward(i))
+        } else if s.starts_with("backward_") {
+            let i = s
+                .trim_start_matches("backward_")
+                .parse::<u64>()
+                .map_err(|err| err.to_string())?;
+            Ok(StreamId::Backward(i))
+        } else {
+            Err(s.to_string())
+        }
+    }
+}
+
 impl fmt::Display for StreamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -127,11 +149,7 @@ pub struct MessageId(pub u64);
 #[derive(Clone, Absorb, Serialize, Emit)]
 pub struct Message {
     pub connection_id: ConnectionId,
-    #[custom_absorb(custom_coding::stream_meta_absorb)]
-    #[custom_emit(custom_coding::stream_meta_emit)]
     pub stream_id: StreamId,
-    #[custom_absorb(custom_coding::stream_kind_absorb)]
-    #[custom_emit(custom_coding::stream_kind_emit)]
     pub stream_kind: StreamKind,
     pub incoming: bool,
     #[custom_absorb(custom_coding::time_absorb)]
@@ -156,4 +174,73 @@ pub struct FullMessage {
     pub stream_kind: StreamKind,
     // dynamic type, the type is depend on `stream_kind`
     pub message: serde_json::Value,
+}
+
+impl AsRef<SystemTime> for FullMessage {
+    fn as_ref(&self) -> &SystemTime {
+        &self.timestamp
+    }
+}
+
+mod implementations {
+    use radiation::{Absorb, Emit, nom, ParseError, Limit};
+
+    use super::{StreamId, StreamKind};
+
+    impl<'pa> Absorb<'pa> for StreamKind {
+        fn absorb<L>(input: &'pa [u8]) -> nom::IResult<&'pa [u8], Self, ParseError<&'pa [u8]>>
+        where
+            L: Limit,
+        {
+            nom::combinator::map(u16::absorb::<()>, |d| {
+                for v in StreamKind::iter() {
+                    if d == v as u16 {
+                        return v;
+                    }
+                }
+                StreamKind::Unknown
+            })(input)
+        }
+    }
+
+    impl<W> Emit<W> for StreamKind
+    where
+        W: Extend<u8>,
+    {
+        fn emit(&self, buffer: W) -> W {
+            (*self as u16).emit(buffer)
+        }
+    }
+
+    impl<'pa> Absorb<'pa> for StreamId {
+        fn absorb<L>(input: &'pa [u8]) -> nom::IResult<&'pa [u8], Self, ParseError<&'pa [u8]>>
+        where
+            L: Limit,
+        {
+            nom::combinator::map(i64::absorb::<()>, |d| match d {
+                i64::MIN => StreamId::Handshake,
+                d => {
+                    if d >= 0 {
+                        StreamId::Forward(d as u64)
+                    } else {
+                        StreamId::Backward((-d - 1) as u64)
+                    }
+                }
+            })(input)
+        }
+    }
+
+    impl<W> Emit<W> for StreamId
+    where
+        W: Extend<u8>,
+    {
+        fn emit(&self, buffer: W) -> W {
+            let d = match self {
+                StreamId::Handshake => i64::MIN,
+                StreamId::Forward(s) => *s as i64,
+                StreamId::Backward(s) => -((*s + 1) as i64),
+            };
+            d.emit(buffer)
+        }
+    }
 }

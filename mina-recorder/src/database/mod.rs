@@ -4,6 +4,9 @@ pub use self::types::{StreamKind, StreamId};
 mod rocksdb;
 pub use self::rocksdb::{DbFacade, DbGroup, DbStream};
 
+mod params;
+pub use self::params::Params;
+
 mod index;
 
 mod core;
