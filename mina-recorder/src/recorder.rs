@@ -57,11 +57,14 @@ impl P2pRecorder {
         } else {
             log::info!("{alias}_{pid} connect {addr} {fd}");
         }
-        let group = self
-            .db
-            .add(metadata.id.clone(), incoming, metadata.time)
-            .unwrap();
-        self.cns.insert(metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
+        match self.db.add(metadata.id.clone(), incoming, metadata.time) {
+            Ok(group) => {
+                self.cns.insert(metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
+            },
+            Err(err) => {
+                log::error!("cannot process connection: {err}");
+            }
+        }
     }
 
     pub fn on_disconnect(&mut self, metadata: EventMetadata) {
@@ -80,7 +83,9 @@ impl P2pRecorder {
                 alias,
                 incoming,
             };
-            cn.on_data(id, &mut bytes, &mut self.cx, &*group);
+            if let Err(err) = cn.on_data(id.clone(), &mut bytes, &mut self.cx, &*group) {
+                log::error!("{id}: {err}");
+            }
         }
     }
 

@@ -3,7 +3,7 @@ pub mod kademlia;
 
 use crate::database::{StreamId, StreamKind, DbStream};
 
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
 pub struct State {
     stream_id: StreamId,
@@ -28,10 +28,10 @@ impl DynamicProtocol for State {
 
 impl HandleData for State {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _: &mut Cx, db: &Db) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _: &mut Cx, db: &Db) -> DbResult<()> {
         let stream = self
             .stream
             .get_or_insert_with(|| db.add(self.stream_id, self.kind));
-        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
+        stream.add(id.incoming, id.metadata.time, bytes)
     }
 }

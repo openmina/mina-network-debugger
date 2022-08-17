@@ -12,7 +12,7 @@ use vru_noise::{
 
 use crate::database::{DbStream, StreamId, StreamKind};
 
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
 type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
@@ -39,12 +39,11 @@ where
     Inner: HandleData,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         if self.accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().unwrap()) as usize;
             if bytes.len() == 2 + len {
-                self.inner.on_data(id, bytes, cx, db);
-                return;
+                return self.inner.on_data(id, bytes, cx, db);
             }
         }
 
@@ -54,13 +53,15 @@ where
                 let len = u16::from_be_bytes(self.accumulator[..2].try_into().unwrap()) as usize;
                 if self.accumulator.len() >= 2 + len {
                     let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
-                    self.inner.on_data(id.clone(), chunk, cx, db);
+                    self.inner.on_data(id.clone(), chunk, cx, db)?;
                     self.accumulator = remaining.to_vec();
                     continue;
                 }
             }
             break;
         }
+
+        Ok(())
     }
 }
 
@@ -107,7 +108,7 @@ where
     Inner: HandleData,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         enum Msg {
             First,
             Second,
@@ -129,14 +130,14 @@ where
                         let stream = self.stream.get_or_insert_with(|| {
                             db.add(StreamId::Handshake, StreamKind::Handshake)
                         });
-                        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
+                        stream.add(id.incoming, id.metadata.time, bytes)?;
                     }
                     Msg::Third => {
                         let stream = self.stream.as_ref().unwrap();
-                        stream.add(id.incoming, id.metadata.time, bytes).unwrap();
+                        stream.add(id.incoming, id.metadata.time, bytes)?;
                     }
                     Msg::Other => {
-                        self.inner.on_data(id, bytes, cx, db);
+                        self.inner.on_data(id, bytes, cx, db)?;
                     }
                 },
                 None => {
@@ -154,6 +155,8 @@ where
                 hex::encode(&bytes[..4])
             );
         }
+
+        Ok(())
     }
 }
 
@@ -198,7 +201,7 @@ impl<Inner> NoiseState<Inner> {
                     return None;
                 }
 
-                let i_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
+                let i_epk = MontgomeryPoint(bytes[2..34].try_into().expect("cannot fail, checked above"));
                 let st = SymmetricState::new("Noise_XX_25519_ChaChaPoly_SHA256")
                     .mix_hash(&[])
                     .mix_hash(i_epk.as_bytes())
@@ -212,13 +215,13 @@ impl<Inner> NoiseState<Inner> {
                     return None;
                 }
 
-                let r_epk = MontgomeryPoint(bytes[2..34].try_into().unwrap());
+                let r_epk = MontgomeryPoint(bytes[2..34].try_into().expect("cannot fail, checked above"));
                 let ee = try_dh(&r_epk, &i_epk, cx).or_else(|| {
                     self.error = true;
                     None
                 })?;
 
-                let mut r_spk_bytes: [u8; 32] = bytes[34..66].try_into().unwrap();
+                let mut r_spk_bytes: [u8; 32] = bytes[34..66].try_into().expect("cannot fail, checked above");
                 let tag = *GenericArray::from_slice(&bytes[66..82]);
                 let r_spk;
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
@@ -249,7 +252,7 @@ impl<Inner> NoiseState<Inner> {
                     return None;
                 }
 
-                let mut i_spk_bytes: [u8; 32] = bytes[2..34].try_into().unwrap();
+                let mut i_spk_bytes: [u8; 32] = bytes[2..34].try_into().expect("cannot fail, checked above");
                 let tag = *GenericArray::from_slice(&bytes[34..50]);
                 let i_spk;
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);

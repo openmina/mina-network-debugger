@@ -1,6 +1,6 @@
 use std::mem;
 
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
 pub struct State<Inner> {
     stream_id: u64,
@@ -45,7 +45,7 @@ where
     Inner: HandleData + DynamicProtocol,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         let (accumulator, done) = if id.incoming {
             (&mut self.accumulator_incoming, &mut self.incoming)
         } else {
@@ -84,6 +84,7 @@ where
                 }
             }
             *accumulator = (*cursor).to_vec();
+            Ok(())
         }
     }
 }

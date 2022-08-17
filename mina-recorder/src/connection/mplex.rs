@@ -2,7 +2,7 @@ use std::{fmt, collections::BTreeMap, ops::Range};
 
 use unsigned_varint::decode;
 
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
 pub struct State<Inner> {
     accumulating: Vec<u8>,
@@ -81,7 +81,14 @@ impl<Inner> State<Inner>
 where
     Inner: HandleData + From<(u64, bool)>,
 {
-    fn out(&mut self, id: DirectedId, cx: &mut Cx, db: &Db, header: Header, range: Range<usize>) {
+    fn out(
+        &mut self,
+        id: DirectedId,
+        cx: &mut Cx,
+        db: &Db,
+        header: Header,
+        range: Range<usize>,
+    ) -> DbResult<()> {
         let bytes = &mut self.accumulating[range];
         let Header {
             tag,
@@ -94,7 +101,7 @@ where
                 self.inners
                     .entry(stream_id)
                     .or_insert_with(|| Inner::from((stream_id.i, stream_id.initiator_is_incoming)))
-                    .on_data(id.clone(), bytes, cx, db);
+                    .on_data(id.clone(), bytes, cx, db)?;
                 Body::Message { initiator }
             }
             Tag::Close => {
@@ -111,7 +118,9 @@ where
             initiator_is_incoming,
         } = stream_id;
         let mark = if initiator_is_incoming { "~" } else { "" };
-        log::info!("{id} stream_id: {mark}{i}, {body}")
+        log::info!("{id} stream_id: {mark}{i}, {body}");
+
+        Ok(())
     }
 }
 
@@ -120,7 +129,7 @@ where
     Inner: HandleData + From<(u64, bool)>,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         self.accumulating.extend_from_slice(bytes);
 
         let (header, len, offset) = {
@@ -135,11 +144,13 @@ where
         #[allow(clippy::comparison_chain)]
         if offset + len == self.accumulating.len() {
             // good case, we have all data in one chunk
-            self.out(id, cx, db, header, offset..(len + offset));
+            self.out(id, cx, db, header, offset..(len + offset))?;
             self.accumulating.clear();
         } else if offset + len <= self.accumulating.len() {
             // TODO:
             panic!("{} < {}", offset + len, self.accumulating.len());
         }
+
+        Ok(())
     }
 }

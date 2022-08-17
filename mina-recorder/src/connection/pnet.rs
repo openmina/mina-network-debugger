@@ -6,7 +6,7 @@ use salsa20::{
 
 use crate::database::DbStream;
 
-use super::{HandleData, DirectedId, Cx, Db};
+use super::{HandleData, DirectedId, Cx, Db, DbResult};
 
 pub struct State<Inner> {
     shared_secret: GenericArray<u8, typenum::U32>,
@@ -56,7 +56,7 @@ where
     Inner: HandleData,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         let cipher = if id.incoming {
             &mut self.cipher_in
         } else {
@@ -64,15 +64,17 @@ where
         };
         if let Some(cipher) = cipher {
             // TODO: raw
-            // self.stream.as_ref().unwrap().add(id.incoming, id.metadata.time, bytes).unwrap();
+            // self.stream.as_ref().unwrap().add(id.incoming, id.metadata.time, bytes);
             cipher.apply_keystream(bytes);
-            self.inner.on_data(id, bytes, cx, db);
+            self.inner.on_data(id, bytes, cx, db)?;
         } else if bytes.len() != 24 {
             self.skip = true;
             log::warn!("skip connection {id}, bytes: {}", hex::encode(bytes));
         } else {
             *cipher = Some(XSalsa20::new(&self.shared_secret, GenericArray::from_slice(bytes)));
-            // self.stream = Some(db.add(StreamMeta::Raw, StreamKind::Raw).unwrap());
+            // self.stream = Some(db.add(StreamMeta::Raw, StreamKind::Raw));
         }
+
+        Ok(())
     }
 }
