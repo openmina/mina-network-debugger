@@ -9,6 +9,8 @@ pub use self::params::Params;
 
 mod index;
 
+mod sorted_intersect;
+
 mod core;
 pub use self::core::{DbError, DbCore};
 
