@@ -19,6 +19,8 @@ use super::{
     index,
 };
 
+use crate::decode::DecodeError;
+
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("{_0}")]
@@ -43,16 +45,6 @@ pub enum DbError {
     NoItemAtCursor(u64),
     #[error("decode {_0}")]
     Decode(DecodeError),
-}
-
-#[derive(Debug, Error)]
-pub enum DecodeError {
-    #[error("{_0}")]
-    Serde(serde_json::Error),
-    #[error("{_0}")]
-    BinProt(bin_prot::error::Error),
-    #[error("{_0}")]
-    Protobuf(prost::DecodeError),
 }
 
 impl From<DecodeError> for DbError {
@@ -399,11 +391,11 @@ impl DbCore {
         drop(file);
         let message = match msg.stream_kind {
             StreamKind::Kad => {
-                let v = crate::connection::mina_protocol::kademlia::parse(buf);
+                let v = crate::decode::kademlia::parse(buf);
                 serde_json::to_value(&v).map_err(DecodeError::Serde)?
             }
             StreamKind::Meshsub => {
-                let v = crate::connection::mina_protocol::meshsub::parse(buf);
+                let v = crate::decode::meshsub::parse(buf);
                 serde_json::to_value(&v).map_err(DecodeError::Serde)?
             }
             _ => serde_json::Value::String(hex::encode(&buf)),

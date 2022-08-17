@@ -1,6 +1,3 @@
-pub mod meshsub;
-pub mod kademlia;
-
 use crate::database::{StreamId, StreamKind, DbStream};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};

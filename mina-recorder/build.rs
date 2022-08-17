@@ -9,11 +9,8 @@ fn main() {
     println!("cargo:rustc-env=GIT_HASH={}", git_hash);
 
     prost_build::compile_protos(
-        &[
-            "src/connection/mina_protocol/meshsub.proto",
-            "src/connection/mina_protocol/kademlia.proto",
-        ],
-        &["src/connection/mina_protocol"],
+        &["src/decode/meshsub.proto", "src/decode/kademlia.proto"],
+        &["src/decode"],
     )
     .unwrap();
 }

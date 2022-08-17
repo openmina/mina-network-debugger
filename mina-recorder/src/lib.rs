@@ -3,6 +3,8 @@ pub use self::recorder::P2pRecorder;
 
 mod connection;
 
+mod decode;
+
 mod custom_coding;
 
 mod database;
