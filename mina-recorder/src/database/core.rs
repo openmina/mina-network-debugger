@@ -390,14 +390,8 @@ impl DbCore {
             .map_err(|err| DbError::Io(stream_full_id, err))?;
         drop(file);
         let message = match msg.stream_kind {
-            StreamKind::Kad => {
-                let v = crate::decode::kademlia::parse(buf);
-                serde_json::to_value(&v).map_err(DecodeError::Serde)?
-            }
-            StreamKind::Meshsub => {
-                let v = crate::decode::meshsub::parse(buf);
-                serde_json::to_value(&v).map_err(DecodeError::Serde)?
-            }
+            StreamKind::Kad => crate::decode::kademlia::parse(buf)?,
+            StreamKind::Meshsub => crate::decode::meshsub::parse(buf)?,
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {

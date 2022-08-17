@@ -2,12 +2,14 @@ use mina_serialization_types::v1::ExternalTransitionV1;
 use bin_prot::encodable::BinProtEncodable;
 use serde::Serialize;
 
+use super::DecodeError;
+
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
     include!(concat!(env!("OUT_DIR"), "/gossipsub.pb.rs"));
 }
 
-pub fn parse(bytes: Vec<u8>) -> impl Serialize {
+pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
     #[derive(Serialize)]
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
@@ -35,7 +37,8 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
         subscriptions,
         publish,
         control,
-    } = Message::decode_length_delimited(buf).unwrap();
+    } = Message::decode_length_delimited(buf)
+        .map_err(DecodeError::Protobuf)?;
     let subscriptions = subscriptions.into_iter().map(|v| {
         let subscribe = v.subscribe();
         let topic = v.topic_id.unwrap_or_default();
@@ -68,10 +71,11 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
             Event::Publish { topic, message }
         });
     let control = control.into_iter().map(|_c| Event::Control);
-    subscriptions
+    let t = subscriptions
         .chain(publish)
         .chain(control)
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
+    serde_json::to_value(&t).map_err(DecodeError::Serde)
 }
 
 #[cfg(test)]

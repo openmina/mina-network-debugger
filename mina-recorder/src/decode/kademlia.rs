@@ -1,11 +1,13 @@
 use serde::Serialize;
 
+use super::DecodeError;
+
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
     include!(concat!(env!("OUT_DIR"), "/kad.pb.rs"));
 }
 
-pub fn parse(bytes: Vec<u8>) -> impl Serialize {
+pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
     #[derive(Serialize)]
     #[serde(rename_all = "snake_case")]
     pub enum MessageType {
@@ -105,9 +107,10 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
     use prost::{bytes::Bytes, Message};
 
     let buf = Bytes::from(bytes);
-    let msg = <pb::Message as Message>::decode_length_delimited(buf).unwrap();
+    let msg = <pb::Message as Message>::decode_length_delimited(buf)
+        .map_err(DecodeError::Protobuf)?;
 
-    T {
+    let t = T {
         r#type: match msg.r#type() {
             pb::message::MessageType::PutValue => MessageType::PutValue,
             pb::message::MessageType::GetValue => MessageType::GetValue,
@@ -120,5 +123,7 @@ pub fn parse(bytes: Vec<u8>) -> impl Serialize {
         record: msg.record.map(From::from),
         closer_peers: msg.closer_peers.into_iter().map(From::from).collect(),
         provider_peers: msg.provider_peers.into_iter().map(From::from).collect(),
-    }
+    };
+
+    serde_json::to_value(&t).map_err(DecodeError::Serde)
 }
