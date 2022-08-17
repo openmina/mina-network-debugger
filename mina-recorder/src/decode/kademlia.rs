@@ -107,8 +107,8 @@ pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
     use prost::{bytes::Bytes, Message};
 
     let buf = Bytes::from(bytes);
-    let msg = <pb::Message as Message>::decode_length_delimited(buf)
-        .map_err(DecodeError::Protobuf)?;
+    let msg =
+        <pb::Message as Message>::decode_length_delimited(buf).map_err(DecodeError::Protobuf)?;
 
     let t = T {
         r#type: match msg.r#type() {

@@ -369,7 +369,7 @@ impl DbCore {
     }
 
     fn fetch_details(&self, (key, msg): (u64, Message)) -> Option<(u64, FullMessage)> {
-        match self.fetch_details_inner(msg) {
+        match self.fetch_details_inner(msg, key) {
             Ok(v) => Some((key, v)),
             Err(err) => {
                 log::error!("{err}");
@@ -378,7 +378,7 @@ impl DbCore {
         }
     }
 
-    fn fetch_details_inner(&self, msg: Message) -> Result<FullMessage, DbError> {
+    fn fetch_details_inner(&self, msg: Message, id: u64) -> Result<FullMessage, DbError> {
         let stream_full_id = StreamFullId {
             cn: msg.connection_id,
             id: msg.stream_id,
@@ -389,9 +389,10 @@ impl DbCore {
         file.read(msg.offset, &mut buf)
             .map_err(|err| DbError::Io(stream_full_id, err))?;
         drop(file);
+        let hex = hex::encode(&buf);
         let message = match msg.stream_kind {
             StreamKind::Kad => crate::decode::kademlia::parse(buf)?,
-            StreamKind::Meshsub => crate::decode::meshsub::parse(buf)?,
+            StreamKind::Meshsub => crate::decode::meshsub::parse(buf, id)?,
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
@@ -400,6 +401,7 @@ impl DbCore {
             timestamp: msg.timestamp,
             stream_id: msg.stream_id,
             stream_kind: msg.stream_kind,
+            hex,
             message,
         })
     }

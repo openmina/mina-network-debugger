@@ -1,5 +1,7 @@
-use mina_serialization_types::v1::ExternalTransitionV1;
-use bin_prot::encodable::BinProtEncodable;
+use std::io::Cursor;
+
+use mina_p2p_messages::GossipNetMessage;
+use binprot::BinProtRead;
 use serde::Serialize;
 
 use super::DecodeError;
@@ -9,25 +11,22 @@ mod pb {
     include!(concat!(env!("OUT_DIR"), "/gossipsub.pb.rs"));
 }
 
-pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
+pub fn parse(bytes: Vec<u8>, id: u64) -> Result<serde_json::Value, DecodeError> {
     #[derive(Serialize)]
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
     pub enum Event {
-        Subscribe { topic: String },
-        Unsubscribe { topic: String },
-        Publish { topic: String, message: Msg },
+        Subscribe {
+            topic: String,
+        },
+        Unsubscribe {
+            topic: String,
+        },
+        Publish {
+            topic: String,
+            message: Box<GossipNetMessage>,
+        },
         Control,
-    }
-
-    #[derive(Serialize)]
-    #[serde(rename_all = "snake_case")]
-    #[serde(tag = "type")]
-    pub enum Msg {
-        Transition { body: Box<ExternalTransitionV1> },
-        TransactionsPoolDiff { hex: String },
-        SnarkPoolDiff { hex: String },
-        Unrecognized { tag: u8, hex: String },
     }
 
     use prost::{bytes::Bytes, Message};
@@ -37,8 +36,7 @@ pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
         subscriptions,
         publish,
         control,
-    } = Message::decode_length_delimited(buf)
-        .map_err(DecodeError::Protobuf)?;
+    } = Message::decode_length_delimited(buf).map_err(DecodeError::Protobuf)?;
     let subscriptions = subscriptions.into_iter().map(|v| {
         let subscribe = v.subscribe();
         let topic = v.topic_id.unwrap_or_default();
@@ -52,22 +50,12 @@ pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
         .into_iter()
         .filter_map(|msg| msg.data.map(|d| (d, msg.topic)))
         .map(|(data, topic)| {
-            let message = match data[8] {
-                0 => {
-                    let v = ExternalTransitionV1::try_decode_binprot(&data[9..]).unwrap();
-                    Msg::Transition { body: Box::new(v) }
-                }
-                1 => Msg::TransactionsPoolDiff {
-                    hex: hex::encode(&data[9..]),
-                },
-                2 => Msg::SnarkPoolDiff {
-                    hex: hex::encode(&data[9..]),
-                },
-                tag => Msg::Unrecognized {
-                    tag,
-                    hex: hex::encode(&data[9..]),
-                },
-            };
+            let mut c = Cursor::new(&data[8..]);
+            let message = Box::new(GossipNetMessage::binprot_read(&mut c).unwrap());
+            if matches!(&*message, GossipNetMessage::NewState(_)) {
+                let _ = id;
+                // dbg!(id);
+            }
             Event::Publish { topic, message }
         });
     let control = control.into_iter().map(|_c| Event::Control);
@@ -81,6 +69,10 @@ pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
 #[cfg(test)]
 #[test]
 fn tag0_msg() {
+    use std::io::Cursor;
+
+    use mina_p2p_messages::p2p::MinaBlockExternalTransitionRawVersionedStable as Msg;
+
     use prost::{bytes::Bytes, Message as _};
 
     let buf = Bytes::from(hex::decode(include_str!("tag_0.hex")).expect("test"));
@@ -91,7 +83,8 @@ fn tag0_msg() {
         .filter_map(|msg| msg.data)
         .map(|data| {
             if data[8] == 0 {
-                Some(ExternalTransitionV1::try_decode_binprot(&data[9..]).expect("test"))
+                let mut c = Cursor::new(&data[9..]);
+                Some(Msg::binprot_read(&mut c).expect("test"))
             } else {
                 None
             }
