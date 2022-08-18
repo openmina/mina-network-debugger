@@ -3,35 +3,62 @@ use std::io::Cursor;
 use mina_p2p_messages::GossipNetMessage;
 use binprot::BinProtRead;
 use serde::Serialize;
+use prost::{bytes::Bytes, Message};
 
-use super::DecodeError;
+use super::{DecodeError, MessageType};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
     include!(concat!(env!("OUT_DIR"), "/gossipsub.pb.rs"));
 }
 
-pub fn parse(bytes: Vec<u8>, id: u64) -> Result<serde_json::Value, DecodeError> {
-    #[derive(Serialize)]
-    #[serde(rename_all = "snake_case")]
-    #[serde(tag = "type")]
-    pub enum Event {
-        Subscribe {
-            topic: String,
-        },
-        Unsubscribe {
-            topic: String,
-        },
-        Publish {
-            topic: String,
-            message: Box<GossipNetMessage>,
-        },
-        Control,
-    }
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum Event {
+    Subscribe {
+        topic: String,
+    },
+    Unsubscribe {
+        topic: String,
+    },
+    Publish {
+        topic: String,
+        message: Box<GossipNetMessage>,
+    },
+    Control,
+}
 
-    use prost::{bytes::Bytes, Message};
-
+pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let buf = Bytes::from(bytes.to_vec());
+    let pb::Rpc {
+        subscriptions,
+        publish,
+        control: _,
+    } = Message::decode_length_delimited(buf).map_err(DecodeError::Protobuf)?;
+    let subscriptions = subscriptions.into_iter().map(|v| {
+        if v.subscribe() {
+            MessageType::Subscribe
+        } else {
+            MessageType::Unsubscribe
+        }
+    });
+    let publish = publish
+        .into_iter()
+        .filter_map(|msg| msg.data)
+        .filter_map(|data| data.get(9).cloned())
+        .filter_map(|tag| match tag {
+            0 => Some(MessageType::PublishExternalTransition),
+            1 => Some(MessageType::PublishSnarkPoolDiff),
+            2 => Some(MessageType::PublishTransactionPoolDiff),
+            _ => None,
+        });
+
+    Ok(subscriptions.chain(publish).collect())
+}
+
+pub fn parse(bytes: Vec<u8>, id: u64) -> Result<serde_json::Value, DecodeError> {
+    let buf = Bytes::from(bytes);
     let pb::Rpc {
         subscriptions,
         publish,

@@ -1,10 +1,29 @@
 use serde::Serialize;
 
-use super::DecodeError;
+use prost::{bytes::Bytes, Message};
+
+use super::{DecodeError, MessageType};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
     include!(concat!(env!("OUT_DIR"), "/kad.pb.rs"));
+}
+
+pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
+    let buf = Bytes::from(bytes.to_vec());
+    let msg =
+        <pb::Message as Message>::decode_length_delimited(buf).map_err(DecodeError::Protobuf)?;
+
+    let ty = match msg.r#type() {
+        pb::message::MessageType::PutValue => MessageType::PutValue,
+        pb::message::MessageType::GetValue => MessageType::GetValue,
+        pb::message::MessageType::AddProvider => MessageType::AddProvider,
+        pb::message::MessageType::GetProviders => MessageType::GetProviders,
+        pb::message::MessageType::FindNode => MessageType::FindNode,
+        pb::message::MessageType::Ping => MessageType::Ping,
+    };
+
+    Ok(vec![ty])
 }
 
 pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
@@ -103,8 +122,6 @@ pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
         closer_peers: Vec<Peer>,
         provider_peers: Vec<Peer>,
     }
-
-    use prost::{bytes::Bytes, Message};
 
     let buf = Bytes::from(bytes);
     let msg =

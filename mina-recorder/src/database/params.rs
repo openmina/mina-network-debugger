@@ -4,6 +4,8 @@ use serde::Deserialize;
 
 use thiserror::Error;
 
+use crate::decode::MessageType;
+
 use super::types::{ConnectionId, StreamFullId, StreamKind};
 
 #[derive(Debug, Error)]
@@ -14,6 +16,10 @@ pub enum ParamsValidateError {
     StreamIdWithoutConnectionId,
     #[error("cannot parse _0")]
     ParseStreamId(String),
+    #[error("cannot parse message kind")]
+    ParseMessageKind,
+    #[error("cannot filter by stream kind and message kind, ambiguous filter")]
+    StreamKindWithMessageKind,
 }
 
 pub struct ValidParams {
@@ -22,7 +28,7 @@ pub struct ValidParams {
     limit_timestamp: Option<u64>,
     pub direction: Direction,
     pub stream_filter: Option<StreamFilter>,
-    pub kind_filter: Option<StreamKind>,
+    pub kind_filter: Option<KindFilter>,
 }
 
 pub enum Coordinate {
@@ -33,6 +39,11 @@ pub enum Coordinate {
 pub enum StreamFilter {
     AnyStreamInConnection(ConnectionId),
     Stream(StreamFullId),
+}
+
+pub enum KindFilter {
+    AnyMessageInStream(StreamKind),
+    Message(MessageType),
 }
 
 #[derive(Deserialize)]
@@ -54,6 +65,7 @@ pub struct Params {
     connection_id: Option<u64>,
     stream_id: Option<String>,
     stream_kind: Option<String>,
+    message_kind: Option<String>,
 }
 
 #[derive(Default, Clone, Copy, Deserialize)]
@@ -107,11 +119,28 @@ impl Params {
         let stream_filter = match (self.connection_id, self.stream_id) {
             (None, None) => None,
             (Some(id), None) => Some(StreamFilter::AnyStreamInConnection(ConnectionId(id))),
-            (Some(id), Some(s)) => Some(StreamFilter::Stream(StreamFullId {
-                cn: ConnectionId(id),
-                id: s.parse().map_err(ParamsValidateError::ParseStreamId)?,
-            })),
+            (Some(id), Some(s)) => {
+                let stream_id = s.parse().map_err(ParamsValidateError::ParseStreamId)?;
+                Some(StreamFilter::Stream(StreamFullId {
+                    cn: ConnectionId(id),
+                    id: stream_id,
+                }))
+            }
             (None, Some(_)) => return Err(ParamsValidateError::StreamIdWithoutConnectionId),
+        };
+        let kind_filter = match (self.stream_kind, self.message_kind) {
+            (None, None) => None,
+            (Some(kind), None) => {
+                let kind = kind.parse().expect("cannot fail");
+                Some(KindFilter::AnyMessageInStream(kind))
+            }
+            (None, Some(kind)) => {
+                let kind = kind
+                    .parse()
+                    .map_err(|()| ParamsValidateError::ParseMessageKind)?;
+                Some(KindFilter::Message(kind))
+            }
+            (Some(_), Some(_)) => return Err(ParamsValidateError::StreamKindWithMessageKind),
         };
         Ok(ValidParams {
             start,
@@ -119,7 +148,7 @@ impl Params {
             limit_timestamp: self.limit_timestamp,
             direction: self.direction,
             stream_filter,
-            kind_filter: self.stream_kind.map(|s| s.parse().expect("cannot fail")),
+            kind_filter,
         })
     }
 }

@@ -9,8 +9,10 @@ use std::{
 
 use crate::ConnectionInfo;
 
-use super::core::{DbCore, DbError};
-use super::types::{Connection, ConnectionId, StreamFullId, Message, MessageId, StreamId, StreamKind};
+use super::{
+    core::{DbCore, DbError},
+    types::{Connection, ConnectionId, StreamFullId, Message, MessageId, StreamId, StreamKind},
+};
 
 pub struct DbFacade {
     cns: AtomicU64,
@@ -96,6 +98,12 @@ impl DbStream {
         let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
         drop(file);
 
+        let tys = match self.kind {
+            StreamKind::Meshsub => crate::decode::meshsub::parse_types(bytes)?,
+            StreamKind::Kad => crate::decode::kademlia::parse_types(bytes)?,
+            _ => vec![],
+        };
+
         let id = MessageId(self.messages.fetch_add(1, SeqCst));
         let v = Message {
             connection_id: self.id.cn,
@@ -106,7 +114,7 @@ impl DbStream {
             offset,
             size: bytes.len() as u32,
         };
-        self.inner.put_message(id, v)?;
+        self.inner.put_message(id, v, tys)?;
         self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(())

@@ -15,11 +15,11 @@ use thiserror::Error;
 
 use super::{
     types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId},
-    params::{ValidParams, Coordinate, StreamFilter, Direction},
-    index,
+    params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter},
+    index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx},
 };
 
-use crate::decode::DecodeError;
+use crate::decode::{DecodeError, MessageType};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -113,12 +113,13 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 5] = [
+    const CFS: [&'static str; 6] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
+        Self::MESSAGE_KIND_INDEX,
     ];
 
     const TTL: Duration = Duration::from_secs(120);
@@ -138,6 +139,8 @@ impl DbCore {
     const STREAM_ID_INDEX: &'static str = "stream_id_index";
 
     const STREAM_KIND_INDEX: &'static str = "stream_kind_index";
+
+    const MESSAGE_KIND_INDEX: &'static str = "message_kind_index";
 
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
@@ -160,6 +163,7 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[2], opts_with_prefix_extractor(8)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], opts_with_prefix_extractor(2)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -206,22 +210,33 @@ impl DbCore {
             .expect("must exist")
     }
 
+    fn message_kind_index(&self) -> &rocksdb::ColumnFamily {
+        self.inner
+            .cf_handle(Self::MESSAGE_KIND_INDEX)
+            .expect("must exist")
+    }
+
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
         self.inner
             .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
         Ok(())
     }
 
-    pub fn put_message(&self, id: MessageId, v: Message) -> Result<(), DbError> {
+    pub fn put_message(
+        &self,
+        id: MessageId,
+        v: Message,
+        tys: Vec<MessageType>,
+    ) -> Result<(), DbError> {
         self.inner
             .put_cf(self.messages(), id.emit(vec![]), v.emit(vec![]))?;
-        let index = index::Connection {
+        let index = ConnectionIdx {
             connection_id: v.connection_id,
             id,
         };
         self.inner
             .put_cf(self.connection_id_index(), index.emit(vec![]), vec![])?;
-        let index = index::Stream {
+        let index = StreamIdx {
             stream_full_id: StreamFullId {
                 cn: v.connection_id,
                 id: v.stream_id,
@@ -230,12 +245,17 @@ impl DbCore {
         };
         self.inner
             .put_cf(self.stream_id_index(), index.emit(vec![]), vec![])?;
-        let index = index::StreamByKind {
+        let index = StreamByKindIdx {
             stream_kind: v.stream_kind,
             id,
         };
         self.inner
             .put_cf(self.stream_kind_index(), index.emit(vec![]), vec![])?;
+        for ty in tys {
+            let index = MessageKindIdx { ty, id };
+            self.inner
+                .put_cf(self.message_kind_index(), index.emit(vec![]), vec![])?;
+        }
         Ok(())
     }
 
@@ -449,7 +469,7 @@ impl DbCore {
             let stream_indexes = match &params.stream_filter {
                 Some(StreamFilter::AnyStreamInConnection(connection_id)) => {
                     let connection_id = *connection_id;
-                    let id = index::Connection {
+                    let id = ConnectionIdx {
                         connection_id,
                         id: MessageId(id),
                     };
@@ -459,14 +479,14 @@ impl DbCore {
                     let it = self
                         .inner
                         .iterator_cf(self.connection_id_index(), mode)
-                        .filter_map(Self::decode_index::<index::Connection>)
+                        .filter_map(Self::decode_index::<ConnectionIdx>)
                         .take_while(move |index| index.connection_id == connection_id)
-                        .map(|index::Connection { id, .. }| id);
+                        .map(|ConnectionIdx { id, .. }| id);
                     Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
                 }
                 Some(StreamFilter::Stream(stream_full_id)) => {
                     let stream_full_id = *stream_full_id;
-                    let id = index::Stream {
+                    let id = StreamIdx {
                         stream_full_id,
                         id: MessageId(id),
                     };
@@ -476,17 +496,17 @@ impl DbCore {
                     let it = self
                         .inner
                         .iterator_cf(self.stream_id_index(), mode)
-                        .filter_map(Self::decode_index::<index::Stream>)
+                        .filter_map(Self::decode_index::<StreamIdx>)
                         .take_while(move |index| index.stream_full_id == stream_full_id)
-                        .map(|index::Stream { id, .. }| id);
+                        .map(|StreamIdx { id, .. }| id);
                     Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
                 }
                 None => None,
             };
             let kind_indexes = match &params.kind_filter {
-                Some(stream_kind) => {
+                Some(KindFilter::AnyMessageInStream(stream_kind)) => {
                     let stream_kind = *stream_kind;
-                    let id = index::StreamByKind {
+                    let id = StreamByKindIdx {
                         stream_kind,
                         id: MessageId(id),
                     };
@@ -496,10 +516,27 @@ impl DbCore {
                     let it = self
                         .inner
                         .iterator_cf(self.stream_kind_index(), mode)
-                        .filter_map(Self::decode_index::<index::StreamByKind>)
+                        .filter_map(Self::decode_index::<StreamByKindIdx>)
                         .take_while(move |index| index.stream_kind == stream_kind)
-                        .map(|index::StreamByKind { id, .. }| id);
-                    Some(it)
+                        .map(|StreamByKindIdx { id, .. }| id);
+                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
+                }
+                Some(KindFilter::Message(message_kind)) => {
+                    let message_kind = *message_kind;
+                    let id = MessageKindIdx {
+                        ty: message_kind,
+                        id: MessageId(id),
+                    };
+                    let id = id.emit(vec![]);
+                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+
+                    let it = self
+                        .inner
+                        .iterator_cf(self.message_kind_index(), mode)
+                        .filter_map(Self::decode_index::<MessageKindIdx>)
+                        .take_while(move |index| index.ty == message_kind)
+                        .map(|MessageKindIdx { id, .. }| id);
+                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
                 }
                 None => None,
             };
