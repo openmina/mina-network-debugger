@@ -14,7 +14,7 @@ pub enum ParamsValidateError {
     IdWithTimestamp,
     #[error("cannot filter by stream id without connection id")]
     StreamIdWithoutConnectionId,
-    #[error("cannot parse _0")]
+    #[error("cannot parse {_0}")]
     ParseStreamId(String),
     #[error("cannot parse message kind")]
     ParseMessageKind,
