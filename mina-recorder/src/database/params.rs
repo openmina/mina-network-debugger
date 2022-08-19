@@ -24,7 +24,7 @@ pub enum ParamsValidateError {
 
 pub struct ValidParams {
     pub start: Coordinate,
-    limit: usize,
+    pub limit: usize,
     limit_timestamp: Option<u64>,
     pub direction: Direction,
     pub stream_filter: Option<StreamFilter>,
@@ -42,8 +42,8 @@ pub enum StreamFilter {
 }
 
 pub enum KindFilter {
-    AnyMessageInStream(StreamKind),
-    Message(MessageType),
+    AnyMessageInStream(Vec<StreamKind>),
+    Message(Vec<MessageType>),
 }
 
 #[derive(Deserialize)]
@@ -131,14 +131,21 @@ impl Params {
         let kind_filter = match (self.stream_kind, self.message_kind) {
             (None, None) => None,
             (Some(kind), None) => {
-                let kind = kind.parse().expect("cannot fail");
-                Some(KindFilter::AnyMessageInStream(kind))
+                let kinds = kind
+                    .split(',')
+                    .map(|s| s.parse().expect("cannot fail"))
+                    .collect();
+                Some(KindFilter::AnyMessageInStream(kinds))
             }
             (None, Some(kind)) => {
-                let kind = kind
-                    .parse()
-                    .map_err(|()| ParamsValidateError::ParseMessageKind)?;
-                Some(KindFilter::Message(kind))
+                let mut kinds = Vec::new();
+                for s in kind.split(',') {
+                    kinds.push(
+                        s.parse()
+                            .map_err(|()| ParamsValidateError::ParseMessageKind)?,
+                    );
+                }
+                Some(KindFilter::Message(kinds))
             }
             (Some(_), Some(_)) => return Err(ParamsValidateError::StreamKindWithMessageKind),
         };

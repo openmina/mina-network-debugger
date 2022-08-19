@@ -17,6 +17,7 @@ use super::{
     types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId},
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter},
     index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx},
+    sorted_intersect::sorted_intersect,
 };
 
 use crate::decode::{DecodeError, MessageType};
@@ -504,49 +505,50 @@ impl DbCore {
                 None => None,
             };
             let kind_indexes = match &params.kind_filter {
-                Some(KindFilter::AnyMessageInStream(stream_kind)) => {
-                    let stream_kind = *stream_kind;
-                    let id = StreamByKindIdx {
-                        stream_kind,
-                        id: MessageId(id),
-                    };
-                    let id = id.emit(vec![]);
-                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+                Some(KindFilter::AnyMessageInStream(kinds)) => {
+                    let its = kinds.iter().map(|stream_kind| {
+                        let stream_kind = *stream_kind;
+                        let id = StreamByKindIdx {
+                            stream_kind,
+                            id: MessageId(id),
+                        };
+                        let id = id.emit(vec![]);
+                        let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
-                    let it = self
-                        .inner
-                        .iterator_cf(self.stream_kind_index(), mode)
-                        .filter_map(Self::decode_index::<StreamByKindIdx>)
-                        .take_while(move |index| index.stream_kind == stream_kind)
-                        .map(|StreamByKindIdx { id, .. }| id);
-                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
+                        self.inner
+                            .iterator_cf(self.stream_kind_index(), mode)
+                            .filter_map(Self::decode_index::<StreamByKindIdx>)
+                            .take_while(move |index| index.stream_kind == stream_kind)
+                            .map(|StreamByKindIdx { id, .. }| id)
+                    });
+
+                    Some(Box::new(itertools::kmerge(its)) as Box<dyn Iterator<Item = MessageId>>)
                 }
-                Some(KindFilter::Message(message_kind)) => {
-                    let message_kind = *message_kind;
-                    let id = MessageKindIdx {
-                        ty: message_kind,
-                        id: MessageId(id),
-                    };
-                    let id = id.emit(vec![]);
-                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+                Some(KindFilter::Message(kinds)) => {
+                    let its = kinds.iter().map(|message_kind| {
+                        let message_kind = *message_kind;
+                        let id = MessageKindIdx {
+                            ty: message_kind,
+                            id: MessageId(id),
+                        };
+                        let id = id.emit(vec![]);
+                        let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
-                    let it = self
-                        .inner
-                        .iterator_cf(self.message_kind_index(), mode)
-                        .filter_map(Self::decode_index::<MessageKindIdx>)
-                        .take_while(move |index| index.ty == message_kind)
-                        .map(|MessageKindIdx { id, .. }| id);
-                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
+                        self.inner
+                            .iterator_cf(self.message_kind_index(), mode)
+                            .filter_map(Self::decode_index::<MessageKindIdx>)
+                            .take_while(move |index| index.ty == message_kind)
+                            .map(|MessageKindIdx { id, .. }| id)
+                    });
+
+                    Some(Box::new(itertools::kmerge(its)) as Box<dyn Iterator<Item = MessageId>>)
                 }
                 None => None,
             };
             match (stream_indexes, kind_indexes) {
                 (Some(a), Some(b)) => {
-                    let direction = params.direction;
-                    let it = iter_set::intersection_by(a, b, move |a, b| match direction {
-                        Direction::Forward => (*a).cmp(&*b),
-                        Direction::Reverse => (*b).cmp(&*a),
-                    });
+                    let forward = matches!(&params.direction, &Direction::Forward);
+                    let it = sorted_intersect(&mut [a, b], params.limit, forward).into_iter();
                     self.fetch_messages_by_indexes(it)
                 }
                 (Some(i), None) => self.fetch_messages_by_indexes(i),
