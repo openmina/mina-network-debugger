@@ -26,7 +26,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     Ok(vec![ty])
 }
 
-pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
+pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {
     #[derive(Serialize)]
     #[serde(rename_all = "snake_case")]
     pub enum MessageType {
@@ -142,5 +142,9 @@ pub fn parse(bytes: Vec<u8>) -> Result<serde_json::Value, DecodeError> {
         provider_peers: msg.provider_peers.into_iter().map(From::from).collect(),
     };
 
-    serde_json::to_value(&t).map_err(DecodeError::Serde)
+    if preview {
+        serde_json::to_value(&t.r#type).map_err(DecodeError::Serde)
+    } else {
+        serde_json::to_value(&t).map_err(DecodeError::Serde)
+    }
 }

@@ -41,6 +41,34 @@ fn messages(
     )
 }
 
+fn message(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("message" / u64).map(move |id: u64| -> reply::WithStatus<Json> {
+        match db.fetch_full_message(id) {
+            Ok(v) => reply::with_status(reply::json(&v), StatusCode::OK),
+            Err(err) => reply::with_status(
+                reply::json(&err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    })
+}
+
+fn message_hex(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("message_hex" / u64).map(move |id: u64| -> reply::WithStatus<Json> {
+        match db.fetch_full_message_hex(id) {
+            Ok(v) => reply::with_status(reply::json(&v), StatusCode::OK),
+            Err(err) => reply::with_status(
+                reply::json(&err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    })
+}
+
 fn version(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("version")
@@ -70,6 +98,8 @@ fn routes(
     warp::get()
         .and(
             connection(db.clone())
+                .or(message(db.clone()))
+                .or(message_hex(db.clone()))
                 .or(messages(db))
                 .or(version().or(openapi())),
         )

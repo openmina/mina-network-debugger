@@ -172,7 +172,6 @@ pub struct FullMessage {
     pub timestamp: SystemTime,
     pub stream_id: StreamId,
     pub stream_kind: StreamKind,
-    pub hex: String,
     // dynamic type, the type is depend on `stream_kind`
     pub message: serde_json::Value,
 }

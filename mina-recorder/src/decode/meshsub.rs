@@ -26,7 +26,23 @@ pub enum Event {
         topic: String,
         message: Box<GossipNetMessage>,
     },
+    #[serde(rename = "publish")]
+    PublishPreview {
+        topic: String,
+        message: GossipNetMessagePreview,
+    },
     Control,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", content = "message")]
+pub enum GossipNetMessagePreview {
+    #[serde(rename = "external_transition")]
+    NewState,
+    #[serde(rename = "snark_pool_diff")]
+    SnarkPoolDiff,
+    #[serde(rename = "transaction_pool_diff")]
+    TransactionPoolDiff,
 }
 
 pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
@@ -57,7 +73,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     Ok(subscriptions.chain(publish).collect())
 }
 
-pub fn parse(bytes: Vec<u8>, id: u64) -> Result<serde_json::Value, DecodeError> {
+pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {
     let buf = Bytes::from(bytes);
     let pb::Rpc {
         subscriptions,
@@ -79,11 +95,18 @@ pub fn parse(bytes: Vec<u8>, id: u64) -> Result<serde_json::Value, DecodeError> 
         .map(|(data, topic)| {
             let mut c = Cursor::new(&data[8..]);
             let message = Box::new(GossipNetMessage::binprot_read(&mut c).unwrap());
-            if matches!(&*message, GossipNetMessage::NewState(_)) {
-                let _ = id;
-                // dbg!(id);
+            if preview {
+                let message = match &*message {
+                    GossipNetMessage::NewState(_) => GossipNetMessagePreview::NewState,
+                    GossipNetMessage::SnarkPoolDiff(_) => GossipNetMessagePreview::SnarkPoolDiff,
+                    GossipNetMessage::TransactionPoolDiff(_) => {
+                        GossipNetMessagePreview::TransactionPoolDiff
+                    }
+                };
+                Event::PublishPreview { topic, message }
+            } else {
+                Event::Publish { topic, message }
             }
-            Event::Publish { topic, message }
         });
     let control = control.into_iter().map(|_c| Event::Control);
     let t = subscriptions
