@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use super::{
-    EventMetadata, ConnectionInfo, DirectedId,
+    event::{EventMetadata, ConnectionInfo, DirectedId},
     connection::{HandleData, pnet, multistream_select, noise, mplex, mina_protocol},
     database::{DbFacade, DbGroup},
+    tester::Tester,
 };
 
 type Cn = pnet::State<Noise>;
@@ -12,6 +13,7 @@ type Encrypted = multistream_select::State<mplex::State<Inner>>;
 type Inner = multistream_select::State<mina_protocol::State>;
 
 pub struct P2pRecorder {
+    tester: Option<Tester>,
     chain_id: String,
     db: DbFacade,
     cns: BTreeMap<ConnectionInfo, (Cn, DbGroup)>,
@@ -22,6 +24,8 @@ pub struct P2pRecorder {
 #[derive(Default)]
 pub struct Cx {
     randomness: VecDeque<[u8; 32]>,
+    pub decrypted: usize,
+    pub failed_to_decrypt: usize,
 }
 
 impl Cx {
@@ -35,8 +39,13 @@ impl Cx {
 }
 
 impl P2pRecorder {
-    pub fn new(db: DbFacade, chain_id: String) -> Self {
+    pub fn new(db: DbFacade, chain_id: String, test: bool) -> Self {
         P2pRecorder {
+            tester: if test {
+                Some(Tester::default())
+            } else {
+                None
+            },
             chain_id,
             db,
             cns: BTreeMap::default(),
@@ -50,6 +59,10 @@ impl P2pRecorder {
     }
 
     pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata) {
+        if let Some(tester) = &mut self.tester {
+            tester.on_connect(incoming, metadata);
+            return;
+        }
         let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
         let ConnectionInfo { addr, pid, fd } = &metadata.id;
         if incoming {
@@ -69,6 +82,10 @@ impl P2pRecorder {
     }
 
     pub fn on_disconnect(&mut self, metadata: EventMetadata) {
+        if let Some(tester) = &mut self.tester {
+            tester.on_disconnect(metadata);
+            return;
+        }
         let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
         let ConnectionInfo { addr, pid, fd } = &metadata.id;
         log::info!("{alias}_{pid} disconnect {addr} {fd}");
@@ -77,6 +94,10 @@ impl P2pRecorder {
 
     #[rustfmt::skip]
     pub fn on_data(&mut self, incoming: bool, metadata: EventMetadata, mut bytes: Vec<u8>) {
+        if let Some(tester) = &mut self.tester {
+            tester.on_data(incoming, metadata, bytes);
+            return;
+        }
         if let Some((cn, group)) = self.cns.get_mut(&metadata.id) {
             let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
             let id = DirectedId {

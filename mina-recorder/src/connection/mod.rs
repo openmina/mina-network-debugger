@@ -1,6 +1,6 @@
 use super::{
     recorder::Cx,
-    DirectedId,
+    event::DirectedId,
     database::{DbGroup as Db, DbResult},
 };
 

@@ -538,7 +538,7 @@ fn main() {
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
     use bpf_ring_buffer::RingBuffer;
-    use mina_recorder::{EventMetadata, ConnectionInfo};
+    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder};
     use ebpf::{kind::AppItem, Skeleton};
 
     env_logger::init();
@@ -556,7 +556,7 @@ fn main() {
     let db_path = env::var("DB_PATH").unwrap_or_else(|_| "target/db".to_string());
     let dry = env::var("DRY").is_ok();
 
-    let (db, callback, server_thread) = mina_recorder::server::run(port, db_path);
+    let (db, callback, server_thread) = server::spawn(port, db_path);
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
@@ -614,10 +614,12 @@ fn main() {
         "/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
     let chain_id = env::var("CHAIN_ID").unwrap_or_else(|_| MAINNET_CHAIN.to_string());
 
+    let test = env::var("TEST").is_ok();
+
     const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
     let mut ignored_cns = BTreeMap::new();
-    let mut recorder = mina_recorder::P2pRecorder::new(db, chain_id);
+    let mut recorder = P2pRecorder::new(db, chain_id, test);
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     while !terminating.load(Ordering::Relaxed) {

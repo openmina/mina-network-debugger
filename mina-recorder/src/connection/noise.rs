@@ -138,22 +138,29 @@ where
                         stream.add(id.incoming, id.metadata.time, bytes)?;
                     }
                     Msg::Other => {
+                        cx.decrypted += bytes.len();
                         self.inner.on_data(id, bytes, cx, db)?;
                     }
                 },
                 None => {
+                    cx.failed_to_decrypt += bytes.len();
                     log::error!(
-                        "{id}, cannot decrypt: {} {}...",
+                        "{id}, total failed {}, total decrypted {}, cannot decrypt: {} {}...",
+                        cx.failed_to_decrypt,
+                        cx.decrypted,
                         bytes.len(),
-                        hex::encode(&bytes[..4])
-                    )
+                        hex::encode(bytes)
+                    );
                 }
             }
         } else {
+            cx.failed_to_decrypt += bytes.len();
             log::error!(
-                "{id}, cannot decrypt: {} {}...",
+                "{id}, total failed {}, total decrypted {}, cannot decrypt: {} {}...",
+                cx.failed_to_decrypt,
+                cx.decrypted,
                 bytes.len(),
-                hex::encode(&bytes[..4])
+                hex::encode(bytes)
             );
         }
 

@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use crate::ConnectionInfo;
+use crate::event::ConnectionInfo;
 
 use super::{
     core::{DbCore, DbError},

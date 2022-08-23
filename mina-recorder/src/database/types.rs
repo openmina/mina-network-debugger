@@ -4,7 +4,7 @@ use radiation::{Absorb, Emit};
 
 use serde::{Serialize};
 
-use crate::{ConnectionInfo, custom_coding};
+use crate::{event::ConnectionInfo, custom_coding};
 
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId(pub u64);

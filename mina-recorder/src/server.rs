@@ -107,7 +107,7 @@ fn routes(
         .with(with::header("Access-Control-Allow-Origin", "*"))
 }
 
-pub fn run<P>(port: u16, path: P) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
+pub fn spawn<P>(port: u16, path: P) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
 where
     P: AsRef<Path>,
 {
