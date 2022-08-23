@@ -20,7 +20,8 @@ pub type State<Inner> = ChunkState<NoiseState<Inner>>;
 
 #[derive(Default)]
 pub struct ChunkState<Inner> {
-    accumulator: Vec<u8>,
+    accumulator_incoming: Vec<u8>,
+    accumulator_outgoing: Vec<u8>,
     inner: Inner,
 }
 
@@ -40,22 +41,28 @@ where
 {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
-        if self.accumulator.is_empty() && bytes.len() >= 2 {
+        let accumulator = if id.incoming {
+            &mut self.accumulator_incoming
+        } else {
+            &mut self.accumulator_outgoing
+        };
+
+        if accumulator.is_empty() && bytes.len() >= 2 {
             let len = u16::from_be_bytes(bytes[..2].try_into().expect("checked above")) as usize;
             if bytes.len() == 2 + len {
                 return self.inner.on_data(id, bytes, cx, db);
             }
         }
 
-        self.accumulator.extend_from_slice(bytes);
+        accumulator.extend_from_slice(bytes);
         loop {
-            if self.accumulator.len() >= 2 {
-                let len = self.accumulator[..2].try_into().expect("checked above");
+            if accumulator.len() >= 2 {
+                let len = accumulator[..2].try_into().expect("checked above");
                 let len = u16::from_be_bytes(len) as usize;
-                if self.accumulator.len() >= 2 + len {
-                    let (chunk, remaining) = self.accumulator.split_at_mut(2 + len);
+                if accumulator.len() >= 2 + len {
+                    let (chunk, remaining) = accumulator.split_at_mut(2 + len);
                     self.inner.on_data(id.clone(), chunk, cx, db)?;
-                    self.accumulator = remaining.to_vec();
+                    *accumulator = remaining.to_vec();
                     continue;
                 }
             }

@@ -5,7 +5,8 @@ use unsigned_varint::decode;
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
 pub struct State<Inner> {
-    accumulating: Vec<u8>,
+    accumulator_incoming: Vec<u8>,
+    accumulator_outgoing: Vec<u8>,
     inners: BTreeMap<StreamId, Inner>,
 }
 
@@ -13,7 +14,8 @@ impl<Inner> DynamicProtocol for State<Inner> {
     fn from_name(name: &str, _: u64, _: bool) -> Self {
         assert_eq!(name, "/coda/mplex/1.0.0");
         State {
-            accumulating: Vec::default(),
+            accumulator_incoming: Vec::default(),
+            accumulator_outgoing: Vec::default(),
             inners: BTreeMap::default(),
         }
     }
@@ -89,7 +91,13 @@ where
         header: Header,
         range: Range<usize>,
     ) -> DbResult<()> {
-        let bytes = &mut self.accumulating[range];
+        let accumulator = if id.incoming {
+            &mut self.accumulator_incoming
+        } else {
+            &mut self.accumulator_outgoing
+        };
+        let end = range.end;
+        let bytes = &mut accumulator[range];
         let Header {
             tag,
             stream_id,
@@ -122,6 +130,7 @@ where
         let mark = if initiator_is_incoming { "~" } else { "" };
         log::info!("{id} stream_id: {mark}{i}, {body}");
 
+        *accumulator = accumulator[end..].to_vec();
         Ok(())
     }
 }
@@ -132,25 +141,29 @@ where
 {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
-        self.accumulating.extend_from_slice(bytes);
+        let accumulator = if id.incoming {
+            &mut self.accumulator_incoming
+        } else {
+            &mut self.accumulator_outgoing
+        };
+        accumulator.extend_from_slice(bytes);
 
         let (header, len, offset) = {
-            let (v, remaining) = decode::u64(&self.accumulating).unwrap();
+            let (v, remaining) = decode::u64(&accumulator).unwrap();
             let header = Header::new(v, id.incoming);
 
             let (len, remaining) = decode::usize(remaining).unwrap();
-            let offset = remaining.as_ptr() as usize - self.accumulating.as_ptr() as usize;
+            let offset = remaining.as_ptr() as usize - accumulator.as_ptr() as usize;
             (header, len, offset)
         };
 
         #[allow(clippy::comparison_chain)]
-        if offset + len == self.accumulating.len() {
+        if offset + len == accumulator.len() {
             // good case, we have all data in one chunk
             self.out(id, cx, db, header, offset..(len + offset))?;
-            self.accumulating.clear();
-        } else if offset + len <= self.accumulating.len() {
+        } else if offset + len <= accumulator.len() {
             // TODO:
-            panic!("{} < {}", offset + len, self.accumulating.len());
+            panic!("{} < {}", offset + len, accumulator.len());
         }
 
         Ok(())
