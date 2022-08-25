@@ -20,7 +20,7 @@ use super::{
     sorted_intersect::sorted_intersect,
 };
 
-use crate::decode::{DecodeError, MessageType};
+use crate::{decode::{DecodeError, MessageType}, custom_coding};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -43,7 +43,7 @@ pub enum DbError {
         size: u64,
     },
     #[error("no item at id {_0}")]
-    NoItemAtCursor(u64),
+    NoItemAtCursor(String),
     #[error("decode {_0}")]
     Decode(DecodeError),
 }
@@ -114,13 +114,14 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 6] = [
+    const CFS: [&'static str; 7] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
         Self::MESSAGE_KIND_INDEX,
+        Self::ADDR_INDEX,
     ];
 
     const TTL: Duration = Duration::from_secs(120);
@@ -142,6 +143,8 @@ impl DbCore {
     const STREAM_KIND_INDEX: &'static str = "stream_kind_index";
 
     const MESSAGE_KIND_INDEX: &'static str = "message_kind_index";
+
+    const ADDR_INDEX: &'static str = "addr_index";
 
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
@@ -165,6 +168,7 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(2)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(18)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -217,9 +221,20 @@ impl DbCore {
             .expect("must exist")
     }
 
+    fn addr_index(&self) -> &rocksdb::ColumnFamily {
+        self.inner
+            .cf_handle(Self::ADDR_INDEX)
+            .expect("must exist")
+    }
+
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
         self.inner
             .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
+
+        let key = custom_coding::addr_emit(&v.info.addr, vec![]);
+        self.inner
+            .put_cf(self.addr_index(), key, id.emit(vec![]))?;
+
         Ok(())
     }
 
@@ -253,6 +268,10 @@ impl DbCore {
         self.inner
             .put_cf(self.stream_kind_index(), index.emit(vec![]), vec![])?;
         for ty in tys {
+            if matches!(&ty, &MessageType::HandshakePayload) {
+                // peer id index
+            }
+
             let index = MessageKindIdx { ty, id };
             self.inner
                 .put_cf(self.message_kind_index(), index.emit(vec![]), vec![])?;
@@ -305,14 +324,15 @@ impl DbCore {
         }
     }
 
-    fn get<T>(&self, cf: &rocksdb::ColumnFamily, key: u64) -> Result<T, DbError>
+    fn get<T, K>(&self, cf: &rocksdb::ColumnFamily, key: K) -> Result<T, DbError>
     where
+        K: AsRef<[u8]>,
         T: for<'pa> AbsorbExt<'pa>,
     {
         let v = self
             .inner
-            .get_cf(cf, key.to_be_bytes())?
-            .ok_or(DbError::NoItemAtCursor(key))?;
+            .get_cf(cf, &key)?
+            .ok_or(DbError::NoItemAtCursor(hex::encode(key.as_ref())))?;
         let v = T::absorb_ext(&v)?;
         Ok(v)
     }
@@ -328,12 +348,12 @@ impl DbCore {
     {
         let timestamp = Duration::from_secs(timestamp);
         if total == 0 {
-            return Err(DbError::NoItemAtCursor(0));
+            return Err(DbError::NoItemAtCursor("".to_string()));
         }
         let mut pos = total / 2;
         let mut r = pos;
         while r > 0 {
-            let v = self.get::<T>(cf, pos)?;
+            let v = self.get::<T, _>(cf, pos.to_be_bytes())?;
             let this_timestamp = v
                 .as_ref()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -361,7 +381,7 @@ impl DbCore {
     }
 
     pub fn fetch_connection(&self, id: u64) -> Result<Connection, DbError> {
-        self.get(self.connections(), id)
+        self.get(self.connections(), id.to_be_bytes())
     }
 
     pub fn get_stream(
@@ -413,6 +433,7 @@ impl DbCore {
         let message = match msg.stream_kind {
             StreamKind::Kad => crate::decode::kademlia::parse(buf, preview)?,
             StreamKind::Meshsub => crate::decode::meshsub::parse(buf, preview)?,
+            StreamKind::Handshake => crate::decode::noise::parse(buf, preview)?,
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
@@ -448,7 +469,7 @@ impl DbCore {
     where
         It: Iterator<Item = MessageId> + 'a,
     {
-        let it = it.filter_map(|id| match self.get(self.messages(), id.0) {
+        let it = it.filter_map(|id| match self.get(self.messages(), id.0.to_be_bytes()) {
             Ok(v) => Some((id.0, v)),
             Err(err) => {
                 log::error!("{err}");
@@ -466,6 +487,30 @@ impl DbCore {
 
         let it = if params.stream_filter.is_some() || params.kind_filter.is_some() {
             let stream_indexes = match &params.stream_filter {
+                Some(StreamFilter::AnyStreamByAddr(addr)) => {
+                    let connection_id = match self.get(self.addr_index(), custom_coding::addr_emit(addr, vec![])) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            log::warn!("no connection {addr}, {err}");
+                            ConnectionId(u64::MAX)
+                        },
+                    };
+                    // TODO: duplicated code
+                    let id = ConnectionIdx {
+                        connection_id,
+                        id: MessageId(id),
+                    };
+                    let id = id.emit(vec![]);
+                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+
+                    let it = self
+                        .inner
+                        .iterator_cf(self.connection_id_index(), mode)
+                        .filter_map(Self::decode_index::<ConnectionIdx>)
+                        .take_while(move |index| index.connection_id == connection_id)
+                        .map(|ConnectionIdx { id, .. }| id);
+                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
+                }
                 Some(StreamFilter::AnyStreamInConnection(connection_id)) => {
                     let connection_id = *connection_id;
                     let id = ConnectionIdx {
@@ -571,12 +616,12 @@ impl DbCore {
     }
 
     pub fn fetch_full_message(&self, id: u64) -> Result<FullMessage, DbError> {
-        let msg = self.get::<Message>(self.messages(), id)?;
+        let msg = self.get::<Message, _>(self.messages(), id.to_be_bytes())?;
         self.fetch_details_inner(msg, false)
     }
 
     pub fn fetch_full_message_hex(&self, id: u64) -> Result<String, DbError> {
-        let msg = self.get::<Message>(self.messages(), id)?;
+        let msg = self.get::<Message, _>(self.messages(), id.to_be_bytes())?;
 
         let stream_full_id = StreamFullId {
             cn: msg.connection_id,

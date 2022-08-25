@@ -35,7 +35,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 itertools = { version = "0.10.3" }
 
 tokio = { version = "1.20", features = ["rt-multi-thread", "signal"] }
-warp = { version = "0.3.2" }
+warp = { version = "0.3.2", features = ["tls"] }
 
-# libp2p-core = { version = "*" }
+libp2p-core = { version = "*" }
 # ed25519-dalek = { version = "*" }

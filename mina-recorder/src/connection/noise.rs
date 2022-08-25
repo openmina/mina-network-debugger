@@ -250,9 +250,6 @@ impl<Inner> NoiseState<Inner> {
                     .decrypt(&mut r_spk_bytes, &tag)
                     .unwrap()
                     .mix_shared_secret({
-                        // let b = MontgomeryPoint(r_spk_bytes).to_edwards(1).unwrap().compress().0;
-                        // let pk = libp2p_core::PublicKey::Ed25519(libp2p_core::identity::ed25519::PublicKey::decode(&b).unwrap());
-                        // dbg!(libp2p_core::PeerId::from_public_key(&pk));
                         r_spk = MontgomeryPoint(r_spk_bytes);
                         try_dh(&r_spk, &i_epk, cx).or_else(|| {
                             self.error = true;
@@ -282,9 +279,6 @@ impl<Inner> NoiseState<Inner> {
                     .decrypt(&mut i_spk_bytes, &tag)
                     .unwrap()
                     .mix_shared_secret({
-                        // let b = MontgomeryPoint(i_spk_bytes).to_edwards(0).unwrap().compress().0;
-                        // let pk = libp2p_core::PublicKey::Ed25519(libp2p_core::identity::ed25519::PublicKey::decode(&b).unwrap());
-                        // dbg!(libp2p_core::PeerId::from_public_key(&pk));
                         i_spk = MontgomeryPoint(i_spk_bytes);
                         try_dh(&i_spk, &r_epk, cx).or_else(|| {
                             self.error = true;

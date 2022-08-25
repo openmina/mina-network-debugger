@@ -1,3 +1,4 @@
+pub mod noise;
 pub mod meshsub;
 pub mod kademlia;
 
@@ -36,6 +37,8 @@ pub enum MessageType {
     GetProviders,
     FindNode,
     Ping,
+    // handshake
+    HandshakePayload,
 }
 
 impl fmt::Display for MessageType {
@@ -52,6 +55,7 @@ impl fmt::Display for MessageType {
             MessageType::GetProviders => write!(f, "get_providers"),
             MessageType::FindNode => write!(f, "find_node"),
             MessageType::Ping => write!(f, "ping"),
+            MessageType::HandshakePayload => write!(f, "handshake_payload"),
         }
     }
 }
@@ -72,6 +76,7 @@ impl FromStr for MessageType {
             "get_providers" => Ok(MessageType::GetProviders),
             "find_node" => Ok(MessageType::FindNode),
             "ping" => Ok(MessageType::Ping),
+            "handshake_payload" => Ok(MessageType::HandshakePayload),
             _ => Err(()),
         }
     }

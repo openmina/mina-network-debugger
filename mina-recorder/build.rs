@@ -9,7 +9,12 @@ fn main() {
     println!("cargo:rustc-env=GIT_HASH={}", git_hash);
 
     prost_build::compile_protos(
-        &["src/decode/meshsub.proto", "src/decode/kademlia.proto"],
+        &[
+            "src/decode/meshsub.proto",
+            "src/decode/kademlia.proto",
+            "src/decode/structs.proto",
+            "src/decode/envelope.proto",
+        ],
         &["src/decode"],
     )
     .unwrap();

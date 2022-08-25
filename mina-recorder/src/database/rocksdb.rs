@@ -101,6 +101,7 @@ impl DbStream {
         let tys = match self.kind {
             StreamKind::Meshsub => crate::decode::meshsub::parse_types(bytes)?,
             StreamKind::Kad => crate::decode::kademlia::parse_types(bytes)?,
+            StreamKind::Handshake => crate::decode::noise::parse_types(bytes)?,
             _ => vec![],
         };
 
