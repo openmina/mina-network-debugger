@@ -49,8 +49,7 @@ impl fmt::Display for StreamFullId {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum StreamKind {
     Unknown = 0xffff,
     Handshake = 0x0001,
@@ -63,6 +62,27 @@ pub enum StreamKind {
     NodeStatus = 0x0302,
     Meshsub = 0x0400,
     Rpc = 0x0500,
+}
+
+impl Serialize for StreamKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            StreamKind::Handshake => "/noise".serialize(serializer),
+            StreamKind::Kad => "/coda/kad/1.0.0".serialize(serializer),
+            StreamKind::IpfsId => "/ipfs/id/1.0.0".serialize(serializer),
+            StreamKind::IpfsPush => "/ipfs/id/push/1.0.0".serialize(serializer),
+            StreamKind::IpfsDelta => "/p2p/id/delta/1.0.0".serialize(serializer),
+            StreamKind::PeerExchange => "/mina/peer-exchange".serialize(serializer),
+            StreamKind::BitswapExchange => "/mina/bitswap-exchange".serialize(serializer),
+            StreamKind::NodeStatus => "/mina/node-status".serialize(serializer),
+            StreamKind::Meshsub => "/meshsub/1.1.0".serialize(serializer),
+            StreamKind::Rpc => "coda/rpcs/0.0.1".serialize(serializer),
+            StreamKind::Unknown => "unknown".serialize(serializer),
+        }
+    }
 }
 
 impl FromStr for StreamKind {
