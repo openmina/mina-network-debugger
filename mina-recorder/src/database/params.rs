@@ -49,7 +49,7 @@ pub enum KindFilter {
     Message(Vec<MessageType>),
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub struct Params {
     // the start of the list, either id of record ...
     id: Option<u64>,
@@ -99,6 +99,16 @@ impl<'a> From<Direction> for rocksdb::IteratorMode<'a> {
 }
 
 impl Params {
+    pub fn with_stream_kind(mut self, stream_kind: StreamKind) -> Self {
+        self.stream_kind = Some(stream_kind.to_string());
+        self
+    }
+
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
     pub fn validate(self) -> Result<ValidParams, ParamsValidateError> {
         let start = match (self.id, self.timestamp) {
             (None, None) => match self.direction {

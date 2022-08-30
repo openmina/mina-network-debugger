@@ -6,6 +6,8 @@ use warp::{
     http::StatusCode,
 };
 
+use crate::database::StreamKind;
+
 use super::database::{DbCore, DbFacade, Params};
 
 fn connection(
@@ -78,6 +80,22 @@ fn version(
         })
 }
 
+fn grab_rpc(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("grab_rpc")
+        .and(warp::query::query())
+        .map(move |()| -> reply::WithStatus<Json> {
+            let params = Params::default().with_stream_kind(StreamKind::Rpc).with_limit(100);
+            let v = db.fetch_messages(&params.validate().unwrap())
+                .map(|(id, _msg)| {
+                    db.fetch_full_message_hex(id).unwrap()
+                })
+                .collect::<Vec<_>>();
+             reply::with_status(reply::json(&v), StatusCode::OK)
+        })
+}
+
 fn openapi(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("openapi")
@@ -100,6 +118,7 @@ fn routes(
             connection(db.clone())
                 .or(message(db.clone()))
                 .or(message_hex(db.clone()))
+                .or(grab_rpc(db.clone()))
                 .or(messages(db))
                 .or(version().or(openapi())),
         )

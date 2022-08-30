@@ -434,6 +434,7 @@ impl DbCore {
             StreamKind::Kad => crate::decode::kademlia::parse(buf, preview)?,
             StreamKind::Meshsub => crate::decode::meshsub::parse(buf, preview)?,
             StreamKind::Handshake => crate::decode::noise::parse(buf, preview)?,
+            StreamKind::Rpc => crate::decode::rpc::parse(buf, preview)?,
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
@@ -569,18 +570,18 @@ impl DbCore {
                 }
                 Some(KindFilter::Message(kinds)) => {
                     let its = kinds.iter().map(|message_kind| {
-                        let message_kind = *message_kind;
                         let id = MessageKindIdx {
-                            ty: message_kind,
+                            ty: message_kind.clone(),
                             id: MessageId(id),
                         };
                         let id = id.emit(vec![]);
                         let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
+                        let message_kind = message_kind.clone();
                         self.inner
                             .iterator_cf(self.message_kind_index(), mode)
                             .filter_map(Self::decode_index::<MessageKindIdx>)
-                            .take_while(move |index| index.ty == message_kind)
+                            .take_while(move |index| index.ty == message_kind.clone())
                             .map(|MessageKindIdx { id, .. }| id)
                     });
 

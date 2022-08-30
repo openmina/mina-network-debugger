@@ -64,24 +64,30 @@ pub enum StreamKind {
     Rpc = 0x0500,
 }
 
+impl fmt::Display for StreamKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StreamKind::Handshake => write!(f, "/noise"),
+            StreamKind::Kad => write!(f, "/coda/kad/1.0.0"),
+            StreamKind::IpfsId => write!(f, "/ipfs/id/1.0.0"),
+            StreamKind::IpfsPush => write!(f, "/ipfs/id/push/1.0.0"),
+            StreamKind::IpfsDelta => write!(f, "/p2p/id/delta/1.0.0"),
+            StreamKind::PeerExchange => write!(f, "/mina/peer-exchange"),
+            StreamKind::BitswapExchange => write!(f, "/mina/bitswap-exchange"),
+            StreamKind::NodeStatus => write!(f, "/mina/node-status"),
+            StreamKind::Meshsub => write!(f, "/meshsub/1.1.0"),
+            StreamKind::Rpc => write!(f, "coda/rpcs/0.0.1"),
+            StreamKind::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 impl Serialize for StreamKind {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        match self {
-            StreamKind::Handshake => "/noise".serialize(serializer),
-            StreamKind::Kad => "/coda/kad/1.0.0".serialize(serializer),
-            StreamKind::IpfsId => "/ipfs/id/1.0.0".serialize(serializer),
-            StreamKind::IpfsPush => "/ipfs/id/push/1.0.0".serialize(serializer),
-            StreamKind::IpfsDelta => "/p2p/id/delta/1.0.0".serialize(serializer),
-            StreamKind::PeerExchange => "/mina/peer-exchange".serialize(serializer),
-            StreamKind::BitswapExchange => "/mina/bitswap-exchange".serialize(serializer),
-            StreamKind::NodeStatus => "/mina/node-status".serialize(serializer),
-            StreamKind::Meshsub => "/meshsub/1.1.0".serialize(serializer),
-            StreamKind::Rpc => "coda/rpcs/0.0.1".serialize(serializer),
-            StreamKind::Unknown => "unknown".serialize(serializer),
-        }
+        self.to_string().serialize(serializer)
     }
 }
 

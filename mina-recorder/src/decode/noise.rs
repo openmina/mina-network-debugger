@@ -75,3 +75,11 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
 
     serde_json::to_value(&t).map_err(DecodeError::Serde)
 }
+
+// #[cfg(test)]
+// #[test]
+// fn de() {
+//     let hex = "12200000165c00000000000000000000000000000000000000000000000000000000";
+//     let id = libp2p_core::PeerId::from_bytes(&hex::decode(hex).unwrap()).unwrap();
+//     dbg!(id.to_base58());
+// }

@@ -102,6 +102,7 @@ impl DbStream {
             StreamKind::Meshsub => crate::decode::meshsub::parse_types(bytes)?,
             StreamKind::Kad => crate::decode::kademlia::parse_types(bytes)?,
             StreamKind::Handshake => crate::decode::noise::parse_types(bytes)?,
+            StreamKind::Rpc => crate::decode::rpc::parse_types(bytes)?,
             _ => vec![],
         };
 

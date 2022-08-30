@@ -1,6 +1,7 @@
 pub mod noise;
 pub mod meshsub;
 pub mod kademlia;
+pub mod rpc;
 
 use std::{fmt, str::FromStr};
 
@@ -19,7 +20,7 @@ pub enum DecodeError {
     Protobuf(prost::DecodeError),
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, Absorb, Emit, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, Absorb, Emit, PartialEq, Eq)]
 #[tag(u16)]
 pub enum MessageType {
     // meshsub
@@ -39,6 +40,10 @@ pub enum MessageType {
     Ping,
     // handshake
     HandshakePayload,
+    // rpc
+    Rpc {
+        tag: String,
+    }
 }
 
 impl fmt::Display for MessageType {
@@ -56,6 +61,7 @@ impl fmt::Display for MessageType {
             MessageType::FindNode => write!(f, "find_node"),
             MessageType::Ping => write!(f, "ping"),
             MessageType::HandshakePayload => write!(f, "handshake_payload"),
+            MessageType::Rpc { tag } => write!(f, "rpc_{tag}"),
         }
     }
 }
