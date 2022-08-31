@@ -44,7 +44,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     }
 
     if preview {
-        let t = parse_types(&bytes)?
+        let mut t = parse_types(&bytes)?
             .into_iter()
             .filter_map(|m| if let MessageType::Rpc { tag } = m {
                 Some(Preview { tag })
@@ -52,6 +52,12 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                 None
             })
             .collect::<Vec<_>>();
+        if t.len() > 2 {
+            t.clear();
+            t.push(Preview {
+                tag: "list".to_string(),
+            });
+        }
 
         serde_json::to_value(&t).map_err(DecodeError::Serde)
     } else {
