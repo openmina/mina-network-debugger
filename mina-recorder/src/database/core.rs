@@ -430,6 +430,7 @@ impl DbCore {
         file.read(msg.offset, &mut buf)
             .map_err(|err| DbError::Io(stream_full_id, err))?;
         drop(file);
+        self.remove_stream(stream_full_id);
         let message = match msg.stream_kind {
             StreamKind::Kad => crate::decode::kademlia::parse(buf, preview)?,
             StreamKind::Meshsub => crate::decode::meshsub::parse(buf, preview)?,
