@@ -549,14 +549,17 @@ fn main() {
         return;
     }
 
-    let port = env::var("HTTP_PORT")
+    let port = env::var("SERVER_PORT")
         .unwrap_or_else(|_| 8000.to_string())
         .parse()
         .unwrap_or(8000);
     let db_path = env::var("DB_PATH").unwrap_or_else(|_| "target/db".to_string());
     let dry = env::var("DRY").is_ok();
 
-    let (db, callback, server_thread) = server::spawn(port, db_path);
+    let key_path = env::var("HTTPS_KEY_PATH").unwrap_or_else(|_| "privkey.pem".to_string());
+    let cert_path = env::var("HTTPS_CERT_PATH").unwrap_or_else(|_| "fullchain.pem".to_string());
+
+    let (db, callback, server_thread) = server::spawn(port, db_path, key_path, cert_path);
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();

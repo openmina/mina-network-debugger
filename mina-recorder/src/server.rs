@@ -126,9 +126,16 @@ fn routes(
         .with(with::header("Access-Control-Allow-Origin", "*"))
 }
 
-pub fn spawn<P>(port: u16, path: P) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
+pub fn spawn<P, Q, R>(
+    port: u16,
+    path: P,
+    key_path: Q,
+    cert_path: R,
+) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
 where
     P: AsRef<Path>,
+    Q: AsRef<Path>,
+    R: AsRef<Path>,
 {
     use std::process;
     use tokio::{sync::oneshot, runtime::Runtime};
@@ -153,8 +160,9 @@ where
     let addr = ([0, 0, 0, 0], port);
     let (_, server) =
         warp::serve(routes(db.core()))
-            // .tls()
-            // .key_path("path")
+            .tls()
+            .key_path(key_path)
+            .cert_path(cert_path)
             .bind_with_graceful_shutdown(addr, async move {
                 rx.await.expect("corresponding sender should exist");
                 log::info!("terminating http server...");
