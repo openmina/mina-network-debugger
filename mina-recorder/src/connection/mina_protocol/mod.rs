@@ -29,12 +29,6 @@ impl HandleData for State {
         let stream = self
             .stream
             .get_or_insert_with(|| db.add(self.stream_id, self.kind));
-        // WARNING: skip empty rpc
-        if let StreamKind::Rpc = self.kind {
-            if bytes[0] == 1 {
-                return Ok(());
-            }
-        }
         stream.add(id.incoming, id.metadata.time, bytes)
     }
 }

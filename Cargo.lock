@@ -1123,7 +1123,7 @@ dependencies = [
 [[package]]
 name = "mina-p2p-messages"
 version = "0.2.3"
-source = "git+https://github.com/name-placeholder/mina-p2p-messages-rs.git#c365af8c95263160fb3527239c861366832da826"
+source = "git+https://github.com/name-placeholder/mina-p2p-messages-rs.git#7100a4ee1b8e5aa0f14dd6f7713319bd035337f3"
 dependencies = [
  "binprot",
  "binprot_derive",
@@ -1923,9 +1923,9 @@ checksum = "2fd0db749597d91ff862fd1d55ea87f7855a744a8425a64695b6fca237d1dad1"
 
 [[package]]
 name = "socket2"
-version = "0.4.6"
+version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10c98bba371b9b22a71a9414e420f92ddeb2369239af08200816169d5e2dd7aa"
+checksum = "02e2d2db9033d13a1567121ddd7a095ee144db4e1ca1b1bda3419bc0da294ebd"
 dependencies = [
  "libc",
  "winapi",
@@ -2443,13 +2443,13 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "4.2.5"
+version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c4fb54e6113b6a8772ee41c3404fb0301ac79604489467e0a9ce1f3e97c24ae"
+checksum = "1c831fbbee9e129a8cf93e7747a82da9d95ba8e16621cae60ec2cdc849bacb7b"
 dependencies = [
  "either",
- "lazy_static",
  "libc",
+ "once_cell",
 ]
 
 [[package]]

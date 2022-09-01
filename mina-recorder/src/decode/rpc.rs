@@ -1,4 +1,8 @@
+use std::io::Cursor;
+
 use serde::Serialize;
+use mina_p2p_messages::rpc::MessageHeader;
+use binprot::BinProtRead;
 
 use super::{DecodeError, MessageType};
 
@@ -39,28 +43,52 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
 
 pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {
     #[derive(Serialize)]
-    struct Preview {
-        tag: String,
+    #[serde(rename_all = "snake_case")]
+    #[serde(tag = "type")]
+    enum Msg {
+        Heartbeat,
+        Request {
+            tag: String,
+            version: i32,
+            id: i64,
+        },
+        Response {
+            id: i64,
+        },
     }
 
-    if preview {
-        let mut t = parse_types(&bytes)?
-            .into_iter()
-            .filter_map(|m| if let MessageType::Rpc { tag } = m {
-                Some(Preview { tag })
-            } else {
-                None
-            })
-            .collect::<Vec<_>>();
-        if t.len() > 2 {
-            t.clear();
-            t.push(Preview {
-                tag: "list".to_string(),
-            });
-        }
+    if bytes.len() < 8 {
+        return Ok(serde_json::Value::Null);
+    }
 
-        serde_json::to_value(&t).map_err(DecodeError::Serde)
+    let len = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+    if bytes.len() < 8 + len {
+        return Ok(serde_json::Value::Null);
+    }
+    let mut stream = Cursor::new(&bytes[8..(8 + len)]);
+    let msg = MessageHeader::binprot_read(&mut stream).map_err(DecodeError::BinProt)?;
+    let (preview_msg, t) = match msg {
+        MessageHeader::Heartbeat => (serde_json::Value::Null, Msg::Heartbeat),
+        MessageHeader::Query(q) => {
+            let tag = String::from_utf8(q.tag.as_ref().to_vec()).unwrap();
+            (
+                serde_json::Value::String(tag.clone()),
+                Msg::Request {
+                    tag,
+                    version: q.version,
+                    id: q.id,
+                },
+            )
+        },
+        MessageHeader::Response(r) => (
+            serde_json::to_value(&r.id).unwrap(),
+            Msg::Response { id: r.id },
+        ),
+    };
+
+    if preview {
+        Ok(preview_msg)
     } else {
-        Ok(serde_json::Value::Null)
+        serde_json::to_value(&t).map_err(DecodeError::Serde)
     }
 }
