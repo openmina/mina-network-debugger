@@ -45,7 +45,7 @@ pub enum MessageType {
     // rpc
     Rpc {
         tag: String,
-    }
+    },
 }
 
 impl fmt::Display for MessageType {

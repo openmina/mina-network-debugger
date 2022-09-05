@@ -20,7 +20,10 @@ use super::{
     sorted_intersect::sorted_intersect,
 };
 
-use crate::{decode::{DecodeError, MessageType}, custom_coding};
+use crate::{
+    decode::{DecodeError, MessageType},
+    custom_coding,
+};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -222,9 +225,7 @@ impl DbCore {
     }
 
     fn addr_index(&self) -> &rocksdb::ColumnFamily {
-        self.inner
-            .cf_handle(Self::ADDR_INDEX)
-            .expect("must exist")
+        self.inner.cf_handle(Self::ADDR_INDEX).expect("must exist")
     }
 
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
@@ -232,8 +233,7 @@ impl DbCore {
             .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
 
         let key = custom_coding::addr_emit(&v.info.addr, vec![]);
-        self.inner
-            .put_cf(self.addr_index(), key, id.emit(vec![]))?;
+        self.inner.put_cf(self.addr_index(), key, id.emit(vec![]))?;
 
         Ok(())
     }
@@ -332,7 +332,7 @@ impl DbCore {
         let v = self
             .inner
             .get_cf(cf, &key)?
-            .ok_or(DbError::NoItemAtCursor(hex::encode(key.as_ref())))?;
+            .ok_or_else(|| DbError::NoItemAtCursor(hex::encode(key.as_ref())))?;
         let v = T::absorb_ext(&v)?;
         Ok(v)
     }
@@ -490,13 +490,14 @@ impl DbCore {
         let it = if params.stream_filter.is_some() || params.kind_filter.is_some() {
             let stream_indexes = match &params.stream_filter {
                 Some(StreamFilter::AnyStreamByAddr(addr)) => {
-                    let connection_id = match self.get(self.addr_index(), custom_coding::addr_emit(addr, vec![])) {
-                        Ok(v) => v,
-                        Err(err) => {
-                            log::warn!("no connection {addr}, {err}");
-                            ConnectionId(u64::MAX)
-                        },
-                    };
+                    let connection_id =
+                        match self.get(self.addr_index(), custom_coding::addr_emit(addr, vec![])) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                log::warn!("no connection {addr}, {err}");
+                                ConnectionId(u64::MAX)
+                            }
+                        };
                     // TODO: duplicated code
                     let id = ConnectionIdx {
                         connection_id,

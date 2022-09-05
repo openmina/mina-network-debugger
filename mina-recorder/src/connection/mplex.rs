@@ -149,7 +149,7 @@ where
         accumulator.extend_from_slice(bytes);
 
         let (header, len, offset) = {
-            let (v, remaining) = decode::u64(&accumulator).unwrap();
+            let (v, remaining) = decode::u64(accumulator).unwrap();
             let header = Header::new(v, id.incoming);
 
             let (len, remaining) = decode::usize(remaining).unwrap();

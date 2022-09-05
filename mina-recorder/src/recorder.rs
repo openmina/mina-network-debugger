@@ -41,11 +41,7 @@ impl Cx {
 impl P2pRecorder {
     pub fn new(db: DbFacade, chain_id: String, test: bool) -> Self {
         P2pRecorder {
-            tester: if test {
-                Some(Tester::default())
-            } else {
-                None
-            },
+            tester: if test { Some(Tester::default()) } else { None },
             chain_id,
             db,
             cns: BTreeMap::default(),

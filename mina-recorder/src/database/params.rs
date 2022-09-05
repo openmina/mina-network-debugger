@@ -99,11 +99,13 @@ impl<'a> From<Direction> for rocksdb::IteratorMode<'a> {
 }
 
 impl Params {
+    #[allow(dead_code)]
     pub fn with_stream_kind(mut self, stream_kind: StreamKind) -> Self {
         self.stream_kind = Some(stream_kind.to_string());
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
         self

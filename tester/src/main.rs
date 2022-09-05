@@ -1,4 +1,9 @@
-use std::{net::{TcpListener, TcpStream}, io::{Read, Write}, sync::Arc, thread, fs};
+use std::{
+    net::{TcpListener, TcpStream},
+    io::{Read, Write},
+    sync::Arc,
+    thread, fs,
+};
 
 const P2P_PORT: u16 = 8302;
 
@@ -35,10 +40,14 @@ fn main() {
                 thread::spawn(move || {
                     let mut stream = TcpStream::connect(("127.0.0.1", P2P_PORT)).unwrap();
                     for _ in 0..16 {
-                        stream.write_all(&data[..(0x1000 + (rand::random::<usize>() % 0xf000))])
+                        stream
+                            .write_all(&data[..(0x1000 + (rand::random::<usize>() % 0xf000))])
                             .unwrap();
                     }
-                    fs::File::create("/tmp/test").unwrap().write(&data_false[..0x1000]).unwrap();
+                    fs::File::create("/tmp/test")
+                        .unwrap()
+                        .write_all(&data_false[..0x1000])
+                        .unwrap();
                 })
             };
             stream_threads.push(stream_thread);

@@ -22,16 +22,8 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
     enum Msg {
-        Response {
-            tag: String,
-            version: i32,
-            id: i64,
-        },
-        Request {
-            tag: String,
-            version: i32,
-            id: i64,
-        },
+        Response { tag: String, version: i32, id: i64 },
+        Request { tag: String, version: i32, id: i64 },
     }
 
     let mut stream = Cursor::new(&bytes);
@@ -52,7 +44,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                 })
                 .map_err(DecodeError::Serde)
             }
-        },
+        }
         2 => {
             if preview {
                 Ok(serde_json::Value::String(format!("Response {tag}")))
@@ -64,7 +56,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                 })
                 .map_err(DecodeError::Serde)
             }
-        },
-        _ => Ok(serde_json::Value::Null)
+        }
+        _ => Ok(serde_json::Value::Null),
     }
 }

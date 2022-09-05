@@ -136,12 +136,9 @@ impl RingBuffer {
         D: RingBufferData,
     {
         loop {
-            match self.read_slice()? {
-                Some(v) => {
-                    self.read_finish();
-                    return Ok(v);
-                }
-                None => (),
+            if let Some(v) = self.read_slice()? {
+                self.read_finish();
+                break Ok(v);
             }
         }
     }

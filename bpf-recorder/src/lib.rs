@@ -86,12 +86,7 @@ impl DataTag {
             DataTag::Alias,
             DataTag::Random,
         ];
-        for v in values {
-            if v as u32 == c {
-                return Some(v);
-            }
-        }
-        None
+        values.into_iter().find(|&v| v as u32 == c)
     }
 }
 

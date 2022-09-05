@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 use binprot::{BinProtRead, BinProtWrite};
-use mina_p2p_messages::{string::String as BString, rpc::{QueryHeader, MessageHeader}, utils};
+use mina_p2p_messages::{
+    string::String as BString,
+    rpc::{QueryHeader, MessageHeader},
+    utils,
+};
 
 use crate::database::{StreamId, StreamKind, DbStream};
 
@@ -41,19 +45,22 @@ impl HandleData for State {
             let len = match utils::decode_size(&mut s) {
                 Ok(v) => v,
                 Err(err) => {
-                    log::error!("rpc message slice too short {err}, {}", hex::encode(s.get_ref()));
+                    log::error!(
+                        "rpc message slice too short {err}, {}",
+                        hex::encode(s.get_ref())
+                    );
                     return Ok(());
                 }
             };
             match MessageHeader::binprot_read(&mut s) {
                 Err(err) => {
                     log::error!("{err}");
-                },
+                }
                 Ok(MessageHeader::Heartbeat) => (),
                 Ok(MessageHeader::Query(v)) => {
                     self.rpc_context.insert(v.id, (v.tag, v.version));
                     stream.add(id.incoming, id.metadata.time, &s.get_ref()[..(8 + len)])?;
-                },
+                }
                 Ok(MessageHeader::Response(v)) => {
                     let pos = s.position();
                     if let Some((tag, version)) = self.rpc_context.remove(&v.id) {

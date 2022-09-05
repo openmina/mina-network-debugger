@@ -8,11 +8,11 @@ See dockerfile.
 
 Most likely developer machine already have all deps.
 
-Need rust `nightly-2022-07-01`. And bpf linker.
+Need rust `nightly-2022-09-01`. And bpf linker.
 
 ```
-rustup update nightly-2022-07-01
-rustup component add rust-src --toolchain nightly-2022-07-01-x86_64-unknown-linux-gnu
+rustup update nightly-2022-09-01
+rustup component add rust-src --toolchain nightly-2022-09-01-x86_64-unknown-linux-gnu
 cargo install bpf-linker --git https://github.com/vlad9486/bpf-linker --branch keep-btf
 ```
 
