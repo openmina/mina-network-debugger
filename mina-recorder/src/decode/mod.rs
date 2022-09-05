@@ -3,7 +3,7 @@ pub mod meshsub;
 pub mod kademlia;
 pub mod rpc;
 
-use std::{fmt, str::FromStr};
+use std::{fmt, str::FromStr, string::FromUtf8Error};
 
 use serde::{Serialize, Deserialize};
 use radiation::{Absorb, Emit};
@@ -18,6 +18,8 @@ pub enum DecodeError {
     BinProt(binprot::Error),
     #[error("{_0}")]
     Protobuf(prost::DecodeError),
+    #[error("{_0}")]
+    Utf8(FromUtf8Error),
 }
 
 #[derive(Clone, Serialize, Deserialize, Absorb, Emit, PartialEq, Eq)]
