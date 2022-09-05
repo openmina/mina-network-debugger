@@ -41,11 +41,20 @@ pub enum MessageType {
     FindNode,
     Ping,
     // handshake
+    #[tag(0x0300)]
     HandshakePayload,
     // rpc
-    Rpc {
-        tag: String,
-    },
+    #[tag(0x0400)]
+    GetSomeInitialPeers,
+    GetStagedLedgerAuxAndPendingCoinbasesAtHash,
+    AnswerSyncLedgerQuery,
+    GetAncestry,
+    GetBestTip,
+    GetNodeStatus,
+    GetTransitionChainProof,
+    GetTransitionChain,
+    GetTransitionKnowledge,
+    GetEpochLedger,
 }
 
 impl fmt::Display for MessageType {
@@ -63,7 +72,18 @@ impl fmt::Display for MessageType {
             MessageType::FindNode => write!(f, "find_node"),
             MessageType::Ping => write!(f, "ping"),
             MessageType::HandshakePayload => write!(f, "handshake_payload"),
-            MessageType::Rpc { tag } => write!(f, "rpc_{tag}"),
+            MessageType::GetSomeInitialPeers => write!(f, "get_some_initial_peers"),
+            MessageType::GetStagedLedgerAuxAndPendingCoinbasesAtHash => {
+                write!(f, "get_staged_ledger_aux_and_pending_coinbases_at_hash")
+            }
+            MessageType::AnswerSyncLedgerQuery => write!(f, "answer_sync_ledger_query"),
+            MessageType::GetAncestry => write!(f, "get_ancestry"),
+            MessageType::GetBestTip => write!(f, "get_best_tip"),
+            MessageType::GetNodeStatus => write!(f, "get_node_status"),
+            MessageType::GetTransitionChainProof => write!(f, "get_transition_chain_proof"),
+            MessageType::GetTransitionChain => write!(f, "get_transition_chain"),
+            MessageType::GetTransitionKnowledge => write!(f, "get_transition_knowledge"),
+            MessageType::GetEpochLedger => write!(f, "get_epoch_ledger"),
         }
     }
 }
@@ -85,6 +105,18 @@ impl FromStr for MessageType {
             "find_node" => Ok(MessageType::FindNode),
             "ping" => Ok(MessageType::Ping),
             "handshake_payload" => Ok(MessageType::HandshakePayload),
+            "get_some_initial_peers" => Ok(MessageType::GetSomeInitialPeers),
+            "get_staged_ledger_aux_and_pending_coinbases_at_hash" => {
+                Ok(MessageType::GetStagedLedgerAuxAndPendingCoinbasesAtHash)
+            }
+            "answer_sync_ledger_query" => Ok(MessageType::AnswerSyncLedgerQuery),
+            "get_ancestry" => Ok(MessageType::GetAncestry),
+            "get_best_tip" => Ok(MessageType::GetBestTip),
+            "get_node_status" => Ok(MessageType::GetNodeStatus),
+            "get_transition_chain_proof" => Ok(MessageType::GetTransitionChainProof),
+            "get_transition_chain" => Ok(MessageType::GetTransitionChain),
+            "get_transition_knowledge" => Ok(MessageType::GetTransitionKnowledge),
+            "get_epoch_ledger" => Ok(MessageType::GetEpochLedger),
             _ => Err(()),
         }
     }

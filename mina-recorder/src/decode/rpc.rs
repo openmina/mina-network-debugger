@@ -14,7 +14,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let msg = QueryHeader::binprot_read(&mut stream).map_err(DecodeError::BinProt)?;
     let tag = String::from_utf8(msg.tag.as_ref().to_vec()).map_err(DecodeError::Utf8)?;
 
-    Ok(vec![MessageType::Rpc { tag }])
+    Ok(tag.parse().ok().into_iter().collect())
 }
 
 pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {

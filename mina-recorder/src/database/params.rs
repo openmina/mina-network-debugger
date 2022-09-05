@@ -20,8 +20,6 @@ pub enum ParamsValidateError {
     ParseStreamId(String),
     #[error("cannot parse message kind")]
     ParseMessageKind,
-    #[error("cannot filter by stream kind and message kind, ambiguous filter")]
-    StreamKindWithMessageKind,
 }
 
 pub struct ValidParams {
@@ -157,7 +155,7 @@ impl Params {
                     .collect();
                 Some(KindFilter::AnyMessageInStream(kinds))
             }
-            (None, Some(kind)) => {
+            (_, Some(kind)) => {
                 let mut kinds = Vec::new();
                 for s in kind.split(',') {
                     kinds.push(
@@ -167,7 +165,6 @@ impl Params {
                 }
                 Some(KindFilter::Message(kinds))
             }
-            (Some(_), Some(_)) => return Err(ParamsValidateError::StreamKindWithMessageKind),
         };
         Ok(ValidParams {
             start,
