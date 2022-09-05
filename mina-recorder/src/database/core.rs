@@ -424,8 +424,8 @@ impl DbCore {
             cn: msg.connection_id,
             id: msg.stream_id,
         };
-        let connection = self
-            .get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes())?;
+        let connection =
+            self.get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes())?;
         let mut buf = vec![0; msg.size as usize];
         let sb = self.get_stream(stream_full_id)?;
         let mut file = sb.lock().expect("poisoned");

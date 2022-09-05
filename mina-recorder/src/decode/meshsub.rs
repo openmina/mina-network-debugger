@@ -23,6 +23,10 @@ pub enum Event {
         topic: String,
     },
     Publish {
+        from: Option<String>,
+        seqno: Option<String>,
+        signature: Option<String>,
+        key: Option<String>,
         topic: String,
         message: Box<GossipNetMessage>,
     },
@@ -31,7 +35,46 @@ pub enum Event {
         topic: String,
         message: GossipNetMessagePreview,
     },
-    Control,
+    Control {
+        ihave: Vec<ControlIHave>,
+        iwant: Vec<ControlIWant>,
+        graft: Vec<ControlGraft>,
+        prune: Vec<ControlPrune>,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ControlIHave {
+    topic_id: Option<String>,
+    message_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ControlIWant {
+    message_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ControlGraft {
+    topic_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ControlPrune {
+    topic_id: Option<String>,
+    peers: Vec<PeerInfo>,
+    backoff: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PeerInfo {
+    peer_id: Option<String>,
+    signed_peer_record: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -50,7 +93,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let pb::Rpc {
         subscriptions,
         publish,
-        control: _,
+        control,
     } = Message::decode_length_delimited(buf).map_err(DecodeError::Protobuf)?;
     let subscriptions = subscriptions.into_iter().map(|v| {
         if v.subscribe() {
@@ -69,8 +112,14 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
             2 => Some(MessageType::PublishTransactionPoolDiff),
             _ => None,
         });
+    let control = control
+        .into_iter()
+        .filter(|c| {
+            !(c.ihave.is_empty() && c.iwant.is_empty() && c.graft.is_empty() && c.prune.is_empty())
+        })
+        .map(|_| MessageType::Control);
 
-    Ok(subscriptions.chain(publish).collect())
+    Ok(subscriptions.chain(publish).chain(control).collect())
 }
 
 pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {
@@ -91,8 +140,11 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     });
     let publish = publish
         .into_iter()
-        .filter_map(|msg| msg.data.map(|d| (d, msg.topic)))
-        .map(|(data, topic)| {
+        .filter_map(|msg| {
+            msg.data
+                .map(|d| (d, msg.topic, msg.from, msg.seqno, msg.signature, msg.key))
+        })
+        .map(|(data, topic, from, seqno, signature, key)| {
             let mut c = Cursor::new(&data[8..]);
             let message = Box::new(GossipNetMessage::binprot_read(&mut c).unwrap());
             if preview {
@@ -105,10 +157,59 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                 };
                 Event::PublishPreview { topic, message }
             } else {
-                Event::Publish { topic, message }
+                Event::Publish {
+                    from: from.map(hex::encode),
+                    seqno: seqno.map(hex::encode),
+                    signature: signature.map(hex::encode),
+                    key: key.map(hex::encode),
+                    topic,
+                    message,
+                }
             }
         });
-    let control = control.into_iter().map(|_c| Event::Control);
+    let control = control.into_iter().map(
+        |pb::ControlMessage {
+             ihave,
+             iwant,
+             graft,
+             prune,
+         }| Event::Control {
+            ihave: ihave
+                .into_iter()
+                .map(|m| ControlIHave {
+                    topic_id: m.topic_id,
+                    message_ids: m.message_ids.into_iter().map(hex::encode).collect(),
+                })
+                .collect(),
+            iwant: iwant
+                .into_iter()
+                .map(|m| ControlIWant {
+                    message_ids: m.message_ids.into_iter().map(hex::encode).collect(),
+                })
+                .collect(),
+            graft: graft
+                .into_iter()
+                .map(|m| ControlGraft {
+                    topic_id: m.topic_id,
+                })
+                .collect(),
+            prune: prune
+                .into_iter()
+                .map(|m| ControlPrune {
+                    topic_id: m.topic_id,
+                    peers: m
+                        .peers
+                        .into_iter()
+                        .map(|peer| PeerInfo {
+                            peer_id: peer.peer_id.map(hex::encode),
+                            signed_peer_record: peer.signed_peer_record.map(hex::encode),
+                        })
+                        .collect(),
+                    backoff: m.backoff,
+                })
+                .collect(),
+        },
+    );
     let t = subscriptions
         .chain(publish)
         .chain(control)

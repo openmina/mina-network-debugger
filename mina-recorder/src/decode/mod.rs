@@ -32,6 +32,7 @@ pub enum MessageType {
     PublishExternalTransition,
     PublishSnarkPoolDiff,
     PublishTransactionPoolDiff,
+    Control,
     // kademlia
     #[tag(0x0200)]
     PutValue,
@@ -65,6 +66,7 @@ impl fmt::Display for MessageType {
             MessageType::PublishExternalTransition => write!(f, "publish_external_transition"),
             MessageType::PublishSnarkPoolDiff => write!(f, "publish_snark_pool_diff"),
             MessageType::PublishTransactionPoolDiff => write!(f, "publish_transaction_pool_diff"),
+            MessageType::Control => write!(f, "meshsub_control"),
             MessageType::PutValue => write!(f, "put_value"),
             MessageType::GetValue => write!(f, "get_value"),
             MessageType::AddProvider => write!(f, "add_provider"),
@@ -98,6 +100,7 @@ impl FromStr for MessageType {
             "publish_external_transition" => Ok(MessageType::PublishExternalTransition),
             "publish_snark_pool_diff" => Ok(MessageType::PublishSnarkPoolDiff),
             "publish_transaction_pool_diff" => Ok(MessageType::PublishTransactionPoolDiff),
+            "meshsub_control" => Ok(MessageType::Control),
             "put_value" => Ok(MessageType::PutValue),
             "get_value" => Ok(MessageType::GetValue),
             "add_provider" => Ok(MessageType::AddProvider),
