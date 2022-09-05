@@ -1,4 +1,4 @@
-use std::{time::SystemTime, fmt, str::FromStr};
+use std::{time::SystemTime, fmt, str::FromStr, net::SocketAddr};
 
 use radiation::{Absorb, Emit};
 
@@ -194,12 +194,14 @@ impl AsRef<SystemTime> for Message {
 #[derive(Serialize)]
 pub struct FullMessage {
     pub connection_id: ConnectionId,
+    pub remote_addr: SocketAddr,
     pub incoming: bool,
     pub timestamp: SystemTime,
     pub stream_id: StreamId,
     pub stream_kind: StreamKind,
     // dynamic type, the type is depend on `stream_kind`
     pub message: serde_json::Value,
+    pub size: u32,
 }
 
 impl AsRef<SystemTime> for FullMessage {
