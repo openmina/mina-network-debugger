@@ -73,7 +73,7 @@ impl HandleData for State {
                         b.push(2);
                         q.binprot_write(&mut b).unwrap();
                         let new_len = (len + b.len()) as u64 - pos;
-                        b[0..8].clone_from_slice(&new_len.to_be_bytes());
+                        b[0..8].clone_from_slice(&new_len.to_le_bytes());
                         b.extend_from_slice(&s.get_ref()[(pos as usize)..(8 + len)]);
                         stream.add(id.incoming, id.metadata.time, &b)?;
                     } else {
