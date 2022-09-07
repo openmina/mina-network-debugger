@@ -105,7 +105,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let publish = publish
         .into_iter()
         .filter_map(|msg| msg.data)
-        .filter_map(|data| data.get(9).cloned())
+        .filter_map(|data| data.get(8).cloned())
         .filter_map(|tag| match tag {
             0 => Some(MessageType::PublishExternalTransition),
             1 => Some(MessageType::PublishSnarkPoolDiff),
