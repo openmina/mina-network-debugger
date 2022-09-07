@@ -222,7 +222,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
 fn tag0_msg() {
     use std::io::Cursor;
 
-    use mina_p2p_messages::p2p::MinaBlockExternalTransitionRawVersionedStable as Msg;
+    use mina_p2p_messages::v1::MinaBlockExternalTransitionRawVersionedStableV1Binable as Msg;
 
     use prost::{bytes::Bytes, Message as _};
 

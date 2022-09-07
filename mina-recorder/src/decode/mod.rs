@@ -22,6 +22,12 @@ pub enum DecodeError {
     Utf8(FromUtf8Error),
 }
 
+impl From<binprot::Error> for DecodeError {
+    fn from(v: binprot::Error) -> Self {
+        DecodeError::BinProt(v)
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Absorb, Emit, PartialEq, Eq)]
 #[tag(u16)]
 pub enum MessageType {
