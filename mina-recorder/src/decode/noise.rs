@@ -34,10 +34,7 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
         .public_key
         .map(|pk| {
             let libp2p_pk = match pk.r#type() {
-                keys_proto::KeyType::Rsa => {
-                    let pk = libp2p_core::identity::rsa::PublicKey::decode_x509(&pk.data).unwrap();
-                    libp2p_core::PublicKey::Rsa(pk)
-                }
+                keys_proto::KeyType::Rsa => unimplemented!(),
                 keys_proto::KeyType::Ed25519 => {
                     let pk = libp2p_core::identity::ed25519::PublicKey::decode(&pk.data).unwrap();
                     libp2p_core::PublicKey::Ed25519(pk)

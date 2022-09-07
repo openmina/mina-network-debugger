@@ -533,21 +533,21 @@ fn main() {
             Arc,
         },
         time::{SystemTime, Duration},
-        env,
+        env, path::PathBuf,
     };
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder};
-    use ebpf::{kind::AppItem, Skeleton};
+    use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
     env_logger::init();
     // let env = env_logger::Env::default().default_filter_or("warn");
     // env_logger::init_from_env(env);
-    if let Err(err) = sudo::escalate_if_needed() {
-        log::error!("failed to obtain superuser permission {err}");
-        return;
-    }
+    // if let Err(err) = sudo::escalate_if_needed() {
+    //     log::error!("failed to obtain superuser permission {err}");
+    //     return;
+    // }
 
     let port = env::var("SERVER_PORT")
         .unwrap_or_else(|_| 8000.to_string())
@@ -556,8 +556,11 @@ fn main() {
     let db_path = env::var("DB_PATH").unwrap_or_else(|_| "target/db".to_string());
     let dry = env::var("DRY").is_ok();
 
-    let key_path = env::var("HTTPS_KEY_PATH").unwrap_or_else(|_| "privkey.pem".to_string());
-    let cert_path = env::var("HTTPS_CERT_PATH").unwrap_or_else(|_| "fullchain.pem".to_string());
+    let home = PathBuf::from(env::var("HOME").expect("must set HOME variable"));
+    let key_path = env::var("HTTPS_KEY_PATH")
+        .unwrap_or_else(|_| home.join("privkey.pem").display().to_string());
+    let cert_path = env::var("HTTPS_CERT_PATH")
+        .unwrap_or_else(|_| home.join("fullchain.pem").display().to_string());
 
     let (db, callback, server_thread) = server::spawn(port, db_path, key_path, cert_path);
     let terminating = Arc::new(AtomicBool::new(dry));
@@ -577,38 +580,70 @@ fn main() {
         }
     }
 
-    static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
+    struct Source {
+        _skeleton: SkeletonEmpty,
+        _app: Box<App>,
+        rb: RingBuffer,
+        terminating: Arc<AtomicBool>,
+    }
 
-    let mut skeleton = Skeleton::<App>::open("bpf-recorder\0", CODE)
-        .unwrap_or_else(|code| panic!("failed to open bpf: {}", code));
-    skeleton
-        .load()
-        .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
-    let (skeleton, mut app) = skeleton
-        .attach()
-        .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
-    log::info!("attached bpf module");
+    impl Source {
+        pub fn initialize(terminating: Arc<AtomicBool>) -> Self {
+            static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
 
-    let fd = match app.event_queue.kind_mut() {
-        ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
-        _ => unreachable!(),
-    };
+            let mut skeleton = Skeleton::<App>::open("bpf-recorder\0", CODE)
+                .unwrap_or_else(|code| panic!("failed to open bpf: {}", code));
+            skeleton
+                .load()
+                .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
+            let (skeleton, mut app) = skeleton
+                .attach()
+                .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
+            log::info!("attached bpf module");
+        
+            let fd = match app.event_queue.kind_mut() {
+                ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
+                _ => unreachable!(),
+            };
+        
+            let mut info = libbpf_sys::bpf_map_info::default();
+            let mut len = std::mem::size_of::<libbpf_sys::bpf_map_info>() as u32;
+            unsafe {
+                libbpf_sys::bpf_obj_get_info_by_fd(
+                    fd,
+                    &mut info as *mut libbpf_sys::bpf_map_info as *mut _,
+                    &mut len as _,
+                )
+            };
+            let rb = match RingBuffer::new(fd, info.max_entries as usize) {
+                Ok(v) => v,
+                Err(err) => {
+                    log::error!("failed to create userspace part of the ring buffer: {err}");
+                    std::process::exit(1);
+                }
+            };
 
-    let mut info = libbpf_sys::bpf_map_info::default();
-    let mut len = std::mem::size_of::<libbpf_sys::bpf_map_info>() as u32;
-    unsafe {
-        libbpf_sys::bpf_obj_get_info_by_fd(
-            fd,
-            &mut info as *mut libbpf_sys::bpf_map_info as *mut _,
-            &mut len as _,
-        )
-    };
-    let mut rb = match RingBuffer::new(fd, info.max_entries as usize) {
-        Ok(v) => v,
-        Err(err) => {
-            log::error!("failed to create userspace part of the ring buffer: {err}");
-            return;
+            Source {
+                _skeleton: skeleton,
+                _app: app,
+                rb,
+                terminating,
+            }
         }
+    }
+
+    impl Iterator for Source {
+        type Item = SnifferEvent;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.rb.read_blocking::<SnifferEvent>(&self.terminating).ok().and_then(|x| x)
+        }
+    }
+
+    let mut source = if dry {
+        Box::new(std::iter::empty()) as Box<dyn Iterator<Item = SnifferEvent>>
+    } else {
+        Box::new(Source::initialize(terminating.clone())) as Box<dyn Iterator<Item = SnifferEvent>>
     };
 
     // my local sandbox
@@ -626,7 +661,7 @@ fn main() {
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     while !terminating.load(Ordering::Relaxed) {
-        while let Ok(Some(event)) = rb.read_blocking::<SnifferEvent>(&terminating) {
+        while let Some(event) = source.next() {
             if event.ts0 + 1_000_000_000 < last_ts {
                 log::error!("unordered {} < {last_ts}", event.ts0);
             }
@@ -704,7 +739,7 @@ fn main() {
                         };
                         recorder.on_disconnect(metadata);
                     } else if !ignored_cns.contains_key(&key) {
-                        log::debug!("{} cannot disconnect {fd}, not connected", event.pid);
+                        log::debug!("{} cannot disconnect {}, not connected", event.pid, event.fd);
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
@@ -722,8 +757,9 @@ fn main() {
                         recorder.on_data(true, metadata, data);
                     } else if !ignored_cns.contains_key(&key) {
                         log::debug!(
-                            "{} cannot handle data on {fd}, not connected, {}",
+                            "{} cannot handle data on {}, not connected, {}",
                             event.pid,
+                            event.fd,
                             hex::encode(data),
                         );
                     }
@@ -743,8 +779,9 @@ fn main() {
                         recorder.on_data(false, metadata, data);
                     } else if !ignored_cns.contains_key(&key) {
                         log::debug!(
-                            "{} cannot handle data on {fd}, not connected, {}",
+                            "{} cannot handle data on {}, not connected, {}",
                             event.pid,
+                            event.fd,
                             hex::encode(data),
                         );
                     }
@@ -760,5 +797,5 @@ fn main() {
         log::error!("server thread panic, this is a bug, must not happen");
     }
     log::info!("terminated");
-    drop(skeleton);
+    drop(source);
 }

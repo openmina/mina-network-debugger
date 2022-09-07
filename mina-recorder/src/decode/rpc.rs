@@ -9,7 +9,7 @@ use super::{DecodeError, MessageType};
 pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let mut stream = Cursor::new(&bytes);
 
-    let _len = utils::decode_size(&mut stream).map_err(DecodeError::BinProt)?;
+    let _len = utils::stream_decode_size(&mut stream).map_err(DecodeError::BinProt)?;
     let Nat0(_) = BinProtRead::binprot_read(&mut stream).map_err(DecodeError::BinProt)?;
     let msg = QueryHeader::binprot_read(&mut stream).map_err(DecodeError::BinProt)?;
     let tag = String::from_utf8(msg.tag.as_ref().to_vec()).map_err(DecodeError::Utf8)?;
@@ -28,7 +28,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
 
     let mut stream = Cursor::new(&bytes);
 
-    let _len = utils::decode_size(&mut stream).map_err(DecodeError::BinProt)?;
+    let _len = utils::stream_decode_size(&mut stream).map_err(DecodeError::BinProt)?;
     let Nat0(d) = BinProtRead::binprot_read(&mut stream).map_err(DecodeError::BinProt)?;
     let msg = QueryHeader::binprot_read(&mut stream).map_err(DecodeError::BinProt)?;
     let tag = String::from_utf8(msg.tag.as_ref().to_vec()).map_err(DecodeError::Utf8)?;

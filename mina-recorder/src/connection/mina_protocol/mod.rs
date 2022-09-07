@@ -42,7 +42,7 @@ impl HandleData for State {
             .get_or_insert_with(|| db.add(self.stream_id, self.kind));
         if self.kind == StreamKind::Rpc {
             let mut s = Cursor::new(bytes);
-            let len = match utils::decode_size(&mut s) {
+            let len = match utils::stream_decode_size(&mut s) {
                 Ok(v) => v,
                 Err(err) => {
                     log::error!(

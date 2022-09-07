@@ -391,7 +391,7 @@ dependencies = [
 [[package]]
 name = "ebpf-kern"
 version = "0.2.0"
-source = "git+https://github.com/vlad9486/ebpf-tools#dfbb748e588929bb0858e8bacf7e1d46e44acf9e"
+source = "git+https://github.com/vlad9486/ebpf-tools#e658cb9d686dbd0dc75790802b40bd07ea533764"
 dependencies = [
  "ebpf-kern-macros",
 ]
@@ -399,7 +399,7 @@ dependencies = [
 [[package]]
 name = "ebpf-kern-macros"
 version = "0.2.0"
-source = "git+https://github.com/vlad9486/ebpf-tools#dfbb748e588929bb0858e8bacf7e1d46e44acf9e"
+source = "git+https://github.com/vlad9486/ebpf-tools#e658cb9d686dbd0dc75790802b40bd07ea533764"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -409,7 +409,7 @@ dependencies = [
 [[package]]
 name = "ebpf-user"
 version = "0.2.0"
-source = "git+https://github.com/vlad9486/ebpf-tools#dfbb748e588929bb0858e8bacf7e1d46e44acf9e"
+source = "git+https://github.com/vlad9486/ebpf-tools#e658cb9d686dbd0dc75790802b40bd07ea533764"
 dependencies = [
  "cty",
  "ebpf-user-macros",
@@ -419,7 +419,7 @@ dependencies = [
 [[package]]
 name = "ebpf-user-macros"
 version = "0.2.0"
-source = "git+https://github.com/vlad9486/ebpf-tools#dfbb748e588929bb0858e8bacf7e1d46e44acf9e"
+source = "git+https://github.com/vlad9486/ebpf-tools#e658cb9d686dbd0dc75790802b40bd07ea533764"
 dependencies = [
  "quote",
  "syn",
