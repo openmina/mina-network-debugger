@@ -1,7 +1,10 @@
 use std::io::Cursor;
 
 use serde::Serialize;
-use mina_p2p_messages::{rpc::{QueryHeader, RpcMethod, NeedsLength, RpcResult, Error as RpcError}, utils, GetEpochLedger};
+use mina_p2p_messages::{
+    rpc::{QueryHeader, RpcMethod, NeedsLength, RpcResult, Error as RpcError},
+    utils, GetEpochLedger,
+};
 use binprot::{BinProtRead, Nat0};
 
 use super::{DecodeError, MessageType};
@@ -21,10 +24,19 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     #[derive(Serialize)]
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
-    enum Msg<Q, R>
-    {
-        Response { tag: String, version: i32, id: i64, value: Option<RpcResult<NeedsLength<R>, RpcError>> },
-        Request { tag: String, version: i32, id: i64, query: Option<NeedsLength<Q>>  },
+    enum Msg<Q, R> {
+        Response {
+            tag: String,
+            version: i32,
+            id: i64,
+            value: Option<RpcResult<NeedsLength<R>, RpcError>>,
+        },
+        Request {
+            tag: String,
+            version: i32,
+            id: i64,
+            query: Option<NeedsLength<Q>>,
+        },
     }
 
     pub struct Empty;
@@ -61,15 +73,13 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                         })
                         .map_err(DecodeError::Serde)
                     }
-                    _ => {
-                        serde_json::to_value(Msg::Request::<(), ()> {
-                            tag,
-                            version: msg.version,
-                            id: msg.id,
-                            query: None,
-                        })
-                        .map_err(DecodeError::Serde)
-                    }
+                    _ => serde_json::to_value(Msg::Request::<(), ()> {
+                        tag,
+                        version: msg.version,
+                        id: msg.id,
+                        query: None,
+                    })
+                    .map_err(DecodeError::Serde),
                 }
             }
         }
@@ -90,15 +100,13 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                         })
                         .map_err(DecodeError::Serde)
                     }
-                    _ => {
-                        serde_json::to_value(Msg::Response::<(), ()> {
-                            tag,
-                            version: msg.version,
-                            id: msg.id,
-                            value: None,
-                        })
-                        .map_err(DecodeError::Serde)
-                    }
+                    _ => serde_json::to_value(Msg::Response::<(), ()> {
+                        tag,
+                        version: msg.version,
+                        id: msg.id,
+                        value: None,
+                    })
+                    .map_err(DecodeError::Serde),
                 }
             }
         }

@@ -533,7 +533,8 @@ fn main() {
             Arc,
         },
         time::{SystemTime, Duration},
-        env, path::PathBuf,
+        env,
+        path::PathBuf,
     };
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
@@ -600,12 +601,12 @@ fn main() {
                 .attach()
                 .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
             log::info!("attached bpf module");
-        
+
             let fd = match app.event_queue.kind_mut() {
                 ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
                 _ => unreachable!(),
             };
-        
+
             let mut info = libbpf_sys::bpf_map_info::default();
             let mut len = std::mem::size_of::<libbpf_sys::bpf_map_info>() as u32;
             unsafe {
@@ -636,7 +637,10 @@ fn main() {
         type Item = SnifferEvent;
 
         fn next(&mut self) -> Option<Self::Item> {
-            self.rb.read_blocking::<SnifferEvent>(&self.terminating).ok().and_then(|x| x)
+            self.rb
+                .read_blocking::<SnifferEvent>(&self.terminating)
+                .ok()
+                .and_then(|x| x)
         }
     }
 
@@ -661,7 +665,7 @@ fn main() {
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     while !terminating.load(Ordering::Relaxed) {
-        while let Some(event) = source.next() {
+        for event in source.by_ref() {
             if event.ts0 + 1_000_000_000 < last_ts {
                 log::error!("unordered {} < {last_ts}", event.ts0);
             }
@@ -739,7 +743,11 @@ fn main() {
                         };
                         recorder.on_disconnect(metadata);
                     } else if !ignored_cns.contains_key(&key) {
-                        log::debug!("{} cannot disconnect {}, not connected", event.pid, event.fd);
+                        log::debug!(
+                            "{} cannot disconnect {}, not connected",
+                            event.pid,
+                            event.fd
+                        );
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
