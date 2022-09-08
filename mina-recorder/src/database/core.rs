@@ -438,6 +438,8 @@ impl DbCore {
             StreamKind::Meshsub => crate::decode::meshsub::parse(buf, preview)?,
             StreamKind::Handshake => crate::decode::noise::parse(buf, preview)?,
             StreamKind::Rpc => crate::decode::rpc::parse(buf, preview)?,
+            StreamKind::IpfsId => crate::decode::identify::parse(buf, preview, msg.stream_kind)?,
+            StreamKind::IpfsPush => crate::decode::identify::parse(buf, preview, msg.stream_kind)?,
             _ => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {

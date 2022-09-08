@@ -14,6 +14,7 @@ fn main() {
             "src/decode/kademlia.proto",
             "src/decode/structs.proto",
             "src/decode/envelope.proto",
+            "src/decode/identify.proto",
         ],
         &["src/decode"],
     )

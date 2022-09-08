@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use crate::event::ConnectionInfo;
+use crate::{event::ConnectionInfo, decode::MessageType};
 
 use super::{
     core::{DbCore, DbError},
@@ -103,6 +103,8 @@ impl DbStream {
             StreamKind::Kad => crate::decode::kademlia::parse_types(bytes)?,
             StreamKind::Handshake => crate::decode::noise::parse_types(bytes)?,
             StreamKind::Rpc => crate::decode::rpc::parse_types(bytes)?,
+            StreamKind::IpfsId => vec![MessageType::Identify],
+            StreamKind::IpfsPush => vec![MessageType::IdentifyPush],
             _ => vec![],
         };
 

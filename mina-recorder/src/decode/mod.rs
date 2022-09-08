@@ -2,6 +2,9 @@ pub mod noise;
 pub mod meshsub;
 pub mod kademlia;
 pub mod rpc;
+pub mod identify;
+
+mod utils;
 
 use std::{fmt, str::FromStr, string::FromUtf8Error};
 
@@ -62,6 +65,10 @@ pub enum MessageType {
     GetTransitionChain,
     GetTransitionKnowledge,
     GetEpochLedger,
+    // identify
+    #[tag(0x0500)]
+    Identify,
+    IdentifyPush,
 }
 
 impl fmt::Display for MessageType {
@@ -92,6 +99,8 @@ impl fmt::Display for MessageType {
             MessageType::GetTransitionChain => write!(f, "get_transition_chain"),
             MessageType::GetTransitionKnowledge => write!(f, "get_transition_knowledge"),
             MessageType::GetEpochLedger => write!(f, "get_epoch_ledger"),
+            MessageType::Identify => write!(f, "identify"),
+            MessageType::IdentifyPush => write!(f, "identify_push"),
         }
     }
 }
@@ -126,6 +135,8 @@ impl FromStr for MessageType {
             "get_transition_chain" => Ok(MessageType::GetTransitionChain),
             "get_transition_knowledge" => Ok(MessageType::GetTransitionKnowledge),
             "get_epoch_ledger" => Ok(MessageType::GetEpochLedger),
+            "identify" => Ok(MessageType::Identify),
+            "identify_push" => Ok(MessageType::IdentifyPush),
             _ => Err(()),
         }
     }
