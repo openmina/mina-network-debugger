@@ -9,6 +9,7 @@ pub struct State<Inner> {
     outgoing: Option<String>,
     accumulator_incoming: Vec<u8>,
     accumulator_outgoing: Vec<u8>,
+    error: bool,
     inner: Option<Inner>,
 }
 
@@ -21,6 +22,7 @@ impl<Inner> From<(u64, bool)> for State<Inner> {
             outgoing: None,
             accumulator_incoming: vec![],
             accumulator_outgoing: vec![],
+            error: false,
             inner: None,
         }
     }
@@ -46,12 +48,21 @@ where
 {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+        if self.error {
+            return Ok(());
+        }
+
         let (accumulator, done) = if id.incoming {
             (&mut self.accumulator_incoming, &mut self.incoming)
         } else {
             (&mut self.accumulator_outgoing, &mut self.outgoing)
         };
         if let Some(protocol) = done {
+            if protocol == "ERROR" {
+                self.error = true;
+                log::error!("{id}, the peer suggest protocol named \"ERROR\"");
+                return Ok(());
+            }
             let inner = self.inner.get_or_insert_with(|| {
                 Inner::from_name(protocol, self.stream_id, self.stream_forward)
             });

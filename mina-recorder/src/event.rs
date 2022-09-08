@@ -33,24 +33,24 @@ pub struct DirectedId {
     pub incoming: bool,
 }
 
-// impl DirectedId {
-//     #[cfg(test)]
-//     pub fn fake() -> Self {
-//         DirectedId {
-//             metadata: EventMetadata {
-//                 id: ConnectionInfo {
-//                     addr: "127.0.0.1:0".parse().expect("valid constant"),
-//                     pid: 1,
-//                     fd: 1,
-//                 },
-//                 time: SystemTime::now(),
-//                 duration: Duration::from_secs(1),
-//             },
-//             alias: String::default(),
-//             incoming: true,
-//         }
-//     }
-// }
+impl DirectedId {
+    #[cfg(test)]
+    pub fn fake() -> Self {
+        DirectedId {
+            metadata: EventMetadata {
+                id: ConnectionInfo {
+                    addr: "127.0.0.1:0".parse().expect("valid constant"),
+                    pid: 1,
+                    fd: 1,
+                },
+                time: SystemTime::now(),
+                duration: Duration::from_secs(1),
+            },
+            alias: String::default(),
+            incoming: true,
+        }
+    }
+}
 
 impl fmt::Display for DirectedId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
