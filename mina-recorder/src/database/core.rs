@@ -574,7 +574,11 @@ impl DbCore {
                             .map(|StreamByKindIdx { id, .. }| id)
                     });
 
-                    Some(Box::new(itertools::kmerge(its)) as Box<dyn Iterator<Item = MessageId>>)
+                    let reverse = matches!(params.direction, Direction::Reverse);
+                    let predicate = move |a: &MessageId, b: &MessageId| (*a < *b) ^ reverse;
+                    let it = itertools::kmerge_by(its, predicate);
+
+                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
                 }
                 Some(KindFilter::Message(kinds)) => {
                     let its = kinds.iter().map(|message_kind| {
@@ -593,7 +597,11 @@ impl DbCore {
                             .map(|MessageKindIdx { id, .. }| id)
                     });
 
-                    Some(Box::new(itertools::kmerge(its)) as Box<dyn Iterator<Item = MessageId>>)
+                    let reverse = matches!(params.direction, Direction::Reverse);
+                    let predicate = move |a: &MessageId, b: &MessageId| (*a < *b) ^ reverse;
+                    let it = itertools::kmerge_by(its, predicate);
+
+                    Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
                 }
                 None => None,
             };
