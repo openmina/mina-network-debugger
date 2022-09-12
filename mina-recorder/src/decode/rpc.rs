@@ -44,6 +44,8 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     impl RpcMethod for Empty {
         const NAME: &'static str = "empty";
 
+        const VERSION: i32 = 0;
+
         type Query = ();
 
         type Response = ();
