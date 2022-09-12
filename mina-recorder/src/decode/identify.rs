@@ -33,9 +33,6 @@ pub fn parse(
             Ok(serde_json::Value::String("identify_push".to_string()))
         }
     } else {
-        // TODO: what do first two bytes mean?
-        let mut bytes = bytes;
-        bytes.drain(0..2);
         let buf = Bytes::from(bytes);
         let pb::Identify {
             protocol_version,
@@ -44,7 +41,7 @@ pub fn parse(
             listen_addrs,
             observed_addr,
             protocols,
-        } = pb::Identify::decode(buf).map_err(DecodeError::Protobuf)?;
+        } = pb::Identify::decode_length_delimited(buf).map_err(DecodeError::Protobuf)?;
 
         let t = T {
             protocol_version,
@@ -65,7 +62,7 @@ pub fn parse(
 #[test]
 fn decode_identify() {
     let hex = include_str!("identify.hex");
-    let bytes = hex::decode(&hex[4..]).unwrap();
+    let bytes = hex::decode(hex).unwrap();
     let msg = parse(bytes, false, StreamKind::IpfsId).unwrap();
     dbg!(msg);
 }
