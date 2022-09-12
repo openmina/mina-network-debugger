@@ -1,9 +1,9 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 use serde::Serialize;
 use mina_p2p_messages::{
-    rpc::{QueryHeader, RpcMethod, NeedsLength, RpcResult, Error as RpcError},
-    utils, GetEpochLedger,
+    rpc::{QueryHeader, JSONinifyPayloadReader, JSONinifyError},
+    utils, JSONifyPayloadRegistry,
 };
 use binprot::{BinProtRead, Nat0};
 
@@ -24,31 +24,34 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     #[derive(Serialize)]
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
-    enum Msg<Q, R> {
+    enum Msg {
         Response {
             tag: String,
             version: i32,
             id: i64,
-            value: Option<RpcResult<NeedsLength<R>, RpcError>>,
+            value: serde_json::Value,
         },
         Request {
             tag: String,
             version: i32,
             id: i64,
-            query: Option<NeedsLength<Q>>,
+            query: serde_json::Value,
         },
     }
 
-    pub struct Empty;
+    struct DefaultReader;
 
-    impl RpcMethod for Empty {
-        const NAME: &'static str = "empty";
+    impl JSONinifyPayloadReader for DefaultReader {
+        fn read_query(&self, r: &mut dyn Read) -> Result<serde_json::Value, JSONinifyError> {
+            let mut v = vec![];
+            r.read_to_end(&mut v).map_err(From::from).map_err(JSONinifyError::Binprot)?;
+            let t = serde_json::to_value(hex::encode(v))?;
+            Ok(t)
+        }
 
-        const VERSION: i32 = 0;
-
-        type Query = ();
-
-        type Response = ();
+        fn read_response(&self, r: &mut dyn Read) -> Result<serde_json::Value, JSONinifyError> {
+            self.read_query(r)
+        }
     }
 
     let mut stream = Cursor::new(&bytes);
@@ -57,59 +60,36 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     let Nat0(d) = BinProtRead::binprot_read(&mut stream)?;
     let msg = QueryHeader::binprot_read(&mut stream)?;
     let tag = String::from_utf8(msg.tag.as_ref().to_vec()).map_err(DecodeError::Utf8)?;
+    let r = JSONifyPayloadRegistry::new();
+    let reader = r.get(&tag, msg.version)
+        .unwrap_or(&DefaultReader);
     match d {
         1 => {
             if preview {
                 Ok(serde_json::Value::String(format!("Request {tag}")))
             } else {
-                match tag.as_str() {
-                    "get_epoch_ledger" => {
-                        type Q = <GetEpochLedger as RpcMethod>::Query;
-                        type R = <GetEpochLedger as RpcMethod>::Response;
-
-                        serde_json::to_value(Msg::Request::<Q, R> {
-                            tag,
-                            version: msg.version,
-                            id: msg.id,
-                            query: Some(BinProtRead::binprot_read(&mut stream)?),
-                        })
-                        .map_err(DecodeError::Serde)
-                    }
-                    _ => serde_json::to_value(Msg::Request::<(), ()> {
-                        tag,
-                        version: msg.version,
-                        id: msg.id,
-                        query: None,
-                    })
-                    .map_err(DecodeError::Serde),
-                }
+                let query = reader.read_query(&mut stream)?;
+                serde_json::to_value(Msg::Request {
+                    tag,
+                    version: msg.version,
+                    id: msg.id,
+                    query,
+                })
+                .map_err(DecodeError::Serde)
             }
         }
         2 => {
             if preview {
                 Ok(serde_json::Value::String(format!("Response {tag}")))
             } else {
-                match tag.as_str() {
-                    "get_epoch_ledger" => {
-                        type Q = <GetEpochLedger as RpcMethod>::Query;
-                        type R = <GetEpochLedger as RpcMethod>::Response;
-
-                        serde_json::to_value(Msg::Response::<Q, R> {
-                            tag,
-                            version: msg.version,
-                            id: msg.id,
-                            value: Some(BinProtRead::binprot_read(&mut stream)?),
-                        })
-                        .map_err(DecodeError::Serde)
-                    }
-                    _ => serde_json::to_value(Msg::Response::<(), ()> {
-                        tag,
-                        version: msg.version,
-                        id: msg.id,
-                        value: None,
-                    })
-                    .map_err(DecodeError::Serde),
-                }
+                let value = reader.read_response(&mut stream)?;
+                serde_json::to_value(Msg::Response {
+                    tag,
+                    version: msg.version,
+                    id: msg.id,
+                    value,
+                })
+                .map_err(DecodeError::Serde)
             }
         }
         _ => Ok(serde_json::Value::Null),

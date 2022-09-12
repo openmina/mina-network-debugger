@@ -13,6 +13,8 @@ use radiation::{Absorb, Emit};
 
 use thiserror::Error;
 
+use mina_p2p_messages::rpc::JSONinifyError;
+
 #[derive(Debug, Error)]
 pub enum DecodeError {
     #[error("{_0}")]
@@ -28,6 +30,15 @@ pub enum DecodeError {
 impl From<binprot::Error> for DecodeError {
     fn from(v: binprot::Error) -> Self {
         DecodeError::BinProt(v)
+    }
+}
+
+impl From<JSONinifyError> for DecodeError {
+    fn from(v: JSONinifyError) -> Self {
+        match v {
+            JSONinifyError::Binprot(err) => DecodeError::BinProt(err),
+            JSONinifyError::JSON(err) => DecodeError::Serde(err),
+        }
     }
 }
 
