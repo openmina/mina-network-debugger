@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 use binprot::{BinProtRead, BinProtWrite};
 use mina_p2p_messages::{
-    string::String as BString,
+    string::CharString as BString,
     rpc::{QueryHeader, MessageHeader},
     utils,
 };

@@ -15,7 +15,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let _len = utils::stream_decode_size(&mut stream)?;
     let Nat0(_) = BinProtRead::binprot_read(&mut stream)?;
     let msg = QueryHeader::binprot_read(&mut stream)?;
-    let tag = String::from_utf8(msg.tag.as_ref().to_vec()).map_err(DecodeError::Utf8)?;
+    let tag = msg.tag.as_ref();
 
     Ok(tag.parse().ok().into_iter().collect())
 }
@@ -61,7 +61,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     let _len = utils::stream_decode_size(&mut stream)?;
     let Nat0(d) = BinProtRead::binprot_read(&mut stream)?;
     let msg = QueryHeader::binprot_read(&mut stream)?;
-    let tag = String::from_utf8(msg.tag.as_ref().to_vec()).map_err(DecodeError::Utf8)?;
+    let tag = msg.tag.as_ref().to_string();
     let r = JSONifyPayloadRegistry::new();
     let reader = r.get(&tag, msg.version).unwrap_or(&DefaultReader);
     match d {
