@@ -58,11 +58,6 @@ where
             (&mut self.accumulator_outgoing, &mut self.outgoing)
         };
         if let Some(protocol) = done {
-            if protocol == "ERROR" {
-                self.error = true;
-                log::error!("{id}, the peer suggest protocol named \"ERROR\"");
-                return Ok(());
-            }
             let inner = self.inner.get_or_insert_with(|| {
                 Inner::from_name(protocol, self.stream_id, self.stream_forward)
             });
@@ -89,9 +84,10 @@ where
                     *done = Some(s.to_string());
                     break;
                 } else {
-                    log::error!("incoming: {} unparsed {}", id, hex::encode(msg));
+                    log::error!("{}, {} unparsed {}", id, db.id(), hex::encode(msg));
                     *done = Some("ERROR".to_string());
-                    break;
+                    self.error = true;
+                    return Ok(());
                 }
             }
             *accumulator = (*cursor).to_vec();

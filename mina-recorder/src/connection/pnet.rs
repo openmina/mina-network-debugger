@@ -4,16 +4,12 @@ use salsa20::{
     XSalsa20,
 };
 
-use crate::database::DbStream;
-
 use super::{HandleData, DirectedId, Cx, Db, DbResult};
 
 pub struct State<Inner> {
     shared_secret: GenericArray<u8, typenum::U32>,
     cipher_in: Option<XSalsa20>,
     cipher_out: Option<XSalsa20>,
-    // TODO: raw stream in separate cf
-    _stream: Option<DbStream>,
     skip: bool,
     inner: Inner,
 }
@@ -27,7 +23,6 @@ where
             shared_secret: Self::shared_secret(chain_id),
             cipher_in: None,
             cipher_out: None,
-            _stream: None,
             skip: false,
             inner: Inner::from((0, false)),
         }
@@ -63,9 +58,8 @@ where
             &mut self.cipher_out
         };
         if let Some(cipher) = cipher {
-            // TODO: raw
-            // self.stream.as_ref().unwrap().add(id.incoming, id.metadata.time, bytes);
             cipher.apply_keystream(bytes);
+            db.add_raw(id.incoming, id.metadata.time, bytes)?;
             self.inner.on_data(id, bytes, cx, db)?;
         } else if bytes.len() != 24 {
             self.skip = true;

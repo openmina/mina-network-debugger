@@ -31,6 +31,8 @@ pub enum DbError {
     CreateDirError(io::Error),
     #[error("{_0} {_1}")]
     Io(StreamFullId, io::Error),
+    #[error("{_0} {_1}")]
+    IoCn(ConnectionId, io::Error),
     #[error("{_0}")]
     Inner(rocksdb::Error),
     #[error("{_0}")]
@@ -91,6 +93,7 @@ impl StreamBytes {
     pub fn write(&mut self, bytes: &[u8]) -> io::Result<u64> {
         let offset = self.offset;
         self.file.write_all(bytes)?;
+        self.file.flush()?;
         self.offset += bytes.len() as u64;
         Ok(offset)
     }
@@ -113,6 +116,7 @@ type StreamBytesSync = Arc<Mutex<StreamBytes>>;
 pub struct DbCore {
     path: PathBuf,
     stream_bytes: Arc<Mutex<BTreeMap<StreamFullId, StreamBytesSync>>>,
+    raw_streams: Arc<Mutex<BTreeMap<ConnectionId, StreamBytesSync>>>,
     inner: Arc<rocksdb::DB>,
 }
 
@@ -188,6 +192,7 @@ impl DbCore {
         Ok(DbCore {
             path,
             stream_bytes: Arc::default(),
+            raw_streams: Default::default(),
             inner: Arc::new(inner),
         })
     }
@@ -382,6 +387,28 @@ impl DbCore {
 
     pub fn fetch_connection(&self, id: u64) -> Result<Connection, DbError> {
         self.get(self.connections(), id.to_be_bytes())
+    }
+
+    pub fn get_raw_stream(&self, cn: ConnectionId) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
+        let mut lock = self.raw_streams.lock().expect("poisoned");
+        let sb = lock.get(&cn).cloned();
+        match sb {
+            None => {
+                let path = self.path.join("streams").join(cn.to_string());
+                let sb = StreamBytes::new(path).map_err(|err| DbError::IoCn(cn, err))?;
+                lock.insert(cn, sb.clone());
+                drop(lock);
+                Ok(sb)
+            }
+            Some(sb) => Ok(sb),
+        }
+    }
+
+    pub fn remove_raw_stream(&self, cn: ConnectionId) {
+        self.raw_streams
+            .lock()
+            .expect("poisoned")
+            .remove(&cn);
     }
 
     pub fn get_stream(

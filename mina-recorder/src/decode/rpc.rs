@@ -69,7 +69,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
             if preview {
                 Ok(serde_json::Value::String(format!("Request {tag}")))
             } else {
-                let query = dbg!(reader.read_query(&mut stream)?);
+                let query = reader.read_query(&mut stream)?;
                 serde_json::to_value(Msg::Request {
                     tag,
                     version: msg.version,

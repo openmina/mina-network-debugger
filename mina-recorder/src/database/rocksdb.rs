@@ -7,7 +7,9 @@ use std::{
     },
 };
 
-use crate::{event::ConnectionInfo, decode::MessageType};
+use radiation::{Absorb, Emit};
+
+use crate::{event::ConnectionInfo, decode::MessageType, custom_coding};
 
 use super::{
     core::{DbCore, DbError},
@@ -75,6 +77,49 @@ impl DbGroup {
             messages: self.messages.clone(),
             inner: self.inner.clone(),
         }
+    }
+
+    pub fn id(&self) -> ConnectionId {
+        self.id
+    }
+
+    pub fn add_raw(
+        &self,
+        incoming: bool,
+        timestamp: SystemTime,
+        bytes: &[u8],
+    ) -> Result<(), DbError> {
+        #[derive(Absorb, Emit)]
+        struct ChunkHeader {
+            size: u32,
+            #[custom_absorb(custom_coding::time_absorb)]
+            #[custom_emit(custom_coding::time_emit)]
+            timestamp: SystemTime,
+            incoming: bool,
+        }
+
+        let header = ChunkHeader {
+            size: bytes.len() as u32,
+            timestamp,
+            incoming,
+        };
+
+        // header size is 17
+        let b = Vec::with_capacity(bytes.len() + 17);
+        let mut b = header.emit(b);
+        b.extend_from_slice(bytes);
+
+        let sb = self.inner.get_raw_stream(self.id)?;
+        let mut file = sb.lock().expect("poisoned");
+        let _ = file.write(&b).map_err(|err| DbError::IoCn(self.id, err))?;
+
+        Ok(())
+    }
+}
+
+impl Drop for DbGroup {
+    fn drop(&mut self) {
+        self.inner.remove_raw_stream(self.id);
     }
 }
 
