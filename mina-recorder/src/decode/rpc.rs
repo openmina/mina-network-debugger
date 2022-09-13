@@ -69,7 +69,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
             if preview {
                 Ok(serde_json::Value::String(format!("Request {tag}")))
             } else {
-                let query = reader.read_query(&mut stream)?;
+                let query = dbg!(reader.read_query(&mut stream)?);
                 serde_json::to_value(Msg::Request {
                     tag,
                     version: msg.version,
@@ -106,6 +106,19 @@ fn decode_get_ancestry_request() {
 
     let r = JSONifyPayloadRegistry::new();
     let reader = r.get("get_ancestry", 1).unwrap();
+    let value = reader.read_query(&mut stream).unwrap();
+    assert_ne!(dbg!(value), serde_json::Value::Null);
+}
+
+#[cfg(test)]
+#[test]
+fn decode_get_transition_chain_proof_request() {
+    let hex = "210175d3948a0ea418815c59780501fb75a8448d8c1b63f22993c8e028167f502a28";
+    let bytes = hex::decode(hex).unwrap();
+    let mut stream = Cursor::new(bytes);
+
+    let r = JSONifyPayloadRegistry::new();
+    let reader = r.get("get_transition_chain_proof", 1).unwrap();
     let value = reader.read_query(&mut stream).unwrap();
     assert_ne!(dbg!(value), serde_json::Value::Null);
 }

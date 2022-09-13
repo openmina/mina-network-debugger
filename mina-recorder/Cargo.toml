@@ -17,7 +17,7 @@ unsigned-varint = { version = "0.7.1" }
 multiaddr = { version = "0.14.0" }
 
 prost = { version = "0.11.0" }
-mina-p2p-messages = { git = "https://github.com/name-placeholder/mina-p2p-messages-rs.git", rev = "e03130d783509c416662d283421a3f3b72ac2a1a" }
+mina-p2p-messages = { git = "https://github.com/name-placeholder/mina-p2p-messages-rs.git", rev = "3f273292e0821b58c4537cf27ff265f66ea0e517" }
 binprot = { version = "0.1.7" }
 
 salsa20 = { version = "0.10.2" }
