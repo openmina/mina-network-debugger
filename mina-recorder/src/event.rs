@@ -66,3 +66,37 @@ impl fmt::Display for DirectedId {
         write!(f, "{hour:02}:{minute:02}:{second:02}:{nano:09} {duration:010?} {addr} {fd} {arrow} {alias}_{pid}")
     }
 }
+
+#[derive(Absorb, Emit)]
+pub struct ChunkHeader {
+    pub size: u32,
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub time: SystemTime,
+    pub encrypted: bool,
+    pub incoming: bool,
+}
+
+impl ChunkHeader {
+    pub const SIZE: usize = 18;  // size 4 + time 12 + encrypted 1 + incoming 1
+}
+
+impl fmt::Display for ChunkHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use time::OffsetDateTime;
+
+        let (hour, minute, second, nano) = OffsetDateTime::from(self.time).time().as_hms_nano();
+        let incoming = if self.incoming {
+            "incoming"
+        } else {
+            "outgoing"
+        };
+        let encrypted = if self.encrypted {
+            "encrypted"
+        } else {
+            "plain"
+        };
+
+        write!(f, "{hour:02}:{minute:02}:{second:02}:{nano:09} {encrypted} {incoming}")
+    }
+}

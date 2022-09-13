@@ -52,10 +52,10 @@ where
             return Ok(());
         }
 
-        let (accumulator, done) = if id.incoming {
-            (&mut self.accumulator_incoming, &mut self.incoming)
+        let (accumulator, done, other) = if id.incoming {
+            (&mut self.accumulator_incoming, &mut self.incoming, &self.outgoing)
         } else {
-            (&mut self.accumulator_outgoing, &mut self.outgoing)
+            (&mut self.accumulator_outgoing, &mut self.outgoing, &self.incoming)
         };
         if let Some(protocol) = done {
             let inner = self.inner.get_or_insert_with(|| {
@@ -72,6 +72,7 @@ where
             accumulator.extend_from_slice(bytes);
             let cursor = &mut accumulator.as_slice();
             while let Some(msg) = take_msg(cursor) {
+                let other = other.as_ref().map(String::as_str).unwrap_or("none");
                 if let Ok(s) = std::str::from_utf8(msg) {
                     let s = s.trim_end_matches('\n');
                     if s.starts_with("/multistream/") || s == "na" {
@@ -84,7 +85,7 @@ where
                     *done = Some(s.to_string());
                     break;
                 } else {
-                    log::error!("{}, {} unparsed {}", id, db.id(), hex::encode(msg));
+                    log::error!("{id}, {}, other: {other}, unparsed {}", db.id(), hex::encode(msg));
                     *done = Some("ERROR".to_string());
                     self.error = true;
                     return Ok(());

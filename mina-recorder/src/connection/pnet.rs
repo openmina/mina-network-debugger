@@ -59,7 +59,7 @@ where
         };
         if let Some(cipher) = cipher {
             cipher.apply_keystream(bytes);
-            db.add_raw(id.incoming, id.metadata.time, bytes)?;
+            db.add_raw(true, id.incoming, id.metadata.time, bytes)?;
             self.inner.on_data(id, bytes, cx, db)?;
         } else if bytes.len() != 24 {
             self.skip = true;

@@ -7,9 +7,9 @@ use std::{
     },
 };
 
-use radiation::{Absorb, Emit};
+use radiation::Emit;
 
-use crate::{event::ConnectionInfo, decode::MessageType, custom_coding};
+use crate::{event::{ConnectionInfo, ChunkHeader}, decode::MessageType};
 
 use super::{
     core::{DbCore, DbError},
@@ -85,27 +85,19 @@ impl DbGroup {
 
     pub fn add_raw(
         &self,
+        encrypted: bool,
         incoming: bool,
-        timestamp: SystemTime,
+        time: SystemTime,
         bytes: &[u8],
     ) -> Result<(), DbError> {
-        #[derive(Absorb, Emit)]
-        struct ChunkHeader {
-            size: u32,
-            #[custom_absorb(custom_coding::time_absorb)]
-            #[custom_emit(custom_coding::time_emit)]
-            timestamp: SystemTime,
-            incoming: bool,
-        }
-
         let header = ChunkHeader {
             size: bytes.len() as u32,
-            timestamp,
+            time,
+            encrypted,
             incoming,
         };
 
-        // header size is 17
-        let b = Vec::with_capacity(bytes.len() + 17);
+        let b = Vec::with_capacity(bytes.len() + ChunkHeader::SIZE);
         let mut b = header.emit(b);
         b.extend_from_slice(bytes);
 

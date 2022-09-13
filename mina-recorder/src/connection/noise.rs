@@ -148,6 +148,7 @@ where
                     }
                     Msg::Other => {
                         cx.decrypted += bytes.len();
+                        db.add_raw(false, id.incoming, id.metadata.time, bytes)?;
                         self.inner.on_data(id, bytes, cx, db)?;
                     }
                 },
