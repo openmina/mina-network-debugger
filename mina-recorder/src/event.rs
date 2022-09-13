@@ -78,7 +78,7 @@ pub struct ChunkHeader {
 }
 
 impl ChunkHeader {
-    pub const SIZE: usize = 18;  // size 4 + time 12 + encrypted 1 + incoming 1
+    pub const SIZE: usize = 18; // size 4 + time 12 + encrypted 1 + incoming 1
 }
 
 impl fmt::Display for ChunkHeader {
@@ -91,12 +91,11 @@ impl fmt::Display for ChunkHeader {
         } else {
             "outgoing"
         };
-        let encrypted = if self.encrypted {
-            "encrypted"
-        } else {
-            "plain"
-        };
+        let encrypted = if self.encrypted { "encrypted" } else { "plain" };
 
-        write!(f, "{hour:02}:{minute:02}:{second:02}:{nano:09} {encrypted} {incoming}")
+        write!(
+            f,
+            "{hour:02}:{minute:02}:{second:02}:{nano:09} {encrypted} {incoming}"
+        )
     }
 }

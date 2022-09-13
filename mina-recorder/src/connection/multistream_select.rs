@@ -53,9 +53,17 @@ where
         }
 
         let (accumulator, done, other) = if id.incoming {
-            (&mut self.accumulator_incoming, &mut self.incoming, &self.outgoing)
+            (
+                &mut self.accumulator_incoming,
+                &mut self.incoming,
+                &self.outgoing,
+            )
         } else {
-            (&mut self.accumulator_outgoing, &mut self.outgoing, &self.incoming)
+            (
+                &mut self.accumulator_outgoing,
+                &mut self.outgoing,
+                &self.incoming,
+            )
         };
         let other = other.as_ref().map(String::as_str).unwrap_or("none");
         if let Some(protocol) = done {
@@ -85,7 +93,12 @@ where
                     *done = Some(s.to_string());
                     break;
                 } else {
-                    log::error!("{id}, {}, other: {other}, unparsed {}", db.id(), hex::encode(msg));
+                    log::error!(
+                        "{id}, {}, stream_id: {}, other: {other}, unparsed {}",
+                        db.id(),
+                        self.stream_id,
+                        hex::encode(msg)
+                    );
                     self.error = true;
                     return Ok(());
                 }

@@ -77,7 +77,7 @@ impl HandleData for State {
                         b.extend_from_slice(&s.get_ref()[(pos as usize)..(8 + len)]);
                         stream.add(id.incoming, id.metadata.time, &b)?;
                     } else {
-                        log::error!("response without request");
+                        log::warn!("{id}, response {} without request", v.id);
                     }
                 }
             }

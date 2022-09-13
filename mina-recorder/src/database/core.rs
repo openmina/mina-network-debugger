@@ -405,10 +405,7 @@ impl DbCore {
     }
 
     pub fn remove_raw_stream(&self, cn: ConnectionId) {
-        self.raw_streams
-            .lock()
-            .expect("poisoned")
-            .remove(&cn);
+        self.raw_streams.lock().expect("poisoned").remove(&cn);
     }
 
     pub fn get_stream(

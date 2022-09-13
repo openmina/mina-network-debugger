@@ -9,7 +9,10 @@ use std::{
 
 use radiation::Emit;
 
-use crate::{event::{ConnectionInfo, ChunkHeader}, decode::MessageType};
+use crate::{
+    event::{ConnectionInfo, ChunkHeader},
+    decode::MessageType,
+};
 
 use super::{
     core::{DbCore, DbError},

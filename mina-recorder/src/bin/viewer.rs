@@ -5,7 +5,10 @@ use radiation::AbsorbExt;
 fn main() {
     let filename = env::args().nth(1).unwrap();
     let mut bytes = Vec::new();
-    fs::File::open(filename).unwrap().read_to_end(&mut bytes).unwrap();
+    fs::File::open(filename)
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
     let mut offset = 0;
     while offset < bytes.len() {
         let header = ChunkHeader::absorb_ext(&bytes[offset..(offset + ChunkHeader::SIZE)]).unwrap();

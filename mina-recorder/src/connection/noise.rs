@@ -238,11 +238,6 @@ impl<Inner> NoiseState<Inner> {
 
                 let r_epk =
                     MontgomeryPoint(bytes[2..34].try_into().expect("cannot fail, checked above"));
-                let ee = try_dh(&r_epk, &i_epk, cx).or_else(|| {
-                    log::error!("{id}, secret key not found");
-                    self.error = true;
-                    None
-                })?;
 
                 let mut r_spk_bytes: [u8; 32] = bytes[34..66]
                     .try_into()
@@ -252,7 +247,11 @@ impl<Inner> NoiseState<Inner> {
                 let payload_tag = *GenericArray::from_slice(&bytes[(len - 16)..]);
                 let st = st
                     .mix_hash(r_epk.as_bytes())
-                    .mix_shared_secret(ee)
+                    .mix_shared_secret(try_dh(&r_epk, &i_epk, cx).or_else(|| {
+                        log::error!("{id}, ephemeral secret key not found");
+                        self.error = true;
+                        None
+                    })?)
                     .decrypt(&mut r_spk_bytes, &tag)
                     .map_err(|err| {
                         log::error!("{id}, second message mac mismatch");
@@ -263,7 +262,12 @@ impl<Inner> NoiseState<Inner> {
                     .mix_shared_secret({
                         r_spk = MontgomeryPoint(r_spk_bytes);
                         try_dh(&r_spk, &i_epk, cx).or_else(|| {
-                            log::error!("{id}, secret key not found");
+                            let i = if self.initiator_is_incoming {
+                                "initiator_is_incoming"
+                            } else {
+                                "initiator_is_outgoing"
+                            };
+                            log::error!("{id}, secret key not found, {i}");
                             self.error = true;
                             None
                         })?
@@ -304,7 +308,12 @@ impl<Inner> NoiseState<Inner> {
                     .mix_shared_secret({
                         i_spk = MontgomeryPoint(i_spk_bytes);
                         try_dh(&i_spk, &r_epk, cx).or_else(|| {
-                            log::error!("{id}, secret key not found");
+                            let i = if self.initiator_is_incoming {
+                                "initiator_is_incoming"
+                            } else {
+                                "initiator_is_outgoing"
+                            };
+                            log::error!("{id}, secret key not found, {i}");
                             self.error = true;
                             None
                         })?
