@@ -104,9 +104,14 @@ where
             initiator,
         } = header;
         let body = match tag {
-            Tag::New => Body::NewStream(
-                String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| hex::encode(bytes)),
-            ),
+            Tag::New => {
+                let name = String::from_utf8(bytes.to_vec())
+                    .unwrap_or_else(|_| hex::encode(bytes));
+                if self.inners.contains_key(&stream_id) {
+                    log::warn!("new stream {name}, but already exist");
+                }
+                Body::NewStream(name)
+            },
             Tag::Msg => {
                 self.inners
                     .entry(stream_id)
