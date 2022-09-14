@@ -1,4 +1,4 @@
-use std::{fmt, collections::BTreeMap, ops::Range};
+use std::{collections::BTreeMap, ops::Range};
 
 use unsigned_varint::decode;
 
@@ -7,7 +7,13 @@ use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 pub struct State<Inner> {
     accumulator_incoming: Vec<u8>,
     accumulator_outgoing: Vec<u8>,
-    inners: BTreeMap<StreamId, Inner>,
+    inners: BTreeMap<StreamId, Status<Inner>>,
+}
+
+pub enum Status<Inner> {
+    Duplex(Inner),
+    IncomingOnly(Inner),
+    OutgoingOnly(Inner),
 }
 
 impl<Inner> DynamicProtocol for State<Inner> {
@@ -27,24 +33,6 @@ pub struct StreamId {
     pub initiator_is_incoming: bool,
 }
 
-pub enum Body {
-    NewStream(String),
-    Message { initiator: bool },
-    Close { initiator: bool },
-    Reset { initiator: bool },
-}
-
-impl fmt::Display for Body {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Body::NewStream(name) => write!(f, "new stream: \"{name}\""),
-            Body::Message { .. } => write!(f, "message"),
-            Body::Close { .. } => write!(f, "close"),
-            Body::Reset { .. } => write!(f, "reset"),
-        }
-    }
-}
-
 enum Tag {
     New,
     Msg,
@@ -55,7 +43,6 @@ enum Tag {
 struct Header {
     tag: Tag,
     stream_id: StreamId,
-    initiator: bool,
 }
 
 impl Header {
@@ -74,7 +61,6 @@ impl Header {
                 i: v >> 3,
                 initiator_is_incoming: initiator == incoming,
             },
-            initiator,
         }
     }
 }
@@ -101,38 +87,56 @@ where
         let Header {
             tag,
             stream_id,
-            initiator,
         } = header;
-        let body = match tag {
+        match tag {
             Tag::New => {
                 let name = String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| hex::encode(bytes));
-                if self.inners.contains_key(&stream_id) {
-                    log::warn!("new stream {name}, but already exist");
+                let stream = Inner::from((stream_id.i, stream_id.initiator_is_incoming));
+                if self.inners.insert(stream_id, Status::Duplex(stream)).is_some() {
+                    log::warn!("{id}, new stream {name}, but already exist");
                 }
-                Body::NewStream(name)
             }
             Tag::Msg => {
-                self.inners
-                    .entry(stream_id)
-                    .or_insert_with(|| Inner::from((stream_id.i, stream_id.initiator_is_incoming)))
-                    .on_data(id.clone(), bytes, cx, db)?;
-                Body::Message { initiator }
+                match (self.inners.get_mut(&stream_id), id.incoming) {
+                    | (Some(Status::Duplex(stream)), _)
+                    | (Some(Status::IncomingOnly(stream)), true)
+                    | (Some(Status::OutgoingOnly(stream)), false) =>
+                        stream.on_data(id.clone(), bytes, cx, db)?,
+                    _ => log::error!(
+                        "{id}, message for stream {} {} that doesn't exist",
+                        stream_id.i,
+                        stream_id.initiator_is_incoming,
+                    ),
+                }
             }
             Tag::Close => {
-                self.inners.remove(&stream_id);
-                Body::Close { initiator }
+                match (self.inners.remove(&stream_id), id.incoming) {
+                    (Some(Status::Duplex(stream)), true) => {
+                        self.inners.insert(stream_id, Status::OutgoingOnly(stream));
+                    }
+                    (Some(Status::Duplex(stream)), false) => {
+                        self.inners.insert(stream_id, Status::IncomingOnly(stream));
+                    }
+                    (Some(Status::IncomingOnly(_)), true) => (),
+                    (Some(Status::OutgoingOnly(_)), false) => (),
+                    (Some(Status::OutgoingOnly(_)), true) => {
+                        log::error!("{id}, closing incoming part of stream where only outgoing part remains");
+                    },
+                    (Some(Status::IncomingOnly(_)), false) => {
+                        log::error!("{id}, closing outgoing part of stream where only incoming part remains");
+                    },
+                    (None, true) => {
+                        log::error!("{id}, closing incoming part of stream that doesn't exist");
+                    }
+                    (None, false) => {
+                        log::error!("{id}, closing outgoing part of stream that doesn't exist");
+                    }
+                }
             }
             Tag::Reset => {
                 self.inners.remove(&stream_id);
-                Body::Reset { initiator }
             }
         };
-        let StreamId {
-            i,
-            initiator_is_incoming,
-        } = stream_id;
-        let mark = if initiator_is_incoming { "~" } else { "" };
-        log::info!("{id} stream_id: {mark}{i}, {body}");
 
         *accumulator = accumulator[end..].to_vec();
         Ok(())
