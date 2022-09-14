@@ -84,31 +84,31 @@ where
         };
         let end = range.end;
         let bytes = &mut accumulator[range];
-        let Header {
-            tag,
-            stream_id,
-        } = header;
+        let Header { tag, stream_id } = header;
         match tag {
             Tag::New => {
                 let name = String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| hex::encode(bytes));
                 let stream = Inner::from((stream_id.i, stream_id.initiator_is_incoming));
-                if self.inners.insert(stream_id, Status::Duplex(stream)).is_some() {
+                if self
+                    .inners
+                    .insert(stream_id, Status::Duplex(stream))
+                    .is_some()
+                {
                     log::warn!("{id}, new stream {name}, but already exist");
                 }
             }
-            Tag::Msg => {
-                match (self.inners.get_mut(&stream_id), id.incoming) {
-                    | (Some(Status::Duplex(stream)), _)
-                    | (Some(Status::IncomingOnly(stream)), true)
-                    | (Some(Status::OutgoingOnly(stream)), false) =>
-                        stream.on_data(id.clone(), bytes, cx, db)?,
-                    _ => log::error!(
-                        "{id}, message for stream {} {} that doesn't exist",
-                        stream_id.i,
-                        stream_id.initiator_is_incoming,
-                    ),
+            Tag::Msg => match (self.inners.get_mut(&stream_id), id.incoming) {
+                (Some(Status::Duplex(stream)), _)
+                | (Some(Status::IncomingOnly(stream)), true)
+                | (Some(Status::OutgoingOnly(stream)), false) => {
+                    stream.on_data(id, bytes, cx, db)?
                 }
-            }
+                _ => log::error!(
+                    "{id}, message for stream {} {} that doesn't exist",
+                    stream_id.i,
+                    stream_id.initiator_is_incoming,
+                ),
+            },
             Tag::Close => {
                 match (self.inners.remove(&stream_id), id.incoming) {
                     (Some(Status::Duplex(stream)), true) => {
@@ -121,10 +121,10 @@ where
                     (Some(Status::OutgoingOnly(_)), false) => (),
                     (Some(Status::OutgoingOnly(_)), true) => {
                         log::error!("{id}, closing incoming part of stream where only outgoing part remains");
-                    },
+                    }
                     (Some(Status::IncomingOnly(_)), false) => {
                         log::error!("{id}, closing outgoing part of stream where only incoming part remains");
-                    },
+                    }
                     (None, true) => {
                         log::error!("{id}, closing incoming part of stream that doesn't exist");
                     }
@@ -134,6 +134,11 @@ where
                 }
             }
             Tag::Reset => {
+                log::warn!(
+                    "{id}, stream {} {} reset",
+                    stream_id.i,
+                    stream_id.initiator_is_incoming,
+                );
                 self.inners.remove(&stream_id);
             }
         };
