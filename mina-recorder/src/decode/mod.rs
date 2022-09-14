@@ -66,6 +66,7 @@ pub enum MessageType {
     HandshakePayload,
     // rpc
     #[tag(0x0400)]
+    RpcMenu,
     GetSomeInitialPeers,
     GetStagedLedgerAuxAndPendingCoinbasesAtHash,
     AnswerSyncLedgerQuery,
@@ -76,6 +77,7 @@ pub enum MessageType {
     GetTransitionChain,
     GetTransitionKnowledge,
     GetEpochLedger,
+    BanNotify,
     // identify
     #[tag(0x0500)]
     Identify,
@@ -98,6 +100,7 @@ impl fmt::Display for MessageType {
             MessageType::FindNode => write!(f, "find_node"),
             MessageType::Ping => write!(f, "ping"),
             MessageType::HandshakePayload => write!(f, "handshake_payload"),
+            MessageType::RpcMenu => write!(f, "__Versioned_rpc.Menu"),
             MessageType::GetSomeInitialPeers => write!(f, "get_some_initial_peers"),
             MessageType::GetStagedLedgerAuxAndPendingCoinbasesAtHash => {
                 write!(f, "get_staged_ledger_aux_and_pending_coinbases_at_hash")
@@ -110,6 +113,7 @@ impl fmt::Display for MessageType {
             MessageType::GetTransitionChain => write!(f, "get_transition_chain"),
             MessageType::GetTransitionKnowledge => write!(f, "get_transition_knowledge"),
             MessageType::GetEpochLedger => write!(f, "get_epoch_ledger"),
+            MessageType::BanNotify => write!(f, "ban_notify"),
             MessageType::Identify => write!(f, "identify"),
             MessageType::IdentifyPush => write!(f, "identify_push"),
         }
@@ -134,6 +138,7 @@ impl FromStr for MessageType {
             "find_node" => Ok(MessageType::FindNode),
             "ping" => Ok(MessageType::Ping),
             "handshake_payload" => Ok(MessageType::HandshakePayload),
+            "__Versioned_rpc.Menu" => Ok(MessageType::RpcMenu),
             "get_some_initial_peers" => Ok(MessageType::GetSomeInitialPeers),
             "get_staged_ledger_aux_and_pending_coinbases_at_hash" => {
                 Ok(MessageType::GetStagedLedgerAuxAndPendingCoinbasesAtHash)
@@ -146,6 +151,7 @@ impl FromStr for MessageType {
             "get_transition_chain" => Ok(MessageType::GetTransitionChain),
             "get_transition_knowledge" => Ok(MessageType::GetTransitionKnowledge),
             "get_epoch_ledger" => Ok(MessageType::GetEpochLedger),
+            "ban_notify" => Ok(MessageType::BanNotify),
             "identify" => Ok(MessageType::Identify),
             "identify_push" => Ok(MessageType::IdentifyPush),
             _ => Err(()),
