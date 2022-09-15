@@ -1,5 +1,7 @@
 use std::mem;
 
+use crate::database::{DbStream, StreamId, StreamKind};
+
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
 pub struct State<Inner> {
@@ -10,6 +12,7 @@ pub struct State<Inner> {
     accumulator_incoming: Vec<u8>,
     accumulator_outgoing: Vec<u8>,
     error: bool,
+    stream: Option<DbStream>,
     inner: Option<Inner>,
 }
 
@@ -23,6 +26,7 @@ impl<Inner> From<(u64, bool)> for State<Inner> {
             accumulator_incoming: vec![],
             accumulator_outgoing: vec![],
             error: false,
+            stream: None,
             inner: None,
         }
     }
@@ -90,6 +94,10 @@ where
                         // TODO: handle
                         continue;
                     }
+                    let stream = self.stream.get_or_insert_with(|| {
+                        db.add(StreamId::Select, StreamKind::Select)
+                    });
+                    stream.add(id.incoming, id.metadata.time, s.as_bytes())?;
                     *done = Some(s.to_string());
                     break;
                 } else {

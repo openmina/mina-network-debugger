@@ -2,12 +2,15 @@ use std::{collections::BTreeMap, ops::Range};
 
 use unsigned_varint::decode;
 
+use crate::database::{DbStream, StreamId, StreamKind};
+
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
 pub struct State<Inner> {
     accumulator_incoming: Vec<u8>,
     accumulator_outgoing: Vec<u8>,
-    inners: BTreeMap<StreamId, Status<Inner>>,
+    stream: Option<DbStream>,
+    inners: BTreeMap<MplexStreamId, Status<Inner>>,
 }
 
 pub enum Status<Inner> {
@@ -22,13 +25,14 @@ impl<Inner> DynamicProtocol for State<Inner> {
         State {
             accumulator_incoming: Vec::default(),
             accumulator_outgoing: Vec::default(),
+            stream: None,
             inners: BTreeMap::default(),
         }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StreamId {
+struct MplexStreamId {
     pub i: u64,
     pub initiator_is_incoming: bool,
 }
@@ -42,7 +46,7 @@ enum Tag {
 
 struct Header {
     tag: Tag,
-    stream_id: StreamId,
+    stream_id: MplexStreamId,
 }
 
 impl Header {
@@ -57,7 +61,7 @@ impl Header {
                 7 => panic!("wrong header tag"),
                 _ => unreachable!(),
             },
-            stream_id: StreamId {
+            stream_id: MplexStreamId {
                 i: v >> 3,
                 initiator_is_incoming: initiator == incoming,
             },
@@ -85,6 +89,9 @@ where
         let end = range.end;
         let bytes = &mut accumulator[range];
         let Header { tag, stream_id } = header;
+        let db_stream = self.stream.get_or_insert_with(|| {
+            db.add(StreamId::Select, StreamKind::Select)
+        });
         match tag {
             Tag::New => {
                 let name = String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| hex::encode(bytes));
@@ -96,6 +103,8 @@ where
                 {
                     log::warn!("{id}, new stream {name}, but already exist");
                 }
+                let b = (stream_id.i << 3).to_be_bytes();
+                db_stream.add(id.incoming, id.metadata.time, &b)?;
             }
             Tag::Msg => match (self.inners.get_mut(&stream_id), id.incoming) {
                 (Some(Status::Duplex(stream)), _)
@@ -132,6 +141,9 @@ where
                         log::error!("{id}, closing outgoing part of stream that doesn't exist");
                     }
                 }
+                let header = if id.incoming == stream_id.initiator_is_incoming { 4 } else { 3 };
+                let b = ((stream_id.i << 3) + header).to_be_bytes();
+                db_stream.add(id.incoming, id.metadata.time, &b)?;
             }
             Tag::Reset => {
                 log::warn!(
@@ -140,6 +152,9 @@ where
                     stream_id.initiator_is_incoming,
                 );
                 self.inners.remove(&stream_id);
+                let header = if id.incoming == stream_id.initiator_is_incoming { 6 } else { 5 };
+                let b = ((stream_id.i << 3) + header).to_be_bytes();
+                db_stream.add(id.incoming, id.metadata.time, &b)?;
             }
         };
 
