@@ -464,7 +464,14 @@ impl DbCore {
             StreamKind::Rpc => crate::decode::rpc::parse(buf, preview)?,
             StreamKind::IpfsId => crate::decode::identify::parse(buf, preview, msg.stream_kind)?,
             StreamKind::IpfsPush => crate::decode::identify::parse(buf, preview, msg.stream_kind)?,
-            _ => serde_json::Value::String(hex::encode(&buf)),
+            // TODO: proper decode
+            StreamKind::IpfsDelta => serde_json::Value::String(hex::encode(&buf)),
+            StreamKind::PeerExchange => crate::decode::json_string::parse(buf, preview)?,
+            // TODO: proper decode
+            StreamKind::BitswapExchange => serde_json::Value::String(hex::encode(&buf)),
+            // TODO: proper decode
+            StreamKind::NodeStatus => serde_json::Value::String(hex::encode(&buf)),
+            StreamKind::Unknown => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
             connection_id: msg.connection_id,

@@ -3,6 +3,7 @@ pub mod meshsub;
 pub mod kademlia;
 pub mod rpc;
 pub mod identify;
+pub mod json_string;
 
 mod utils;
 
@@ -82,6 +83,13 @@ pub enum MessageType {
     #[tag(0x0500)]
     Identify,
     IdentifyPush,
+    // peer exchange
+    #[tag(0x0600)]
+    PeerExchange,
+    #[tag(0x0700)]
+    BitswapExchange,
+    #[tag(0x0800)]
+    NodeStatus,
 }
 
 impl fmt::Display for MessageType {
@@ -116,6 +124,9 @@ impl fmt::Display for MessageType {
             MessageType::BanNotify => write!(f, "ban_notify"),
             MessageType::Identify => write!(f, "identify"),
             MessageType::IdentifyPush => write!(f, "identify_push"),
+            MessageType::PeerExchange => write!(f, "peer_exchange"),
+            MessageType::BitswapExchange => write!(f, "bitswap_exchange"),
+            MessageType::NodeStatus => write!(f, "node_status"),
         }
     }
 }
@@ -154,6 +165,9 @@ impl FromStr for MessageType {
             "ban_notify" => Ok(MessageType::BanNotify),
             "identify" => Ok(MessageType::Identify),
             "identify_push" => Ok(MessageType::IdentifyPush),
+            "peer_exchange" => Ok(MessageType::PeerExchange),
+            "bitswap_exchange" => Ok(MessageType::BitswapExchange),
+            "node_status" => Ok(MessageType::NodeStatus),
             _ => Err(()),
         }
     }

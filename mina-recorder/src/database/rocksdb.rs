@@ -145,6 +145,11 @@ impl DbStream {
             StreamKind::Rpc => crate::decode::rpc::parse_types(bytes)?,
             StreamKind::IpfsId => vec![MessageType::Identify],
             StreamKind::IpfsPush => vec![MessageType::IdentifyPush],
+            // TODO: message type (types)
+            StreamKind::IpfsDelta => vec![],
+            StreamKind::PeerExchange => vec![MessageType::PeerExchange],
+            StreamKind::BitswapExchange => vec![MessageType::BitswapExchange],
+            StreamKind::NodeStatus => vec![MessageType::NodeStatus],
             _ => vec![],
         };
 
