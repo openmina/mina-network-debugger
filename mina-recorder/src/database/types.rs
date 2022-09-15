@@ -62,6 +62,8 @@ pub enum StreamKind {
     NodeStatus = 0x0302,
     Meshsub = 0x0400,
     Rpc = 0x0500,
+    Select = 0x0600,
+    Mplex = 0x0700,
 }
 
 impl fmt::Display for StreamKind {
@@ -77,6 +79,8 @@ impl fmt::Display for StreamKind {
             StreamKind::NodeStatus => write!(f, "/mina/node-status"),
             StreamKind::Meshsub => write!(f, "/meshsub/1.1.0"),
             StreamKind::Rpc => write!(f, "coda/rpcs/0.0.1"),
+            StreamKind::Select => write!(f, "/multistream/1.0.0"),
+            StreamKind::Mplex => write!(f, "/coda/mplex/1.0.0"),
             StreamKind::Unknown => write!(f, "unknown"),
         }
     }

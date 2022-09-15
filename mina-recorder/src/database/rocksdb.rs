@@ -139,6 +139,7 @@ impl DbStream {
         drop(file);
 
         let tys = match self.kind {
+            StreamKind::Unknown => vec![],
             StreamKind::Meshsub => crate::decode::meshsub::parse_types(bytes)?,
             StreamKind::Kad => crate::decode::kademlia::parse_types(bytes)?,
             StreamKind::Handshake => crate::decode::noise::parse_types(bytes)?,
@@ -150,7 +151,8 @@ impl DbStream {
             StreamKind::PeerExchange => vec![MessageType::PeerExchange],
             StreamKind::BitswapExchange => vec![MessageType::BitswapExchange],
             StreamKind::NodeStatus => vec![MessageType::NodeStatus],
-            _ => vec![],
+            StreamKind::Select => vec![MessageType::Select],
+            StreamKind::Mplex => vec![MessageType::Mplex],
         };
 
         let id = MessageId(self.messages.fetch_add(1, SeqCst));

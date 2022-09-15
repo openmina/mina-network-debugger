@@ -471,6 +471,13 @@ impl DbCore {
             StreamKind::BitswapExchange => serde_json::Value::String(hex::encode(&buf)),
             // TODO: proper decode
             StreamKind::NodeStatus => serde_json::Value::String(hex::encode(&buf)),
+            StreamKind::Select => {
+                let s = String::from_utf8(buf)
+                    .map_err(|err| DbError::Decode(DecodeError::Utf8(err)))?;
+                serde_json::Value::String(format!("suggest {s}"))
+            },
+            // TODO: proper decode
+            StreamKind::Mplex => serde_json::Value::String(hex::encode(&buf)),
             StreamKind::Unknown => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {

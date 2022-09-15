@@ -90,6 +90,10 @@ pub enum MessageType {
     BitswapExchange,
     #[tag(0x0800)]
     NodeStatus,
+    #[tag(0x0900)]
+    Select,
+    #[tag(0x0a00)]
+    Mplex,
 }
 
 impl fmt::Display for MessageType {
@@ -127,6 +131,8 @@ impl fmt::Display for MessageType {
             MessageType::PeerExchange => write!(f, "peer_exchange"),
             MessageType::BitswapExchange => write!(f, "bitswap_exchange"),
             MessageType::NodeStatus => write!(f, "node_status"),
+            MessageType::Select => write!(f, "select"),
+            MessageType::Mplex => write!(f, "mplex"),
         }
     }
 }
@@ -168,6 +174,8 @@ impl FromStr for MessageType {
             "peer_exchange" => Ok(MessageType::PeerExchange),
             "bitswap_exchange" => Ok(MessageType::BitswapExchange),
             "node_status" => Ok(MessageType::NodeStatus),
+            "select" => Ok(MessageType::Select),
+            "mplex" => Ok(MessageType::Mplex),
             _ => Err(()),
         }
     }
