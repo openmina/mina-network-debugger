@@ -6,11 +6,12 @@ use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::{self, Write},
-    os::unix::prelude::FileExt,
+    os::unix::prelude::FileExt, convert::TryInto,
 };
 
 use radiation::{AbsorbExt, nom, ParseError, Emit};
 
+use serde::Serialize;
 use thiserror::Error;
 
 use super::{
@@ -476,8 +477,40 @@ impl DbCore {
                     .map_err(|err| DbError::Decode(DecodeError::Utf8(err)))?;
                 serde_json::Value::String(format!("suggest {s}"))
             },
-            // TODO: proper decode
-            StreamKind::Mplex => serde_json::Value::String(hex::encode(&buf)),
+            StreamKind::Mplex => {
+                let v = buf.as_slice().try_into().map_err(|_| {
+                    DbError::Decode(DecodeError::UnexpectedSize {
+                        actual: buf.len(),
+                        expected: 8,
+                    })
+                })?;
+                let v = u64::from_be_bytes(v);
+                let stream = v >> 3;
+                let header = v & 7;
+                let action = match header {
+                    0 => "create stream",
+                    3 => "close receiver",
+                    4 => "close initiator",
+                    5 => "reset receiver",
+                    6 => "reset initiator",
+                    1 | 2 | 7 => panic!("unexpected header {header}"),
+                    _ => unreachable!(),
+                };
+
+                #[derive(Serialize)]
+                struct MplexMessage {
+                    action: &'static str,
+                    stream: u64,
+                }
+
+                let msg = MplexMessage {
+                    action,
+                    stream,
+                };
+
+                serde_json::to_value(&msg)
+                    .map_err(|err| DbError::Decode(DecodeError::Serde(err)))?
+            },
             StreamKind::Unknown => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {

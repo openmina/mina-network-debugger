@@ -26,6 +26,11 @@ pub enum DecodeError {
     Protobuf(prost::DecodeError),
     #[error("{_0}")]
     Utf8(FromUtf8Error),
+    #[error("wrong size: {actual} != {expected}")]
+    UnexpectedSize {
+        actual: usize,
+        expected: usize,
+    },
 }
 
 impl From<binprot::Error> for DecodeError {
