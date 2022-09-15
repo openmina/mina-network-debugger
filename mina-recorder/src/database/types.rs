@@ -111,6 +111,8 @@ impl FromStr for StreamKind {
             "/mina/node-status" => Ok(StreamKind::NodeStatus),
             "/meshsub/1.1.0" => Ok(StreamKind::Meshsub),
             "coda/rpcs/0.0.1" => Ok(StreamKind::Rpc),
+            "/multistream/1.0.0" => Ok(StreamKind::Select),
+            "/coda/mplex/1.0.0" => Ok(StreamKind::Mplex),
             _ => Ok(StreamKind::Unknown),
         }
     }

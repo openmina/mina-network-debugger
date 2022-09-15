@@ -90,7 +90,7 @@ where
         let bytes = &mut accumulator[range];
         let Header { tag, stream_id } = header;
         let db_stream = self.stream.get_or_insert_with(|| {
-            db.add(StreamId::Select, StreamKind::Select)
+            db.add(StreamId::Mplex, StreamKind::Mplex)
         });
         match tag {
             Tag::New => {
@@ -146,7 +146,7 @@ where
                 db_stream.add(id.incoming, id.metadata.time, &b)?;
             }
             Tag::Reset => {
-                log::warn!(
+                log::info!(
                     "{id}, stream {} {} reset",
                     stream_id.i,
                     stream_id.initiator_is_incoming,
