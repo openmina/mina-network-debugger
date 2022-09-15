@@ -125,9 +125,15 @@ impl StreamKind {
             StreamKind::Kad,
             StreamKind::IpfsId,
             StreamKind::IpfsPush,
+            StreamKind::IpfsDelta,
             StreamKind::PeerExchange,
+            StreamKind::BitswapExchange,
+            StreamKind::NodeStatus,
             StreamKind::Meshsub,
             StreamKind::Rpc,
+            StreamKind::Select,
+            StreamKind::Mplex,
+            StreamKind::Unknown,
         ]
         .into_iter()
     }
