@@ -136,9 +136,7 @@ impl StreamKind {
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamId {
-    Select,
     Handshake,
-    Mplex,
     Forward(u64),
     Backward(u64),
 }
@@ -147,12 +145,8 @@ impl FromStr for StreamId {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "select" {
-            Ok(StreamId::Select)
-        } else if s == "handshake" {
+        if s == "handshake" {
             Ok(StreamId::Handshake)
-        } else if s == "mplex" {
-            Ok(StreamId::Mplex)
         } else if s.starts_with("forward_") {
             let i = s
                 .trim_start_matches("forward_")
@@ -174,9 +168,7 @@ impl FromStr for StreamId {
 impl fmt::Display for StreamId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamId::Select => write!(f, "select"),
             StreamId::Handshake => write!(f, "handshake"),
-            StreamId::Mplex => write!(f, "mplex"),
             StreamId::Forward(a) => write!(f, "forward_{a:08x}"),
             StreamId::Backward(a) => write!(f, "backward_{a:08x}"),
         }
@@ -260,12 +252,8 @@ mod implementations {
             L: Limit,
         {
             nom::combinator::map(i64::absorb::<()>, |d| {
-                if d == i64::MIN + 1 {
-                    return StreamId::Select;
-                }
                 match d {
                     i64::MIN => StreamId::Handshake,
-                    i64::MAX => StreamId::Mplex,
                     d => {
                         if d >= 0 {
                             StreamId::Forward(d as u64)
@@ -284,9 +272,7 @@ mod implementations {
     {
         fn emit(&self, buffer: W) -> W {
             let d = match self {
-                StreamId::Select => i64::MIN + 1,
                 StreamId::Handshake => i64::MIN,
-                StreamId::Mplex => i64::MAX,
                 StreamId::Forward(s) => *s as i64,
                 StreamId::Backward(s) => -((*s + 1) as i64),
             };

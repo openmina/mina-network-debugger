@@ -95,7 +95,12 @@ where
                         continue;
                     }
                     let stream = self.stream.get_or_insert_with(|| {
-                        db.add(StreamId::Select, StreamKind::Select)
+                        let stream_id = if self.stream_forward {
+                            StreamId::Forward(self.stream_id)
+                        } else {
+                            StreamId::Backward(self.stream_id)
+                        };
+                        db.add(stream_id, StreamKind::Select)
                     });
                     stream.add(id.incoming, id.metadata.time, s.as_bytes())?;
                     *done = Some(s.to_string());
