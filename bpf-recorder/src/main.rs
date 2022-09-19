@@ -507,15 +507,11 @@ impl App {
     #[inline(always)]
     pub fn enter_getrandom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         let len = ctx.read_here::<u64>(0x18);
-        if len == 32 {
-            self.enter(context::Variant::GetRandom {
-                _fd: 0,
-                data_ptr: ctx.read_here::<u64>(0x10),
-                data_len: len,
-            })
-        } else {
-            Ok(())
-        }
+        self.enter(context::Variant::GetRandom {
+            _fd: 0,
+            data_ptr: ctx.read_here::<u64>(0x10),
+            data_len: len,
+        })
     }
 
     #[inline(always)]
@@ -795,7 +791,7 @@ fn main() {
                     }
                 }
                 SnifferEventVariant::Random(random) => {
-                    recorder.on_randomness(event.pid, random);
+                    recorder.on_randomness(event.pid, random, time);
                 }
             }
         }

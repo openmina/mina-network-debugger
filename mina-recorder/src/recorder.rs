@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::{collections::BTreeMap, time::SystemTime};
 
 use super::{
     event::{EventMetadata, ConnectionInfo, DirectedId},
@@ -15,27 +15,15 @@ type Inner = multistream_select::State<mina_protocol::State>;
 pub struct P2pRecorder {
     tester: Option<Tester>,
     chain_id: String,
-    db: DbFacade,
     cns: BTreeMap<ConnectionInfo, (Cn, DbGroup)>,
     cx: Cx,
     apps: BTreeMap<u32, String>,
 }
 
-#[derive(Default)]
 pub struct Cx {
-    randomness: VecDeque<[u8; 32]>,
+    pub db: DbFacade,
     pub decrypted: usize,
     pub failed_to_decrypt: usize,
-}
-
-impl Cx {
-    pub fn push_randomness(&mut self, bytes: [u8; 32]) {
-        self.randomness.push_back(bytes);
-    }
-
-    pub fn iter_rand(&self) -> impl Iterator<Item = &[u8; 32]> + '_ {
-        self.randomness.iter().rev()
-    }
 }
 
 impl P2pRecorder {
@@ -43,9 +31,12 @@ impl P2pRecorder {
         P2pRecorder {
             tester: if test { Some(Tester::default()) } else { None },
             chain_id,
-            db,
             cns: BTreeMap::default(),
-            cx: Cx::default(),
+            cx: Cx {
+                db,
+                decrypted: 0,
+                failed_to_decrypt: 0,
+            },
             apps: BTreeMap::default(),
         }
     }
@@ -66,7 +57,7 @@ impl P2pRecorder {
         } else {
             log::info!("{alias}_{pid} connect {addr} {fd}");
         }
-        match self.db.add(metadata.id.clone(), incoming, metadata.time) {
+        match self.cx.db.add(metadata.id.clone(), incoming, metadata.time) {
             Ok(group) => {
                 self.cns
                     .insert(metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
@@ -107,8 +98,17 @@ impl P2pRecorder {
         }
     }
 
-    pub fn on_randomness(&mut self, _pid: u32, bytes: [u8; 32]) {
-        // log::info!("{alias} random: {}", hex::encode(bytes));
-        self.cx.push_randomness(bytes);
+    pub fn on_randomness(&mut self, pid: u32, bytes: Vec<u8>, time: SystemTime) {
+        use time::OffsetDateTime;
+
+        let (hour, minute, second, nano) = OffsetDateTime::from(time).time().as_hms_nano();
+        log::info!(
+            "{hour:02}:{minute:02}:{second:02}:{nano:09} {pid} random: {} {}",
+            bytes.len(),
+            hex::encode(&bytes),
+        );
+        if let Err(err) = self.cx.db.add_randomness(bytes) {
+            log::error!("failed to store randomness: {err}");
+        }
     }
 }

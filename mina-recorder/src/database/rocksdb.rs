@@ -21,6 +21,7 @@ use super::{
 
 pub struct DbFacade {
     cns: AtomicU64,
+    rnd_cnt: AtomicU64,
     messages: Arc<AtomicU64>,
     inner: DbCore,
 }
@@ -34,6 +35,7 @@ impl DbFacade {
 
         Ok(DbFacade {
             cns: AtomicU64::new(inner.total::<{ DbCore::CONNECTIONS_CNT }>()?),
+            rnd_cnt: AtomicU64::new(inner.total::<{ DbCore::RANDOMNESS_CNT }>()?),
             messages: Arc::new(AtomicU64::new(inner.total::<{ DbCore::MESSAGES_CNT }>()?)),
             inner,
         })
@@ -59,6 +61,13 @@ impl DbFacade {
             messages: self.messages.clone(),
             inner: self.inner.clone(),
         })
+    }
+
+    pub fn add_randomness(&self, bytes: Vec<u8>) -> Result<(), DbError> {
+        let id = self.rnd_cnt.fetch_add(1, SeqCst);
+        self.inner.put_randomness(id, bytes)?;
+
+        Ok(())
     }
 
     pub fn core(&self) -> DbCore {

@@ -151,7 +151,7 @@ where
                 db_stream.add(id.incoming, id.metadata.time, &b)?;
             }
             Tag::Reset => {
-                log::info!(
+                log::debug!(
                     "{id}, stream {} {} reset",
                     stream_id.i,
                     stream_id.initiator_is_incoming,

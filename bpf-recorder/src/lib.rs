@@ -115,7 +115,7 @@ pub mod sniffer_event {
         Disconnected,
         IncomingData(Vec<u8>),
         OutgoingData(Vec<u8>),
-        Random([u8; 32]),
+        Random(Vec<u8>),
         Error(DataTag, i32),
     }
 
@@ -192,7 +192,7 @@ pub mod sniffer_event {
                     String::from_utf8(data[..(data.len() - 1)].to_vec()).unwrap(),
                 ))
             } else if let DataTag::Random = tag {
-                ret(SnifferEventVariant::Random(data.try_into().unwrap()))
+                ret(SnifferEventVariant::Random(data.to_vec()))
             } else {
                 Ok(None)
             }

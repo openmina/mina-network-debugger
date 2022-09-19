@@ -122,9 +122,10 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 7] = [
+    const CFS: [&'static str; 8] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
+        Self::RANDOMNESS,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
@@ -141,6 +142,10 @@ impl DbCore {
     const MESSAGES: &'static str = "messages";
 
     pub const MESSAGES_CNT: u8 = 1;
+
+    const RANDOMNESS: &'static str = "randomness";
+
+    pub const RANDOMNESS_CNT: u8 = 2;
 
     // indexes
 
@@ -172,11 +177,12 @@ impl DbCore {
         let cfs = [
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[0], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[1], Default::default()),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[2], opts_with_prefix_extractor(8)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], opts_with_prefix_extractor(16)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[2], Default::default()),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], opts_with_prefix_extractor(8)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], opts_with_prefix_extractor(2)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(18)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(18)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -204,6 +210,10 @@ impl DbCore {
 
     fn messages(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::MESSAGES).expect("must exist")
+    }
+
+    fn randomness(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::RANDOMNESS).expect("must exist")
     }
 
     fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
@@ -282,6 +292,12 @@ impl DbCore {
             self.inner
                 .put_cf(self.message_kind_index(), index.emit(vec![]), vec![])?;
         }
+        Ok(())
+    }
+
+    pub fn put_randomness(&self, id: u64, bytes: Vec<u8>) -> Result<(), DbError> {
+        self.inner.put_cf(self.randomness(), id.to_be_bytes(), bytes)?;
+
         Ok(())
     }
 
@@ -722,5 +738,12 @@ impl DbCore {
             .map_err(|err| DbError::Io(stream_full_id, err))?;
         drop(file);
         Ok(hex::encode(&buf))
+    }
+
+    pub fn iterate_randomness(&self) -> impl Iterator<Item = Box<[u8]>> + '_ {
+        self.inner
+            .iterator_cf(self.randomness(), rocksdb::IteratorMode::End)
+            .filter_map(Result::ok)
+            .map(|(_, v)| v)
     }
 }
