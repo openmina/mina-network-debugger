@@ -102,7 +102,7 @@ impl P2pRecorder {
         use time::OffsetDateTime;
 
         let (hour, minute, second, nano) = OffsetDateTime::from(time).time().as_hms_nano();
-        log::info!(
+        log::debug!(
             "{hour:02}:{minute:02}:{second:02}:{nano:09} {pid} random: {} {}",
             bytes.len(),
             hex::encode(&bytes),

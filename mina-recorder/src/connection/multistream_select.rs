@@ -136,7 +136,7 @@ impl<Inner> State<Inner> {
                     *accumulator = (*cursor).to_vec();
                     if !(*sc && *sc_other) {
                         *done = Some(s.clone());
-                        handshake_tokens.push(s.to_string());
+                        handshake_tokens.push(s);
                     }
                     return MultistreamResult::Handshaking(handshake_tokens);
                 } else {
