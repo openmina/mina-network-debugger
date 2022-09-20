@@ -146,7 +146,11 @@ where
                         log::error!("{id}, closing outgoing part of stream that doesn't exist");
                     }
                 }
-                let header = if id.incoming == stream_id.initiator_is_incoming { 4 } else { 3 };
+                let header = if id.incoming == stream_id.initiator_is_incoming {
+                    4
+                } else {
+                    3
+                };
                 let b = ((stream_id.i << 3) + header).to_be_bytes();
                 db_stream.add(id.incoming, id.metadata.time, &b)?;
             }
@@ -157,7 +161,11 @@ where
                     stream_id.initiator_is_incoming,
                 );
                 self.inners.remove(&stream_id);
-                let header = if id.incoming == stream_id.initiator_is_incoming { 6 } else { 5 };
+                let header = if id.incoming == stream_id.initiator_is_incoming {
+                    6
+                } else {
+                    5
+                };
                 let b = ((stream_id.i << 3) + header).to_be_bytes();
                 db_stream.add(id.incoming, id.metadata.time, &b)?;
             }

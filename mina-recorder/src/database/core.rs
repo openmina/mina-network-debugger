@@ -6,7 +6,8 @@ use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::{self, Write},
-    os::unix::prelude::FileExt, convert::TryInto,
+    os::unix::prelude::FileExt,
+    convert::TryInto,
 };
 
 use radiation::{AbsorbExt, nom, ParseError, Emit};
@@ -296,7 +297,8 @@ impl DbCore {
     }
 
     pub fn put_randomness(&self, id: u64, bytes: Vec<u8>) -> Result<(), DbError> {
-        self.inner.put_cf(self.randomness(), id.to_be_bytes(), bytes)?;
+        self.inner
+            .put_cf(self.randomness(), id.to_be_bytes(), bytes)?;
 
         Ok(())
     }
@@ -492,7 +494,7 @@ impl DbCore {
                 let s = String::from_utf8(buf)
                     .map_err(|err| DbError::Decode(DecodeError::Utf8(err)))?;
                 serde_json::Value::String(format!("suggest {s}"))
-            },
+            }
             StreamKind::Mplex => {
                 let v = buf.as_slice().try_into().map_err(|_| {
                     DbError::Decode(DecodeError::UnexpectedSize {
@@ -519,14 +521,11 @@ impl DbCore {
                     stream: u64,
                 }
 
-                let msg = MplexMessage {
-                    action,
-                    stream,
-                };
+                let msg = MplexMessage { action, stream };
 
                 serde_json::to_value(&msg)
                     .map_err(|err| DbError::Decode(DecodeError::Serde(err)))?
-            },
+            }
             StreamKind::Unknown => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {

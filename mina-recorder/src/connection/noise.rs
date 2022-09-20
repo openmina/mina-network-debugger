@@ -221,12 +221,20 @@ impl<Inner> NoiseState<Inner> {
             None => {
                 self.initiator_is_incoming = id.incoming;
 
+                #[allow(clippy::comparison_chain)]
                 if bytes.len() < 34 {
-                    log::error!("{id} {db_id}, first message too short {}", hex::encode(bytes));
+                    log::error!(
+                        "{id} {db_id}, first message too short {}",
+                        hex::encode(bytes)
+                    );
                     self.error = true;
                     return None;
                 } else if bytes.len() > 34 {
-                    log::error!("{id} {db_id}, suspicious first message {} {}", bytes.len(), hex::encode(&bytes));
+                    log::error!(
+                        "{id} {db_id}, suspicious first message {} {}",
+                        bytes.len(),
+                        hex::encode(&bytes)
+                    );
                 }
 
                 let i_epk =
@@ -240,7 +248,10 @@ impl<Inner> NoiseState<Inner> {
             }
             Some(St::FirstMessage { st, i_epk }) => {
                 if bytes.len() < 98 {
-                    log::error!("{id} {db_id}, second message too short {}", hex::encode(bytes));
+                    log::error!(
+                        "{id} {db_id}, second message too short {}",
+                        hex::encode(bytes)
+                    );
                     self.error = true;
                     return None;
                 }
@@ -302,7 +313,10 @@ impl<Inner> NoiseState<Inner> {
             }
             Some(St::SecondMessage { st, r_epk }) => {
                 if bytes.len() < 98 {
-                    log::error!("{id} {db_id}, third message too short {}", hex::encode(bytes));
+                    log::error!(
+                        "{id} {db_id}, third message too short {}",
+                        hex::encode(bytes)
+                    );
                     self.error = true;
                     return None;
                 }

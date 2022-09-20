@@ -257,15 +257,13 @@ mod implementations {
         where
             L: Limit,
         {
-            nom::combinator::map(i64::absorb::<()>, |d| {
-                match d {
-                    i64::MIN => StreamId::Handshake,
-                    d => {
-                        if d >= 0 {
-                            StreamId::Forward(d as u64)
-                        } else {
-                            StreamId::Backward((-d - 1) as u64)
-                        }
+            nom::combinator::map(i64::absorb::<()>, |d| match d {
+                i64::MIN => StreamId::Handshake,
+                d => {
+                    if d >= 0 {
+                        StreamId::Forward(d as u64)
+                    } else {
+                        StreamId::Backward((-d - 1) as u64)
                     }
                 }
             })(input)

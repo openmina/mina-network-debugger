@@ -69,11 +69,7 @@ enum MultistreamResult {
 }
 
 impl<Inner> State<Inner> {
-    fn on_data_inner(
-        &mut self,
-        incoming: bool,
-        bytes: &[u8],
-    ) -> MultistreamResult {
+    fn on_data_inner(&mut self, incoming: bool, bytes: &[u8]) -> MultistreamResult {
         let (accumulator, done, other, sc, sc_other) = if incoming {
             (
                 &mut self.accumulator_incoming,
@@ -130,7 +126,7 @@ impl<Inner> State<Inner> {
                     *accumulator = (*cursor).to_vec();
                     if !(*sc && *sc_other) {
                         *done = Some(s.clone());
-                        return MultistreamResult::Done(s)
+                        return MultistreamResult::Done(s);
                     }
                     break;
                 } else {

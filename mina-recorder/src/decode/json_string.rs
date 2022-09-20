@@ -1,9 +1,6 @@
 use super::{DecodeError, MessageType};
 
-pub fn parse(
-    bytes: Vec<u8>,
-    preview: bool,
-) -> Result<serde_json::Value, DecodeError> {
+pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {
     if preview {
         serde_json::to_value(MessageType::PeerExchange).map_err(DecodeError::Serde)
     } else {
