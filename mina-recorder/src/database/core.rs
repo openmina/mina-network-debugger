@@ -493,7 +493,7 @@ impl DbCore {
             StreamKind::Select => {
                 let s = String::from_utf8(buf)
                     .map_err(|err| DbError::Decode(DecodeError::Utf8(err)))?;
-                serde_json::Value::String(format!("suggest {s}"))
+                serde_json::Value::String(s)
             }
             StreamKind::Mplex => {
                 let v = buf.as_slice().try_into().map_err(|_| {

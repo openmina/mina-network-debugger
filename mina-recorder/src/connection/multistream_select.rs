@@ -36,12 +36,15 @@ impl<Inner> From<(u64, bool)> for State<Inner> {
     }
 }
 
-fn parse_sc(cursor: &mut &[u8]) -> bool {
-    if (*cursor).starts_with(b"\ninitiator\n") | (*cursor).starts_with(b"\nresponder\n") {
+fn parse_sc(cursor: &mut &[u8]) -> Option<String> {
+    if (*cursor).starts_with(b"\ninitiator\n") {
         *cursor = &(*cursor)[11..];
-        true
+        Some("initiator".to_string())
+    } else if (*cursor).starts_with(b"\nresponder\n") {
+        *cursor = &(*cursor)[11..];
+        Some("responder".to_string())
     } else {
-        false
+        None
     }
 }
 
@@ -63,7 +66,7 @@ fn take_msg<'a>(cursor: &mut &'a [u8]) -> Option<&'a [u8]> {
 enum MultistreamResult {
     Message(String),
     MessageWithAccumulatedData(String, Vec<u8>),
-    Done(String),
+    Handshaking(Vec<String>),
     Error(Vec<u8>),
     Pending,
 }
@@ -98,9 +101,14 @@ impl<Inner> State<Inner> {
         } else {
             accumulator.extend_from_slice(bytes);
             let cursor = &mut accumulator.as_slice();
+            let mut handshake_tokens = vec![];
             loop {
-                if parse_sc(cursor) {
-                    *sc = false;
+                match parse_sc(cursor) {
+                    None => (),
+                    Some(token) => {
+                        *sc = false;
+                        handshake_tokens.push(token);
+                    }
                 }
                 let msg = match take_msg(cursor) {
                     Some(v) => v,
@@ -117,18 +125,20 @@ impl<Inner> State<Inner> {
                             // both parties initiating simultaneously
                             *other = None;
                         }
+                        handshake_tokens.push(s.to_string());
                         continue;
                     }
                     if s.starts_with("select") {
+                        handshake_tokens.push(s.to_string());
                         continue;
                     }
                     let s = s.to_string();
                     *accumulator = (*cursor).to_vec();
                     if !(*sc && *sc_other) {
                         *done = Some(s.clone());
-                        return MultistreamResult::Done(s);
+                        handshake_tokens.push(s.to_string());
                     }
-                    break;
+                    return MultistreamResult::Handshaking(handshake_tokens);
                 } else {
                     return MultistreamResult::Error(msg.to_vec());
                 }
@@ -161,7 +171,7 @@ where
                 });
                 inner.on_data(id, &mut data, cx, db)
             }
-            MultistreamResult::Done(protocol) => {
+            MultistreamResult::Handshaking(tokens) => {
                 let stream = self.stream.get_or_insert_with(|| {
                     let stream_id = if self.stream_forward {
                         StreamId::Forward(self.stream_id)
@@ -170,7 +180,10 @@ where
                     };
                     db.add(stream_id, StreamKind::Select)
                 });
-                stream.add(id.incoming, id.metadata.time, protocol.as_bytes())
+                for token in tokens {
+                    stream.add(id.incoming, id.metadata.time, token.as_bytes())?;
+                }
+                Ok(())
             }
             MultistreamResult::Error(msg) => {
                 log::error!(
