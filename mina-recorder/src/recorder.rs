@@ -51,19 +51,16 @@ impl P2pRecorder {
             return;
         }
         let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
-        let ConnectionInfo { addr, pid, fd } = &metadata.id;
-        if incoming {
-            log::info!("{alias}_{pid} accept {addr} {fd}");
-        } else {
-            log::info!("{alias}_{pid} connect {addr} {fd}");
-        }
-        match self.cx.db.add(metadata.id.clone(), incoming, metadata.time) {
+        let id = DirectedId { metadata, alias, incoming };
+        match self.cx.db.add(id.metadata.id.clone(), incoming, id.metadata.time) {
             Ok(group) => {
+                log::info!("{id} {} new connection", group.id());
+        
                 self.cns
-                    .insert(metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
+                    .insert(id.metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
             }
             Err(err) => {
-                log::error!("cannot process connection: {err}");
+                log::error!("{id} new connection, cannot write in db {err}");
             }
         }
     }
@@ -74,9 +71,11 @@ impl P2pRecorder {
             return;
         }
         let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
-        let ConnectionInfo { addr, pid, fd } = &metadata.id;
-        log::info!("{alias}_{pid} disconnect {addr} {fd}");
-        self.cns.remove(&metadata.id);
+        let incoming = false; // warning, we really don't know at this point
+        let id = DirectedId { metadata, alias, incoming };
+        if let Some((_, group)) = self.cns.remove(&id.metadata.id) {
+            log::info!("{id} {} disconnect", group.id());
+        }
     }
 
     #[rustfmt::skip]

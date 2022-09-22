@@ -52,6 +52,9 @@ where
 {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+        if self.skip {
+            return Ok(());
+        }
         let cipher = if id.incoming {
             &mut self.cipher_in
         } else {
@@ -63,7 +66,7 @@ where
             self.inner.on_data(id, bytes, cx, db)?;
         } else if bytes.len() != 24 {
             self.skip = true;
-            log::warn!("skip connection {id}, bytes: {}", hex::encode(bytes));
+            log::warn!("{id} {} skip connection, bytes: {}", db.id(), hex::encode(bytes));
         } else {
             *cipher = Some(XSalsa20::new(
                 &self.shared_secret,

@@ -160,12 +160,18 @@ where
 
         match self.on_data_inner(id.incoming, bytes) {
             MultistreamResult::Message(protocol) => {
+                if let StreamKind::Unknown = protocol.parse().expect("cannot fail") {
+                    log::error!("{id} {}, bad protocol name {protocol}", db.id());
+                }
                 let inner = self.inner.get_or_insert_with(|| {
                     Inner::from_name(&protocol, self.stream_id, self.stream_forward)
                 });
                 inner.on_data(id, bytes, cx, db)
             }
             MultistreamResult::MessageWithAccumulatedData(protocol, mut data) => {
+                if let StreamKind::Unknown = protocol.parse().expect("cannot fail") {
+                    log::error!("{id} {}, bad protocol name {protocol}", db.id());
+                }
                 let inner = self.inner.get_or_insert_with(|| {
                     Inner::from_name(&protocol, self.stream_id, self.stream_forward)
                 });

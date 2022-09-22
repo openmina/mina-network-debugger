@@ -77,7 +77,10 @@ impl HandleData for State {
                         b.extend_from_slice(&s.get_ref()[(pos as usize)..(8 + len)]);
                         stream.add(id.incoming, id.metadata.time, &b)?;
                     } else {
-                        log::warn!("{id}, response {} without request", v.id);
+                        // magic number, means kind of rpc handshake
+                        if v.id != 4411474 {
+                            log::warn!("{id}, response {} without request", v.id);
+                        }
                     }
                 }
             }
