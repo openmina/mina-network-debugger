@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use mina_p2p_messages::GossipNetMessage;
+use mina_p2p_messages::GossipNetMessageV1;
 use binprot::BinProtRead;
 use serde::Serialize;
 use prost::{bytes::Bytes, Message};
@@ -28,7 +28,7 @@ pub enum Event {
         signature: Option<String>,
         key: Option<String>,
         topic: String,
-        message: Box<GossipNetMessage>,
+        message: Box<GossipNetMessageV1>,
     },
     #[serde(rename = "publish")]
     PublishPreview {
@@ -146,12 +146,12 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
         })
         .map(|(data, topic, from, seqno, signature, key)| {
             let mut c = Cursor::new(&data[8..]);
-            let message = Box::new(GossipNetMessage::binprot_read(&mut c).unwrap());
+            let message = Box::new(GossipNetMessageV1::binprot_read(&mut c).unwrap());
             if preview {
                 let message = match &*message {
-                    GossipNetMessage::NewState(_) => GossipNetMessagePreview::NewState,
-                    GossipNetMessage::SnarkPoolDiff(_) => GossipNetMessagePreview::SnarkPoolDiff,
-                    GossipNetMessage::TransactionPoolDiff(_) => {
+                    GossipNetMessageV1::NewState(_) => GossipNetMessagePreview::NewState,
+                    GossipNetMessageV1::SnarkPoolDiff(_) => GossipNetMessagePreview::SnarkPoolDiff,
+                    GossipNetMessageV1::TransactionPoolDiff(_) => {
                         GossipNetMessagePreview::TransactionPoolDiff
                     }
                 };
@@ -222,7 +222,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
 fn tag0_msg() {
     use std::io::Cursor;
 
-    use mina_p2p_messages::v1::MinaBlockExternalTransitionRawVersionedStableV1Binable as Msg;
+    use mina_p2p_messages::v1::MinaBlockExternalTransitionRawVersionedStableV1Versioned as Msg;
 
     use prost::{bytes::Bytes, Message as _};
 

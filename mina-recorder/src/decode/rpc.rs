@@ -2,8 +2,8 @@ use std::io::{Cursor, Read};
 
 use serde::Serialize;
 use mina_p2p_messages::{
-    rpc::{QueryHeader, JSONinifyPayloadReader, JSONinifyError},
-    utils, JSONifyPayloadRegistry,
+    JSONifyPayloadRegistry,
+    utils, rpc_kernel::{QueryHeader, JSONinifyError}, JSONinifyPayloadReader,
 };
 use binprot::{BinProtRead, Nat0};
 
@@ -15,7 +15,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let _len = utils::stream_decode_size(&mut stream)?;
     let Nat0(_) = BinProtRead::binprot_read(&mut stream)?;
     let msg = QueryHeader::binprot_read(&mut stream)?;
-    let tag = msg.tag.as_ref();
+    let tag = msg.tag.to_string_lossy();
 
     Ok(tag.parse().ok().into_iter().collect())
 }
@@ -61,8 +61,8 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     let _len = utils::stream_decode_size(&mut stream)?;
     let Nat0(d) = BinProtRead::binprot_read(&mut stream)?;
     let msg = QueryHeader::binprot_read(&mut stream)?;
-    let tag = msg.tag.as_ref().to_string();
-    let r = JSONifyPayloadRegistry::new();
+    let tag = msg.tag.to_string_lossy();
+    let r = JSONifyPayloadRegistry::v1();
     let reader = r.get(&tag, msg.version).unwrap_or(&DefaultReader);
     match d {
         1 => {
@@ -104,7 +104,7 @@ fn decode_get_ancestry_request() {
     let bytes = hex::decode(hex).unwrap();
     let mut stream = Cursor::new(bytes);
 
-    let r = JSONifyPayloadRegistry::new();
+    let r = JSONifyPayloadRegistry::v1();
     let reader = r.get("get_ancestry", 1).unwrap();
     let value = reader.read_query(&mut stream).unwrap();
     assert_ne!(dbg!(value), serde_json::Value::Null);
@@ -117,7 +117,7 @@ fn decode_get_transition_chain_proof_request() {
     let bytes = hex::decode(hex).unwrap();
     let mut stream = Cursor::new(bytes);
 
-    let r = JSONifyPayloadRegistry::new();
+    let r = JSONifyPayloadRegistry::v1();
     let reader = r.get("get_transition_chain_proof", 1).unwrap();
     let value = reader.read_query(&mut stream).unwrap();
     assert_ne!(dbg!(value), serde_json::Value::Null);

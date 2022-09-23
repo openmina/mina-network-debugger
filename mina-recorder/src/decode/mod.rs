@@ -14,7 +14,7 @@ use radiation::{Absorb, Emit};
 
 use thiserror::Error;
 
-use mina_p2p_messages::rpc::JSONinifyError;
+use mina_p2p_messages::rpc_kernel::JSONinifyError;
 
 #[derive(Debug, Error)]
 pub enum DecodeError {

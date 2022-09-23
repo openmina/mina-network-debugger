@@ -428,6 +428,7 @@ fn noise() {
 
 #[cfg(test)]
 #[test]
+#[should_panic]
 fn key_() {
     use std::convert::TryFrom;
 

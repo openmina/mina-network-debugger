@@ -3,7 +3,7 @@ use std::io::Cursor;
 use binprot::{BinProtRead, BinProtWrite};
 use mina_p2p_messages::{
     string::CharString as BString,
-    rpc::{QueryHeader, MessageHeader},
+    rpc_kernel::{QueryHeader, MessageHeader},
     utils,
 };
 
