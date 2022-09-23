@@ -28,6 +28,7 @@ mod hl {
     pub struct State {
         incoming: OneDirection,
         outgoing: OneDirection,
+        agreed: bool,
     }
 
     #[derive(Default)]
@@ -45,11 +46,19 @@ mod hl {
                 (&mut self.outgoing, &mut self.incoming)
             };
 
+            if self.agreed {
+                let mut output_ = Output::default();
+                output_.agreed = this.done.as_ref().map(|p| (p.clone(), Cow::Borrowed(bytes)));
+                return output_;
+            }
+
             this.inner.append(bytes);
             let mut output_ = Output::default();
             if let (Some(lp), Some(rp)) = (&this.done, &other.done) {
                 if *lp == *rp {
+                    self.agreed = true;
                     output_.agreed = Some((lp.clone(), this.inner.end(bytes)));
+                    return output_;
                 }
             }
 
@@ -65,6 +74,9 @@ mod hl {
                             //
                         } else if s.starts_with("/libp2p/simultaneous-connect") {
                             this.simultaneous_connect = true;
+                            if other.simultaneous_connect {
+                                other.done = None;
+                            }
                         } else if s == "na" {
                             if other.simultaneous_connect {
                                 other.simultaneous_connect = false;
@@ -74,7 +86,7 @@ mod hl {
                         } else if s.starts_with("select") {
                             this.simultaneous_connect = false;
                         } else {
-                            if !this.simultaneous_connect && !other.simultaneous_connect {
+                            if !(this.simultaneous_connect && other.simultaneous_connect) {
                                 this.done = Some(s);
                             }
                         }
@@ -219,6 +231,25 @@ where
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+#[test]
+#[rustfmt::skip]
+fn simple_test() {
+    let mut state = State::<()>::from((0, false));
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a036e610a072f6e6f6973650a").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+
+    let mut data = hex::decode("00205d406d48fe6549c8bd67afd93c87295beae0c11efac62742b5ef28c567b5d36b").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_some());
 }
 
 #[cfg(test)]
