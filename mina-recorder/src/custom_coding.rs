@@ -1,5 +1,5 @@
 use std::{
-    net::{SocketAddr, IpAddr},
+    net::{SocketAddr, IpAddr, Ipv6Addr, Ipv4Addr},
     time::{SystemTime, Duration},
 };
 
@@ -8,7 +8,15 @@ use radiation::{Absorb, Emit, nom, ParseError};
 pub fn addr_absorb(input: &[u8]) -> nom::IResult<&[u8], SocketAddr, ParseError<&[u8]>> {
     let pair = nom::sequence::pair(<[u8; 16]>::absorb::<()>, u16::absorb::<()>);
     nom::combinator::map(pair, |(ip, port)| {
-        SocketAddr::new(IpAddr::V6(ip.into()), port)
+        let ipv6 = Ipv6Addr::from(ip);
+        if let [0, 0, 0, 0, 0, 0xFFFF, ..] = ipv6.segments() {
+            SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(ip[12], ip[13], ip[14], ip[15])),
+                port,
+            )
+        } else {
+            SocketAddr::new(IpAddr::V6(ipv6), port)
+        }
     })(input)
 }
 
