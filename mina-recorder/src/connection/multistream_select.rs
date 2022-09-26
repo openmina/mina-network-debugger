@@ -244,8 +244,12 @@ fn simple_test() {
     assert!(dbg!(result).agreed.is_none());
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a036e610a072f6e6f6973650a").expect("valid constant");
-    let result = state.hl.poll(true, &mut data);
-    assert!(dbg!(result).agreed.is_none());
+    let chunks = [1, 19, 1, 3, 1, 7];
+    for chunk in chunks {
+        let mut chunk_data = data.drain(..chunk).collect::<Vec<u8>>();
+        let result = state.hl.poll(true, &mut chunk_data);
+        assert!(dbg!(result).agreed.is_none());
+    }
 
     let mut data = hex::decode("00205d406d48fe6549c8bd67afd93c87295beae0c11efac62742b5ef28c567b5d36b").expect("valid constant");
     let result = state.hl.poll(false, &mut data);
