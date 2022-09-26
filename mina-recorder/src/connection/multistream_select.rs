@@ -28,7 +28,6 @@ mod hl {
     pub struct State {
         incoming: OneDirection,
         outgoing: OneDirection,
-        agreed: bool,
     }
 
     #[derive(Default)]
@@ -46,19 +45,10 @@ mod hl {
                 (&mut self.outgoing, &mut self.incoming)
             };
 
-            if self.agreed {
-                let mut output_ = Output::default();
-                output_.agreed = this.done.as_ref().map(|p| (p.clone(), Cow::Borrowed(bytes)));
-                return output_;
-            }
-
             let mut output_ = Output::default();
-            if let (Some(lp), Some(rp)) = (&this.done, &other.done) {
-                if *lp == *rp {
-                    self.agreed = true;
-                    output_.agreed = Some((lp.clone(), this.inner.end(bytes)));
-                    return output_;
-                }
+            if let Some(lp)= &this.done {
+                output_.agreed = Some((lp.clone(), this.inner.end(bytes)));
+                return output_;
             }
             this.inner.append(bytes);
 
@@ -260,7 +250,7 @@ fn simple_test() {
 #[cfg(test)]
 #[test]
 #[rustfmt::skip]
-fn simple_test_glue_payload() {
+fn simple_glue_payload_test() {
     let mut state = State::<()>::from((0, false));
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
@@ -279,6 +269,33 @@ fn simple_test_glue_payload() {
     assert!(dbg!(&result).agreed.is_some());
     let payload = String::from_utf8(result.agreed.unwrap().1.to_vec()).unwrap();
     assert_eq!(dbg!(payload), "payload_additional");
+}
+
+#[cfg(test)]
+#[test]
+#[rustfmt::skip]
+fn simple_early_payload_test() {
+    let mut state = State::<()>::from((0, false));
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a10636f64612f727063732f302e302e310a").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+
+    let mut data = hex::decode("070000000000000002fd5250430001").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_some());
+
+    let mut data = hex::decode("10636f64612f727063732f302e302e310a").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+
+    let mut data = hex::decode("070000000000000002fd5250430001").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_some());
 }
 
 #[cfg(test)]
