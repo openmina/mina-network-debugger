@@ -52,7 +52,6 @@ mod hl {
                 return output_;
             }
 
-            this.inner.append(bytes);
             let mut output_ = Output::default();
             if let (Some(lp), Some(rp)) = (&this.done, &other.done) {
                 if *lp == *rp {
@@ -61,6 +60,7 @@ mod hl {
                     return output_;
                 }
             }
+            this.inner.append(bytes);
 
             while let Some(output) = this.inner.poll() {
                 match output {
@@ -88,6 +88,7 @@ mod hl {
                         } else {
                             if !(this.simultaneous_connect && other.simultaneous_connect) {
                                 this.done = Some(s);
+                                break;
                             }
                         }
                     }
@@ -254,6 +255,30 @@ fn simple_test() {
     let mut data = hex::decode("00205d406d48fe6549c8bd67afd93c87295beae0c11efac62742b5ef28c567b5d36b").expect("valid constant");
     let result = state.hl.poll(false, &mut data);
     assert!(dbg!(result).agreed.is_some());
+}
+
+#[cfg(test)]
+#[test]
+#[rustfmt::skip]
+fn simple_test_glue_payload() {
+    let mut state = State::<()>::from((0, false));
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a036e610a072f6e6f6973650a").expect("valid constant");
+    // payload is glued to the message
+    data.extend_from_slice(b"payload");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+
+    // additional payload
+    let mut data = *b"_additional";
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(&result).agreed.is_some());
+    let payload = String::from_utf8(result.agreed.unwrap().1.to_vec()).unwrap();
+    assert_eq!(dbg!(payload), "payload_additional");
 }
 
 #[cfg(test)]
