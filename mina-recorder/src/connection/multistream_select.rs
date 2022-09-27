@@ -381,3 +381,71 @@ fn simultaneous_connect_with_accumulator_test() {
     let result = state.hl.poll(true, &mut data);
     assert!(dbg!(result).agreed.is_some());
 }
+
+#[cfg(test)]
+#[test]
+#[rustfmt::skip]
+fn simultaneous_connect_misordered_noise_test() {
+    let mut state = State::<()>::from((0, false));
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a").expect("valid constant");
+    let chunks = [1, 19, 1, 29];
+    for chunk in chunks {
+        let mut chunk_data = data.drain(..chunk).collect::<Vec<u8>>();
+        let result = state.hl.poll(false, &mut chunk_data);
+        assert!(dbg!(result).agreed.is_none());
+    }
+    println!();
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+    println!();
+
+    let mut data = hex::decode("07").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+    println!();
+
+    let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+    println!();
+
+    let mut data = hex::decode("2f6e6f6973650a1c73656c6563743a31343938323336373438313134313138383431310a").expect("valid constant");
+    let chunks = [7, 1, 28];
+    for chunk in chunks {
+        let mut chunk_data = data.drain(..chunk).collect::<Vec<u8>>();
+        let result = state.hl.poll(false, &mut chunk_data);
+        assert!(dbg!(result).agreed.is_none());
+    }
+    println!();
+
+    let mut data = hex::decode("0a726573706f6e6465720a").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+    println!();
+
+    let mut data = hex::decode("0a696e69746961746f720a072f6e6f6973650a").expect("valid constant");
+    let chunks = [1, 10, 1, 7];
+    for chunk in chunks {
+        let mut chunk_data = data.drain(..chunk).collect::<Vec<u8>>();
+        let result = state.hl.poll(false, &mut chunk_data);
+        assert!(dbg!(result).agreed.is_none());
+    }
+    println!();
+
+    let mut data = hex::decode("072f6e6f6973650a").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_none());
+    println!();
+
+    let mut data = hex::decode("002052096fcedd899f60aa1b2893bcfb86b42b8c33c72b39320904d31220a1474e41").expect("valid constant");
+    let result = state.hl.poll(false, &mut data);
+    assert!(dbg!(result).agreed.is_some());
+    println!();
+
+    let mut data = hex::decode("00c8d11e149aa99fd7174cca7738f0bd4ccf0e3b526061b1f7b36e7850bc9cdec4310081d0e07edacefc409660af40a31e043ec59ba1fe009b4c6ca0219b7882ccb55656a4f8e44764f62f627c57aa974e05817e7e1e48983c0ceafecf555cac9ed43f15755d820ec02255855fdabfbac20e572abe457f783ae66914c283794c4df1f4a6f037e38c2044f53fcda4ea414b3f088be82d16910dfa49049f0f257457f7137bb203aed25c2a4f2564675e64f96b9b27305b4ace8ddebf48dc3d0158590e96ebc866034e88fb").expect("valid constant");
+    let result = state.hl.poll(true, &mut data);
+    assert!(dbg!(result).agreed.is_some());
+}
