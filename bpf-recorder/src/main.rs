@@ -530,7 +530,7 @@ fn main() {
         },
         time::{SystemTime, Duration},
         env,
-        path::PathBuf,
+        path::PathBuf, process::Command,
     };
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
@@ -538,7 +538,6 @@ fn main() {
     use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder};
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
-    env_logger::init();
     // let env = env_logger::Env::default().default_filter_or("warn");
     // env_logger::init_from_env(env);
     // if let Err(err) = sudo::escalate_if_needed() {
@@ -551,15 +550,20 @@ fn main() {
         .parse()
         .unwrap_or(8000);
     let db_path = env::var("DB_PATH").unwrap_or_else(|_| "target/db".to_string());
+    let db_path = PathBuf::from(db_path);
     let dry = env::var("DRY").is_ok();
 
-    let home = PathBuf::from(env::var("HOME").expect("must set HOME variable"));
-    let key_path = env::var("HTTPS_KEY_PATH")
-        .unwrap_or_else(|_| home.join("privkey.pem").display().to_string());
-    let cert_path = env::var("HTTPS_CERT_PATH")
-        .unwrap_or_else(|_| home.join("fullchain.pem").display().to_string());
+    let key_path = env::var("HTTPS_KEY_PATH").ok();
+    let cert_path = env::var("HTTPS_CERT_PATH").ok();
 
-    let (db, callback, server_thread) = server::spawn(port, db_path, key_path, cert_path);
+    // TODO: fix logging in file
+    // let log = File::create(db_path.join("log")).expect("cannot create log file");
+    // let mut builder = env_logger::Builder::new();
+    // builder.target(env_logger::Target::Pipe(Box::new(log)));
+    // builder.try_init().expect("cannot setup logging");
+    env_logger::init();
+
+    let (db, callback, server_thread) = server::spawn(port, db_path.clone(), key_path, cert_path);
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
@@ -653,6 +657,7 @@ fn main() {
     let chain_id = env::var("CHAIN_ID").unwrap_or_else(|_| MAINNET_CHAIN.to_string());
 
     let test = env::var("TEST").is_ok();
+    let strace = env::var("STRACE").is_ok();
 
     const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
@@ -660,6 +665,7 @@ fn main() {
     let mut recorder = P2pRecorder::new(db, chain_id, test);
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
+    let mut strace_running = None;
     while !terminating.load(Ordering::Relaxed) {
         for event in source.by_ref() {
             if event.ts0 + 1_000_000_000 < last_ts {
@@ -677,6 +683,16 @@ fn main() {
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
+                    if strace && strace_running.is_none() {
+                        let child = Command::new("strace")
+                            .args(&["-f", "-e", "trace=network", "-s", "8192", "-p"])
+                            .arg(event.pid.to_string())
+                            .arg("-o")
+                            .arg(db_path.join("dump.strace"))
+                            .spawn()
+                            .expect("cannot run strace");
+                        strace_running = Some(child);
+                    }
                     log::info!("exec {alias} pid: {}", event.pid);
                     recorder.on_alias(event.pid, alias);
                 }
@@ -802,4 +818,7 @@ fn main() {
     }
     log::info!("terminated");
     drop(source);
+    if let Some(mut strace_running) = strace_running {
+        strace_running.kill().expect("cannot kill strace");
+    }
 }

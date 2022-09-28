@@ -110,8 +110,8 @@ fn routes(
 pub fn spawn<P, Q, R>(
     port: u16,
     path: P,
-    key_path: Q,
-    cert_path: R,
+    key_path: Option<Q>,
+    cert_path: Option<R>,
 ) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
 where
     P: AsRef<Path>,
@@ -139,15 +139,23 @@ where
         }
     };
     let addr = ([0, 0, 0, 0], port);
-    let (_, server) = warp::serve(routes(db.core()))
-        .tls()
-        .key_path(key_path)
-        .cert_path(cert_path)
-        .bind_with_graceful_shutdown(addr, async move {
-            rx.await.expect("corresponding sender should exist");
-            log::info!("terminating http server...");
-        });
-    let handle = thread::spawn(move || rt.block_on(server));
+    let routes = routes(db.core());
+    let shutdown = async move {
+        rx.await.expect("corresponding sender should exist");
+        log::info!("terminating http server...");
+    };
+    let handle = if let (Some(key_path), Some(cert_path)) = (key_path, cert_path) {
+        let (_, server) = warp::serve(routes)
+            .tls()
+            .key_path(key_path)
+            .cert_path(cert_path)
+            .bind_with_graceful_shutdown(addr, shutdown);
+        thread::spawn(move || rt.block_on(server))
+    } else {
+        let (_, server) = warp::serve(routes)
+            .bind_with_graceful_shutdown(addr, shutdown);
+        thread::spawn(move || rt.block_on(server))
+    };
     let callback = move || tx.send(()).expect("corresponding receiver should exist");
     (db, callback, handle)
 }
