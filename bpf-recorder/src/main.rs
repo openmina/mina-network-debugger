@@ -666,6 +666,7 @@ fn main() {
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     let mut strace_running = None;
+    let mut cnt = 0;
     while !terminating.load(Ordering::Relaxed) {
         for event in source.by_ref() {
             if event.ts0 + 1_000_000_000 < last_ts {
@@ -683,9 +684,10 @@ fn main() {
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
-                    if strace && strace_running.is_none() {
+                    cnt += 1;
+                    if strace && strace_running.is_none() && cnt > 1 {
                         let child = Command::new("strace")
-                            .args(&["-f", "-e", "trace=network", "-s", "8192", "-p"])
+                            .args(&["-f", "-e", "trace=network", "-s", "8192", "-tt", "-p"])
                             .arg(event.pid.to_string())
                             .arg("-o")
                             .arg(db_path.join("dump.strace"))
