@@ -659,9 +659,8 @@ fn main() {
     let test = env::var("TEST").is_ok();
     let strace = env::var("STRACE").is_ok();
 
-    const P2P_PORT: u16 = 8302;
+    // const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
-    let mut ignored_cns = BTreeMap::new();
     let mut recorder = P2pRecorder::new(db, chain_id, test);
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
@@ -700,48 +699,40 @@ fn main() {
                 }
                 SnifferEventVariant::Error(_, _) => (),
                 SnifferEventVariant::OutgoingConnection(addr) => {
-                    if addr.port() == P2P_PORT {
-                        let metadata = EventMetadata {
-                            id: ConnectionInfo {
-                                addr,
-                                pid: event.pid,
-                                fd: event.fd,
-                            },
-                            time,
-                            duration,
-                        };
-                        if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                            log::warn!("new outgoing connection on already allocated fd");
-                            let mut metadata = metadata.clone();
-                            metadata.id.addr = old_addr;
-                            recorder.on_disconnect(metadata);
-                        }
-                        recorder.on_connect(false, metadata);
-                    } else {
-                        ignored_cns.insert((event.pid, event.fd), addr);
+                    let metadata = EventMetadata {
+                        id: ConnectionInfo {
+                            addr,
+                            pid: event.pid,
+                            fd: event.fd,
+                        },
+                        time,
+                        duration,
+                    };
+                    if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
+                        log::warn!("new outgoing connection on already allocated fd");
+                        let mut metadata = metadata.clone();
+                        metadata.id.addr = old_addr;
+                        recorder.on_disconnect(metadata);
                     }
+                    recorder.on_connect(false, metadata);
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
-                    if addr.port() == P2P_PORT || addr.port() >= 49152 {
-                        let metadata = EventMetadata {
-                            id: ConnectionInfo {
-                                addr,
-                                pid: event.pid,
-                                fd: event.fd,
-                            },
-                            time,
-                            duration,
-                        };
-                        if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                            log::warn!("new incoming connection on already allocated fd");
-                            let mut metadata = metadata.clone();
-                            metadata.id.addr = old_addr;
-                            recorder.on_disconnect(metadata);
-                        }
-                        recorder.on_connect(true, metadata);
-                    } else {
-                        ignored_cns.insert((event.pid, event.fd), addr);
+                    let metadata = EventMetadata {
+                        id: ConnectionInfo {
+                            addr,
+                            pid: event.pid,
+                            fd: event.fd,
+                        },
+                        time,
+                        duration,
+                    };
+                    if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
+                        log::warn!("new incoming connection on already allocated fd");
+                        let mut metadata = metadata.clone();
+                        metadata.id.addr = old_addr;
+                        recorder.on_disconnect(metadata);
                     }
+                    recorder.on_connect(true, metadata);
                 }
                 SnifferEventVariant::Disconnected => {
                     let key = (event.pid, event.fd);
@@ -756,9 +747,9 @@ fn main() {
                             duration,
                         };
                         recorder.on_disconnect(metadata);
-                    } else if !ignored_cns.contains_key(&key) {
-                        log::debug!(
-                            "{} cannot disconnect {}, not connected",
+                    } else {
+                        log::info!(
+                            "{} cannot process disconnect {}, not connected",
                             event.pid,
                             event.fd
                         );
@@ -777,7 +768,7 @@ fn main() {
                             duration,
                         };
                         recorder.on_data(true, metadata, data);
-                    } else if !ignored_cns.contains_key(&key) {
+                    } else {
                         log::debug!(
                             "{} cannot handle data on {}, not connected, {}",
                             event.pid,
@@ -799,7 +790,7 @@ fn main() {
                             duration,
                         };
                         recorder.on_data(false, metadata, data);
-                    } else if !ignored_cns.contains_key(&key) {
+                    } else {
                         log::debug!(
                             "{} cannot handle data on {}, not connected, {}",
                             event.pid,
