@@ -74,7 +74,7 @@ mod hl {
                                 other.done = None;
                             }
                         } else if s.starts_with("select") {
-                            this.simultaneous_connect = false;
+                            //
                         } else {
                             if !(this.simultaneous_connect && other.simultaneous_connect) {
                                 this.done = Some(s);
@@ -82,8 +82,14 @@ mod hl {
                             }
                         }
                     }
-                    Ok(ll::Output::InitiatorToken) => output_.tokens.push("initiator".to_string()),
-                    Ok(ll::Output::ResponderToken) => output_.tokens.push("responder".to_string()),
+                    Ok(ll::Output::InitiatorToken) => {
+                        this.simultaneous_connect = false;
+                        output_.tokens.push("initiator".to_string())
+                    },
+                    Ok(ll::Output::ResponderToken) => {
+                        this.simultaneous_connect = false;
+                        output_.tokens.push("responder".to_string())
+                    },
                 }
             }
 
@@ -380,6 +386,34 @@ fn simultaneous_connect_with_accumulator_test() {
     let mut data = hex::decode("0020c29c4aa9bc861ac3163bfc562ab3f1ca984440f50ca7944ab1fcb40b398bac34").expect("valid constant");
     let result = state.hl.poll(true, &mut data);
     assert!(dbg!(result).agreed.is_some());
+}
+
+#[cfg(test)]
+#[test]
+#[rustfmt::skip]
+fn simultaneous_connect_misordered_noise_replay_test() {
+    use crate::event::ChunkHeader;
+    use radiation::AbsorbExt;
+
+    let mut bytes = *include_bytes!("test_data/connection000002b1");
+    let mut offset = 0;
+    let mut state = State::<()>::from((0, false));
+    for i in 0..19 {
+        let header = ChunkHeader::absorb_ext(&bytes[offset..(offset + ChunkHeader::SIZE)]).unwrap();
+        let data_offset = offset + ChunkHeader::SIZE;
+        offset = data_offset + (header.size as usize);
+        let bytes = &mut bytes[data_offset..offset];
+        // let arrow = if header.incoming { "->" } else { "<-" };
+        // println!("{arrow} {}", hex::encode(&bytes));
+        let result = state.hl.poll(header.incoming, bytes);
+        match i {
+            0..=15 => assert!(result.agreed.is_none()),
+            16 => assert_eq!(result.agreed.unwrap().1.len(), 34),
+            17 => assert_eq!(result.agreed.unwrap().1.len(), 202),
+            18 => assert_eq!(result.agreed.unwrap().1.len(), 227),
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(test)]
