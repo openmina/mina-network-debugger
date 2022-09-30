@@ -1,4 +1,5 @@
 use prost::{bytes::Bytes, Message};
+use radiation::{Absorb, AbsorbExt, ParseError};
 use serde::Serialize;
 
 use super::{DecodeError, MessageType};
@@ -12,8 +13,13 @@ mod keys_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
 }
 
-pub fn parse_types(_: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
-    Ok(vec![MessageType::HandshakePayload])
+pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
+    let ty = if bytes.starts_with(b"mac_mismatch\x00\x00\x00\x00") {
+        MessageType::FailedToDecrypt
+    } else {
+        MessageType::HandshakePayload
+    };
+    Ok(vec![ty])
 }
 
 pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> {
@@ -22,9 +28,24 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
         r#type: String,
         public_key: String,
         peer_id: String,
+        signature: String,
         payload_type: String,
         payload: String,
-        signature: String,
+    }
+
+    #[derive(Serialize, Absorb)]
+    struct F {
+        this_decrypted: usize,
+        this_failed: usize,
+        total_decrypted: usize,
+        total_failed: usize,
+    }
+
+    if bytes.starts_with(b"mac_mismatch\x00\x00\x00\x00") {
+        let f = F::absorb_ext(&bytes[16..])
+            .map_err(|err| err.map(ParseError::into_vec))
+            .map_err(DecodeError::Parse)?;
+        return serde_json::to_value(&f).map_err(DecodeError::Serde);
     }
 
     let buf = Bytes::from(bytes);

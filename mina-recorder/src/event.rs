@@ -73,8 +73,19 @@ pub struct ChunkHeader {
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
-    pub encrypted: bool,
+    pub encryption_status: EncryptionStatus,
     pub incoming: bool,
+}
+
+#[derive(Clone, Debug, Absorb, Emit)]
+#[tag(u8)]
+pub enum EncryptionStatus {
+    #[tag(1)]
+    Raw,
+    #[tag(0xff)]
+    DecryptedPnet,
+    #[tag(0)]
+    DecryptedNoise,
 }
 
 impl ChunkHeader {
@@ -91,11 +102,11 @@ impl fmt::Display for ChunkHeader {
         } else {
             "outgoing"
         };
-        let encrypted = if self.encrypted { "encrypted" } else { "plain" };
+        let status = &self.encryption_status;
 
         write!(
             f,
-            "{hour:02}:{minute:02}:{second:02}:{nano:09} {encrypted} {incoming}"
+            "{hour:02}:{minute:02}:{second:02}:{nano:09} {status:?} {incoming}"
         )
     }
 }

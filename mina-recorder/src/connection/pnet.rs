@@ -4,6 +4,8 @@ use salsa20::{
     XSalsa20,
 };
 
+use crate::event::EncryptionStatus;
+
 use super::{HandleData, DirectedId, Cx, Db, DbResult};
 
 pub struct State<Inner> {
@@ -60,9 +62,10 @@ where
         } else {
             &mut self.cipher_out
         };
+        db.add_raw(EncryptionStatus::Raw, id.incoming, id.metadata.time, bytes)?;
         if let Some(cipher) = cipher {
             cipher.apply_keystream(bytes);
-            db.add_raw(true, id.incoming, id.metadata.time, bytes)?;
+            db.add_raw(EncryptionStatus::DecryptedPnet, id.incoming, id.metadata.time, bytes)?;
             self.inner.on_data(id, bytes, cx, db)?;
         } else if bytes.len() != 24 {
             self.skip = true;
@@ -72,7 +75,6 @@ where
                 &self.shared_secret,
                 GenericArray::from_slice(bytes),
             ));
-            // self.stream = Some(db.add(StreamMeta::Raw, StreamKind::Raw));
         }
 
         Ok(())

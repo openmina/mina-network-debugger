@@ -10,7 +10,7 @@ mod utils;
 use std::{fmt, str::FromStr, string::FromUtf8Error};
 
 use serde::{Serialize, Deserialize};
-use radiation::{Absorb, Emit};
+use radiation::{Absorb, Emit, nom, ParseError};
 
 use thiserror::Error;
 
@@ -28,6 +28,8 @@ pub enum DecodeError {
     Utf8(FromUtf8Error),
     #[error("wrong size: {actual} != {expected}")]
     UnexpectedSize { actual: usize, expected: usize },
+    #[error("parse error {_0}")]
+    Parse(nom::Err<ParseError<Vec<u8>>>),
 }
 
 impl From<binprot::Error> for DecodeError {
@@ -67,6 +69,7 @@ pub enum MessageType {
     // handshake
     #[tag(0x0300)]
     HandshakePayload,
+    FailedToDecrypt,
     // rpc
     #[tag(0x0400)]
     RpcMenu,
@@ -114,6 +117,7 @@ impl fmt::Display for MessageType {
             MessageType::FindNode => write!(f, "find_node"),
             MessageType::Ping => write!(f, "ping"),
             MessageType::HandshakePayload => write!(f, "handshake_payload"),
+            MessageType::FailedToDecrypt => write!(f, "failed_to_decrypt"),
             MessageType::RpcMenu => write!(f, "__Versioned_rpc.Menu"),
             MessageType::GetSomeInitialPeers => write!(f, "get_some_initial_peers"),
             MessageType::GetStagedLedgerAuxAndPendingCoinbasesAtHash => {
@@ -157,6 +161,7 @@ impl FromStr for MessageType {
             "find_node" => Ok(MessageType::FindNode),
             "ping" => Ok(MessageType::Ping),
             "handshake_payload" => Ok(MessageType::HandshakePayload),
+            "failed_to_decrypt" => Ok(MessageType::FailedToDecrypt),
             "__Versioned_rpc.Menu" => Ok(MessageType::RpcMenu),
             "get_some_initial_peers" => Ok(MessageType::GetSomeInitialPeers),
             "get_staged_ledger_aux_and_pending_coinbases_at_hash" => {

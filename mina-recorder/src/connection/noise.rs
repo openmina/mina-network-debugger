@@ -10,7 +10,7 @@ use vru_noise::{
     ChainingKey, Key, Cipher, Output,
 };
 
-use crate::database::{DbStream, StreamId, StreamKind, ConnectionId};
+use crate::{database::{DbStream, StreamId, StreamKind, ConnectionId}, event::EncryptionStatus};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -79,6 +79,8 @@ pub struct NoiseState<Inner> {
     initiator_is_incoming: bool,
     error: bool,
     inner: Inner,
+    decrypted: usize,
+    failed_to_decrypt: usize,
 }
 
 impl<Inner> Default for NoiseState<Inner>
@@ -92,6 +94,8 @@ where
             initiator_is_incoming: false,
             error: false,
             inner: Inner::from((0, false)),
+            decrypted: 0,
+            failed_to_decrypt: 0,
         }
     }
 }
@@ -135,25 +139,42 @@ where
                 Some(bytes) => match msg {
                     Msg::First => (),
                     Msg::Second => {
+                        self.decrypted += bytes.len();
+                        cx.decrypted += bytes.len();
                         let stream = self.stream.get_or_insert_with(|| {
                             db.add(StreamId::Handshake, StreamKind::Handshake)
                         });
                         stream.add(id.incoming, id.metadata.time, bytes)?;
                     }
                     Msg::Third => {
+                        self.decrypted += bytes.len();
+                        cx.decrypted += bytes.len();
                         self.stream
                             .as_ref()
                             .expect("must have stream at third message")
                             .add(id.incoming, id.metadata.time, bytes)?;
                     }
                     Msg::Other => {
+                        self.decrypted += bytes.len();
                         cx.decrypted += bytes.len();
-                        db.add_raw(false, id.incoming, id.metadata.time, bytes)?;
+                        db.add_raw(EncryptionStatus::DecryptedNoise, id.incoming, id.metadata.time, bytes)?;
                         self.inner.on_data(id, bytes, cx, db)?;
                     }
                 },
                 None => {
                     cx.failed_to_decrypt += bytes.len();
+                    self.failed_to_decrypt += bytes.len();
+
+                    let stream = self.stream.get_or_insert_with(|| {
+                        db.add(StreamId::Handshake, StreamKind::Handshake)
+                    });
+                    let mut b = b"failed_to_decrypt\x00\x00\x00".to_vec();
+                    b.extend_from_slice(&self.decrypted.to_be_bytes());
+                    b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());
+                    b.extend_from_slice(&cx.decrypted.to_be_bytes());
+                    b.extend_from_slice(&cx.failed_to_decrypt.to_be_bytes());
+                    stream.add(id.incoming, id.metadata.time, &b)?;
+
                     log::error!(
                         "{id} {}, total failed {}, total decrypted {}, cannot decrypt: {} {}...",
                         db.id(),
@@ -166,6 +187,18 @@ where
             }
         } else {
             cx.failed_to_decrypt += bytes.len();
+            self.failed_to_decrypt += bytes.len();
+
+            let stream = self.stream.get_or_insert_with(|| {
+                db.add(StreamId::Handshake, StreamKind::Handshake)
+            });
+            let mut b = b"mac_mismatch\x00\x00\x00\x00".to_vec();
+            b.extend_from_slice(&self.decrypted.to_be_bytes());
+            b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());
+            b.extend_from_slice(&cx.decrypted.to_be_bytes());
+            b.extend_from_slice(&cx.failed_to_decrypt.to_be_bytes());
+            stream.add(id.incoming, id.metadata.time, &b)?;
+
             log::error!(
                 "{id} {}, total failed {}, total decrypted {}, cannot decrypt: {} {}...",
                 db.id(),

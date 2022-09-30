@@ -18,13 +18,13 @@ message Envelope {
 
   // payload_type encodes the type of payload, so that it can be deserialized
   // deterministically.
-  bytes payload_type = 2;
+  bytes payload_type = 3;
 
   // payload is the actual payload carried inside this envelope.
-  bytes payload = 3;
+  bytes payload = 4;
 
   // signature is the signature produced by the private key corresponding to
   // the enclosed public key, over the payload, prefixing a domain string for
   // additional security.
-  bytes signature = 5;
+  bytes signature = 2;
 }

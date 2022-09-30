@@ -10,7 +10,7 @@ use std::{
 use radiation::Emit;
 
 use crate::{
-    event::{ConnectionInfo, ChunkHeader},
+    event::{ConnectionInfo, ChunkHeader, EncryptionStatus},
     decode::MessageType,
 };
 
@@ -97,7 +97,7 @@ impl DbGroup {
 
     pub fn add_raw(
         &self,
-        encrypted: bool,
+        encryption_status: EncryptionStatus,
         incoming: bool,
         time: SystemTime,
         bytes: &[u8],
@@ -105,7 +105,7 @@ impl DbGroup {
         let header = ChunkHeader {
             size: bytes.len() as u32,
             time,
-            encrypted,
+            encryption_status,
             incoming,
         };
 
