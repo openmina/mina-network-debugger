@@ -35,10 +35,10 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
 
     #[derive(Serialize, Absorb)]
     struct F {
-        this_decrypted: usize,
-        this_failed: usize,
-        total_decrypted: usize,
-        total_failed: usize,
+        this_decrypted: u64,
+        this_failed: u64,
+        total_decrypted: u64,
+        total_failed: u64,
     }
 
     if bytes.starts_with(b"mac_mismatch\x00\x00\x00\x00") {
