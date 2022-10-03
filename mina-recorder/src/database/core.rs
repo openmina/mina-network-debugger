@@ -733,11 +733,18 @@ impl DbCore {
         drop(file);
         Ok(hex::encode(&buf))
     }
+}
 
-    pub fn iterate_randomness(&self) -> impl Iterator<Item = Box<[u8]>> + '_ {
-        self.inner
+pub trait RandomnessDatabase {
+    fn iterate_randomness<'a>(&'a self) -> Box<dyn Iterator<Item = Box<[u8]>> + 'a>;
+}
+
+impl RandomnessDatabase for DbCore {
+    fn iterate_randomness<'a>(&'a self) -> Box<dyn Iterator<Item = Box<[u8]>> + 'a> {
+        let it = self.inner
             .iterator_cf(self.randomness(), rocksdb::IteratorMode::End)
             .filter_map(Result::ok)
-            .map(|(_, v)| v)
+            .map(|(_, v)| v);
+        Box::new(it)
     }
 }
