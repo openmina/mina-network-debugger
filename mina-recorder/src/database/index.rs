@@ -1,7 +1,17 @@
+use std::net::SocketAddr;
+
 use radiation::{Absorb, Emit};
 
-use crate::decode::MessageType;
+use crate::{decode::MessageType, custom_coding};
 use super::types::{ConnectionId, MessageId, StreamFullId, StreamKind};
+
+#[derive(Absorb, Emit)]
+pub struct AddressIdx {
+    #[custom_absorb(custom_coding::addr_absorb)]
+    #[custom_emit(custom_coding::addr_emit)]
+    pub addr: SocketAddr,
+    pub id: MessageId,
+}
 
 #[derive(Absorb, Emit)]
 pub struct ConnectionIdx {

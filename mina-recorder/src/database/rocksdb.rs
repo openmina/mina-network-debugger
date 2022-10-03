@@ -4,7 +4,7 @@ use std::{
     sync::{
         atomic::{AtomicU64, Ordering::SeqCst},
         Arc,
-    },
+    }, net::SocketAddr,
 };
 
 use radiation::Emit;
@@ -48,6 +48,7 @@ impl DbFacade {
         timestamp: SystemTime,
     ) -> Result<DbGroup, DbError> {
         let id = ConnectionId(self.cns.fetch_add(1, SeqCst));
+        let addr = info.addr;
         let v = Connection {
             info,
             incoming,
@@ -57,6 +58,7 @@ impl DbFacade {
         self.inner.set_total::<{ DbCore::CONNECTIONS_CNT }>(id.0)?;
 
         Ok(DbGroup {
+            addr,
             id,
             messages: self.messages.clone(),
             inner: self.inner.clone(),
@@ -76,6 +78,7 @@ impl DbFacade {
 }
 
 pub struct DbGroup {
+    addr: SocketAddr,
     id: ConnectionId,
     messages: Arc<AtomicU64>,
     inner: DbCore,
@@ -84,6 +87,7 @@ pub struct DbGroup {
 impl DbGroup {
     pub fn add(&self, id: StreamId, kind: StreamKind) -> DbStream {
         DbStream {
+            addr: self.addr,
             id: StreamFullId { cn: self.id, id },
             kind,
             messages: self.messages.clone(),
@@ -128,6 +132,7 @@ impl Drop for DbGroup {
 }
 
 pub struct DbStream {
+    addr: SocketAddr,
     id: StreamFullId,
     kind: StreamKind,
     messages: Arc<AtomicU64>,
@@ -174,7 +179,7 @@ impl DbStream {
             offset,
             size: bytes.len() as u32,
         };
-        self.inner.put_message(id, v, tys)?;
+        self.inner.put_message(&self.addr, id, v, tys)?;
         self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(())

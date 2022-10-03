@@ -7,7 +7,7 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     os::unix::prelude::FileExt,
-    convert::TryInto,
+    convert::TryInto, net::SocketAddr,
 };
 
 use radiation::{AbsorbExt, nom, ParseError, Emit};
@@ -18,13 +18,12 @@ use thiserror::Error;
 use super::{
     types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId},
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter},
-    index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx},
+    index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx},
     sorted_intersect::sorted_intersect,
 };
 
 use crate::{
     decode::{DecodeError, MessageType},
-    custom_coding,
 };
 
 #[derive(Debug, Error)]
@@ -249,20 +248,23 @@ impl DbCore {
         self.inner
             .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
 
-        let key = custom_coding::addr_emit(&v.info.addr, vec![]);
-        self.inner.put_cf(self.addr_index(), key, id.emit(vec![]))?;
-
         Ok(())
     }
 
     pub fn put_message(
         &self,
+        addr: &SocketAddr,
         id: MessageId,
         v: Message,
         tys: Vec<MessageType>,
     ) -> Result<(), DbError> {
         self.inner
             .put_cf(self.messages(), id.emit(vec![]), v.emit(vec![]))?;
+        let index = AddressIdx {
+            addr: *addr,
+            id,
+        };
+        self.inner.put_cf(self.addr_index(), index.emit(vec![]), vec![])?;
         let index = ConnectionIdx {
             connection_id: v.connection_id,
             id,
@@ -582,17 +584,10 @@ impl DbCore {
         let it = if params.stream_filter.is_some() || params.kind_filter.is_some() {
             let stream_indexes = match &params.stream_filter {
                 Some(StreamFilter::AnyStreamByAddr(addr)) => {
-                    let connection_id =
-                        match self.get(self.addr_index(), custom_coding::addr_emit(addr, vec![])) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                log::warn!("no connection {addr}, {err}");
-                                ConnectionId(u64::MAX)
-                            }
-                        };
                     // TODO: duplicated code
-                    let id = ConnectionIdx {
-                        connection_id,
+                    let addr = *addr;
+                    let id = AddressIdx {
+                        addr,
                         id: MessageId(id),
                     };
                     let id = id.emit(vec![]);
@@ -600,10 +595,10 @@ impl DbCore {
 
                     let it = self
                         .inner
-                        .iterator_cf(self.connection_id_index(), mode)
-                        .filter_map(Self::decode_index::<ConnectionIdx>)
-                        .take_while(move |index| index.connection_id == connection_id)
-                        .map(|ConnectionIdx { id, .. }| id);
+                        .iterator_cf(self.addr_index(), mode)
+                        .filter_map(Self::decode_index::<AddressIdx>)
+                        .take_while(move |index| index.addr == addr)
+                        .map(|AddressIdx { id, .. }| id);
                     Some(Box::new(it) as Box<dyn Iterator<Item = MessageId>>)
                 }
                 Some(StreamFilter::AnyStreamInConnection(connection_id)) => {
