@@ -11,7 +11,7 @@ use radiation::Emit;
 
 use crate::{
     event::{ConnectionInfo, ChunkHeader, EncryptionStatus},
-    decode::MessageType,
+    decode::MessageType, strace::StraceLine,
 };
 
 use super::{
@@ -21,8 +21,8 @@ use super::{
 
 pub struct DbFacade {
     cns: AtomicU64,
-    rnd_cnt: AtomicU64,
     messages: Arc<AtomicU64>,
+    rnd_cnt: AtomicU64,
     inner: DbCore,
 }
 
@@ -35,9 +35,16 @@ impl DbFacade {
 
         Ok(DbFacade {
             cns: AtomicU64::new(inner.total::<{ DbCore::CONNECTIONS_CNT }>()?),
-            rnd_cnt: AtomicU64::new(inner.total::<{ DbCore::RANDOMNESS_CNT }>()?),
             messages: Arc::new(AtomicU64::new(inner.total::<{ DbCore::MESSAGES_CNT }>()?)),
+            rnd_cnt: AtomicU64::new(inner.total::<{ DbCore::RANDOMNESS_CNT }>()?),
             inner,
+        })
+    }
+
+    pub fn strace(&self) -> Result<DbStrace, DbError> {
+        Ok(DbStrace {
+            strace_cnt: AtomicU64::new(self.inner.total::<{ DbCore::STRACE_CNT }>()?),
+            inner: self.inner.clone(),
         })
     }
 
@@ -74,6 +81,20 @@ impl DbFacade {
 
     pub fn core(&self) -> DbCore {
         self.inner.clone()
+    }
+}
+
+pub struct DbStrace {
+    strace_cnt: AtomicU64,
+    inner: DbCore,
+}
+
+impl DbStrace {
+    pub fn add_strace_line(&self, line: StraceLine) -> Result<(), DbError> {
+        let id = self.strace_cnt.fetch_add(1, SeqCst);
+        self.inner.put_strace(id, line.emit(vec![]))?;
+
+        Ok(())
     }
 }
 

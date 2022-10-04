@@ -533,16 +533,16 @@ fn main() {
         collections::BTreeMap,
         sync::{
             atomic::{AtomicBool, Ordering},
-            Arc,
+            Arc, mpsc,
         },
         time::{SystemTime, Duration},
         env,
-        path::PathBuf, process::Command,
+        path::PathBuf, process::{Command, Stdio}, thread,
     };
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
     use bpf_ring_buffer::RingBuffer;
-    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder};
+    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder, strace};
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
     // let env = env_logger::Env::default().default_filter_or("warn");
@@ -571,6 +571,7 @@ fn main() {
     env_logger::init();
 
     let (db, callback, server_thread) = server::spawn(port, db_path.clone(), key_path, cert_path);
+    let mut db_strace = Some(db.strace().expect("cannot add strace db link"));
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
@@ -692,14 +693,19 @@ fn main() {
                 SnifferEventVariant::NewApp(alias) => {
                     cnt += 1;
                     if strace && strace_running.is_none() && cnt > 1 {
-                        let child = Command::new("strace")
-                            .args(&["-f", "-e", "trace=network", "-s", "8192", "-tt", "-p"])
-                            .arg(event.pid.to_string())
-                            .arg("-o")
-                            .arg(db_path.join("dump.strace"))
-                            .spawn()
-                            .expect("cannot run strace");
-                        strace_running = Some(child);
+                        if let Some(db_strace) = db_strace.take() {
+                            let child = Command::new("strace")
+                                .args(&["-f", "-e", "trace=network", "-s", "8192", "-tt", "-p"])
+                                .arg(event.pid.to_string())
+                                .stdout(Stdio::piped())
+                                .spawn()
+                                .expect("cannot run strace");
+                            let (tx, rx) = mpsc::channel();
+                            let handle = thread::spawn(move || {
+                                strace::process(child, db_strace, rx);
+                            });
+                            strace_running = Some((handle, tx));
+                        }
                     }
                     log::info!("exec {alias} pid: {}", event.pid);
                     recorder.on_alias(event.pid, alias);
@@ -818,7 +824,8 @@ fn main() {
     }
     log::info!("terminated");
     drop(source);
-    if let Some(mut strace_running) = strace_running {
-        strace_running.kill().expect("cannot kill strace");
+    if let Some((strace_running, tx)) = strace_running {
+        tx.send(()).unwrap_or_default();
+        strace_running.join().expect("cannot kill strace");
     }
 }

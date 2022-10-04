@@ -2,7 +2,7 @@ mod types;
 pub use self::types::{StreamKind, StreamId, ConnectionId};
 
 mod rocksdb;
-pub use self::rocksdb::{DbFacade, DbGroup, DbStream};
+pub use self::rocksdb::{DbFacade, DbGroup, DbStream, DbStrace};
 
 mod params;
 pub use self::params::Params;
