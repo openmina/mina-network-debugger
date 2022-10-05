@@ -110,6 +110,7 @@ pub mod sniffer_event {
     #[derive(Debug)]
     pub enum SnifferEventVariant {
         NewApp(String),
+        Bind(SocketAddr),
         IncomingConnection(SocketAddr),
         OutgoingConnection(SocketAddr),
         Disconnected,
@@ -163,7 +164,7 @@ pub mod sniffer_event {
                 std::process::exit(1);
             }
             let data = &slice[32..(32 + size)];
-            if let DataTag::Accept | DataTag::Connect = tag {
+            if let DataTag::Accept | DataTag::Connect | DataTag::Bind = tag {
                 let address_family = u16::from_ne_bytes(data[0..2].try_into().unwrap());
                 let port = u16::from_be_bytes(data[2..4].try_into().unwrap());
                 let addr = match address_family {
@@ -179,7 +180,9 @@ pub mod sniffer_event {
                 };
                 match tag {
                     DataTag::Accept => ret(SnifferEventVariant::IncomingConnection(addr)),
-                    _ => ret(SnifferEventVariant::OutgoingConnection(addr)),
+                    DataTag::Connect => ret(SnifferEventVariant::OutgoingConnection(addr)),
+                    DataTag::Bind => ret(SnifferEventVariant::Bind(addr)),
+                    _ => unreachable!(),
                 }
             } else if let DataTag::Read = tag {
                 ret(SnifferEventVariant::IncomingData(data.to_vec()))

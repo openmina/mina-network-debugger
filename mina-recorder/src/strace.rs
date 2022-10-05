@@ -9,6 +9,7 @@ use crate::{database::DbStrace, custom_coding};
 #[derive(Absorb, Emit, Serialize)]
 pub struct StraceLine {
     pub call: String,
+    pub pid: u32,
     pub args: Vec<String>,
     pub result: Option<String>,
     #[custom_absorb(custom_coding::duration_absorb)]
@@ -17,7 +18,7 @@ pub struct StraceLine {
 }
 
 pub fn process(mut source: Child, db: DbStrace, rx: mpsc::Receiver<()>) {
-    let read = source.stdout.as_mut().unwrap();
+    let read = source.stderr.as_mut().unwrap();
     let it = structure::iter_finished(raw::parse(read));
     for x in it {
         if rx.try_recv().is_ok() {
@@ -25,7 +26,7 @@ pub fn process(mut source: Child, db: DbStrace, rx: mpsc::Receiver<()>) {
         }
         let syscall = match x {
             Err(err) => {
-                log::error!("uhnable to parse strace output: {err}");
+                log::debug!("{err}");
                 continue;
             }
             Ok(v) => v,
@@ -37,7 +38,8 @@ pub fn process(mut source: Child, db: DbStrace, rx: mpsc::Receiver<()>) {
                     raw::CallResult::Unknown => None,
                 };
                 let start = syscall.start.unwrap_or_default();
-                if let Err(err) = db.add_strace_line(StraceLine { call, args, result, start }) {
+                let pid = syscall.pid.unwrap_or(u32::MAX);
+                if let Err(err) = db.add_strace_line(StraceLine { pid, call, args, result, start }) {
                     log::error!("database error when writing strace {err}");
                 }
             }

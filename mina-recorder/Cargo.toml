@@ -19,7 +19,7 @@ hex = { version = "0.4.3" }
 time = { version = "0.3.11", features = ["formatting"] }
 unsigned-varint = { version = "0.7.1" }
 multiaddr = { version = "0.14.0" }
-strace-parse = { version = "0.4.0" }
+strace-parse = { git = "https://github.com/name-placeholder/strace-parse.rs.git" }
 
 prost = { version = "0.11.0" }
 mina-p2p-messages = { git = "https://github.com/name-placeholder/mina-p2p-messages-rs.git", rev = "c53a65ccaea9a7880c075dc1a2494e66737977d1" }

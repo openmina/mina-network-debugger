@@ -2073,8 +2073,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "strace-parse"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3a0fe6df70ee314de365d9b1483fea795fa9f4ed8daabdc12fcb6f970ef9eda"
+source = "git+https://github.com/name-placeholder/strace-parse.rs.git#7b9a9d62f4b8271e898ce40dc412aed562875f5d"
 dependencies = [
  "error-chain",
  "nom 5.1.2",

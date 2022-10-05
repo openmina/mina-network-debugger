@@ -673,7 +673,6 @@ fn main() {
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     let mut strace_running = None;
-    let mut cnt = 0;
     while !terminating.load(Ordering::Relaxed) {
         for event in source.by_ref() {
             if event.ts0 + 1_000_000_000 < last_ts {
@@ -691,13 +690,17 @@ fn main() {
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
-                    cnt += 1;
-                    if strace && strace_running.is_none() && cnt > 1 {
+                    log::info!("exec {alias} pid: {}", event.pid);
+                    recorder.on_alias(event.pid, alias);
+                }
+                SnifferEventVariant::Bind(addr) => {
+                    if strace && strace_running.is_none() && addr.port() == 8302 {
                         if let Some(db_strace) = db_strace.take() {
                             let child = Command::new("strace")
-                                .args(&["-f", "-e", "trace=network", "-s", "8192", "-tt", "-p"])
+                                .args(&["-f", "-tt", "-p"])
                                 .arg(event.pid.to_string())
                                 .stdout(Stdio::piped())
+                                .stderr(Stdio::piped())
                                 .spawn()
                                 .expect("cannot run strace");
                             let (tx, rx) = mpsc::channel();
@@ -707,8 +710,6 @@ fn main() {
                             strace_running = Some((handle, tx));
                         }
                     }
-                    log::info!("exec {alias} pid: {}", event.pid);
-                    recorder.on_alias(event.pid, alias);
                 }
                 SnifferEventVariant::Error(_, _) => (),
                 SnifferEventVariant::OutgoingConnection(addr) => {
