@@ -93,6 +93,7 @@ impl DbStrace {
     pub fn add_strace_line(&self, line: StraceLine) -> Result<(), DbError> {
         let id = self.strace_cnt.fetch_add(1, SeqCst);
         self.inner.put_strace(id, line.emit(vec![]))?;
+        self.inner.set_total::<{ DbCore::STRACE_CNT }>(id)?;
 
         Ok(())
     }

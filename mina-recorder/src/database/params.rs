@@ -1,4 +1,4 @@
-use std::{time::SystemTime, net::SocketAddr, str::FromStr};
+use std::{net::SocketAddr, str::FromStr};
 
 use serde::Deserialize;
 
@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::decode::MessageType;
 
-use super::types::{ConnectionId, StreamFullId, StreamKind};
+use super::types::{ConnectionId, StreamFullId, StreamKind, Timestamp};
 
 #[derive(Debug, Error)]
 pub enum ParamsValidateError {
@@ -181,15 +181,12 @@ impl ValidParams {
     pub fn limit<'a, It, T>(&self, it: It) -> impl Iterator<Item = (u64, T)> + 'a
     where
         It: Iterator<Item = (u64, T)> + 'a,
-        T: AsRef<SystemTime>,
+        T: Timestamp,
     {
         let limit_timestamp = self.limit_timestamp;
         it.take_while(move |(_, msg)| {
             if let Some(limit_timestamp) = limit_timestamp {
-                let d = msg
-                    .as_ref()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .expect("after unix epoch");
+                let d = msg.timestamp();
                 d.as_secs() < limit_timestamp
             } else {
                 true

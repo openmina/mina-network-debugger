@@ -87,6 +87,7 @@ fn strace(
     warp::path!("strace").and(warp::query::query()).map(
         move |Params { id, timestamp, limit }| -> WithStatus<Json> {
             let v = db.fetch_strace(id.unwrap_or_default(), timestamp.unwrap_or_default())
+                .unwrap()
                 .take(limit.unwrap_or(100));
             reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
         },
@@ -156,13 +157,14 @@ where
     let _guard = rt.enter();
     let (tx, rx) = oneshot::channel();
 
-    let db = match DbFacade::open(path) {
+    let db = match DbFacade::open(&path) {
         Ok(v) => v,
         Err(err) => {
             log::error!("fatal: {err}");
             process::exit(1);
         }
     };
+    log::info!("using db {}", path.as_ref().display());
     let addr = ([0, 0, 0, 0], port);
     let routes = routes(db.core());
     let shutdown = async move {

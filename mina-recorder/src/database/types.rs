@@ -1,10 +1,10 @@
-use std::{time::SystemTime, fmt, str::FromStr, net::SocketAddr};
+use std::{time::{SystemTime, Duration}, fmt, str::FromStr, net::SocketAddr};
 
 use radiation::{Absorb, Emit};
 
 use serde::{Serialize};
 
-use crate::{event::ConnectionInfo, custom_coding};
+use crate::{event::ConnectionInfo, custom_coding, strace::StraceLine};
 
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId(pub u64);
@@ -197,12 +197,6 @@ pub struct Message {
     pub size: u32,
 }
 
-impl AsRef<SystemTime> for Message {
-    fn as_ref(&self) -> &SystemTime {
-        &self.timestamp
-    }
-}
-
 #[derive(Serialize)]
 pub struct FullMessage {
     pub connection_id: ConnectionId,
@@ -216,9 +210,25 @@ pub struct FullMessage {
     pub size: u32,
 }
 
-impl AsRef<SystemTime> for FullMessage {
-    fn as_ref(&self) -> &SystemTime {
-        &self.timestamp
+pub trait Timestamp {
+    fn timestamp(&self) -> Duration;
+}
+
+impl Timestamp for Message {
+    fn timestamp(&self) -> Duration {
+        self.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap()
+    }
+}
+
+impl Timestamp for FullMessage {
+    fn timestamp(&self) -> Duration {
+        self.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap()
+    }
+}
+
+impl Timestamp for StraceLine {
+    fn timestamp(&self) -> Duration {
+        self.start
     }
 }
 

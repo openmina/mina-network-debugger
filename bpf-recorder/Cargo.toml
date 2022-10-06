@@ -41,7 +41,7 @@ kern = ["ebpf-kern/macros", "typenum"]
 user = [
     "ebpf-user/macros",
     "sudo",
-    "ctrlc",
+    "ctrlc/termination",
     "log",
     "env_logger",
     "hex",

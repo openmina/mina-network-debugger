@@ -1,6 +1,6 @@
 use std::{
     path::{PathBuf, Path},
-    time::{SystemTime, Duration},
+    time::Duration,
     cmp::Ordering,
     sync::{Mutex, Arc},
     collections::BTreeMap,
@@ -16,7 +16,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use super::{
-    types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId},
+    types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId, Timestamp},
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter},
     index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx},
     sorted_intersect::sorted_intersect,
@@ -386,7 +386,7 @@ impl DbCore {
         timestamp: u64,
     ) -> Result<u64, DbError>
     where
-        T: for<'pa> AbsorbExt<'pa> + AsRef<SystemTime>,
+        T: for<'pa> AbsorbExt<'pa> + Timestamp,
     {
         let timestamp = Duration::from_secs(timestamp);
         if total == 0 {
@@ -396,13 +396,9 @@ impl DbCore {
         let mut r = pos;
         while r > 0 {
             let v = self.get::<T, _>(cf, pos.to_be_bytes())?;
-            let this_timestamp = v
-                .as_ref()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("after unix epoch");
 
             r /= 2;
-            match this_timestamp.cmp(&timestamp) {
+            match v.timestamp().cmp(&timestamp) {
                 Ordering::Less => pos += r,
                 Ordering::Equal => r = 0,
                 Ordering::Greater => pos -= r,
@@ -750,12 +746,20 @@ impl DbCore {
         Ok(hex::encode(&buf))
     }
 
-    pub fn fetch_strace(&self, id: u64, _timestamp: u64) -> impl Iterator<Item = (u64, StraceLine)> + '_ {
+    pub fn fetch_strace(&self, id: u64, timestamp: u64) -> Result<impl Iterator<Item = (u64, StraceLine)> + '_, DbError> {
         use rocksdb::{IteratorMode, Direction};
 
+        let id = if timestamp == 0 {
+            id
+        } else {
+            let total = self.total::<{ Self::STRACE_CNT }>().unwrap_or(0);
+            self.search_timestamp::<StraceLine>(self.strace(), total, timestamp)?
+        };
+
         let id = id.to_be_bytes();
-        self.inner.iterator_cf(self.strace(), IteratorMode::From(&id, Direction::Forward))
-            .filter_map(Self::decode::<StraceLine>)
+        let it = self.inner.iterator_cf(self.strace(), IteratorMode::From(&id, Direction::Forward))
+            .filter_map(Self::decode::<StraceLine>);
+        Ok(it)
     }
 }
 
