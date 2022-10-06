@@ -697,6 +697,7 @@ fn main() {
                     if strace && strace_running.is_none() && addr.port() == 8302 {
                         if let Some(db_strace) = db_strace.take() {
                             let child = Command::new("strace")
+                                .env("TZ", "UTC")
                                 .args(&["-f", "-tt", "-p"])
                                 .arg(event.pid.to_string())
                                 .stdout(Stdio::piped())
