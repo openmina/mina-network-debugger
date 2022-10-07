@@ -20,6 +20,7 @@ pub struct RingBuffer {
     consumer_pos_value: usize,
     // pointers to shared memory
     observer: RingBufferObserver,
+    previous_distance: usize,
 }
 
 impl AsRawFd for RingBuffer {
@@ -128,6 +129,7 @@ impl RingBuffer {
                 consumer_pos,
                 producer_pos,
             },
+            previous_distance: 0,
         })
     }
 
@@ -164,6 +166,14 @@ impl RingBuffer {
             if distance > self.mask + 1 {
                 return Err(Error::Overflown);
             }
+            if distance > self.previous_distance {
+                let percent = distance * 100 / (self.mask + 1);
+                let previous_percent = self.previous_distance * 100 / (self.mask + 1);
+                if percent > previous_percent && percent > 50 {
+                    log::warn!("buffer is {percent}% full");
+                }
+            }
+            self.previous_distance = distance;
             // the first 8 bytes of the memory slice is a header (length and flags)
             let (header, data_offset) = {
                 let masked_pos = self.consumer_pos_value & self.mask;
