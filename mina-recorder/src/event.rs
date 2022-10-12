@@ -106,7 +106,7 @@ impl fmt::Display for ChunkHeader {
 
         write!(
             f,
-            "{hour:02}:{minute:02}:{second:02}:{nano:09} {status:?} {incoming}"
+            "{hour:02}:{minute:02}:{second:02}.{nano:09} {status:?} {incoming}"
         )
     }
 }

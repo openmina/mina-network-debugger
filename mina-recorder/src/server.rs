@@ -100,6 +100,31 @@ fn strace(
         })
 }
 
+fn stats(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    pub struct Params {
+        // the start of the list
+        timestamp: Option<u64>,
+        // how many records to read, default is 100
+        limit: Option<usize>,
+    }
+
+    warp::path!("stats")
+        .and(warp::query::query())
+        .map(move |params| -> WithStatus<Json> {
+            let Params { timestamp, limit } = params;
+            let v = db
+                .fetch_stats(timestamp.unwrap_or_default())
+                .unwrap()
+                .take(limit.unwrap_or(100));
+            reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
+        })
+}
+
 fn version(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("version")
@@ -132,7 +157,8 @@ fn routes(
                 .or(message(db.clone()))
                 .or(message_hex(db.clone()))
                 .or(messages(db.clone()))
-                .or(strace(db))
+                .or(strace(db.clone()))
+                .or(stats(db))
                 .or(version().or(openapi())),
         )
         .with(with::header("Content-Type", "application/json"))

@@ -14,6 +14,7 @@ use crate::{
     event::{ConnectionInfo, ChunkHeader, EncryptionStatus},
     decode::MessageType,
     strace::StraceLine,
+    custom_coding,
 };
 
 use super::{
@@ -41,6 +42,13 @@ impl DbFacade {
             rnd_cnt: AtomicU64::new(inner.total::<{ DbCore::RANDOMNESS_CNT }>()?),
             inner,
         })
+    }
+
+    pub fn stats(&self, time: SystemTime, remaining: usize) -> Result<(), DbError> {
+        let mut b = Vec::with_capacity(12);
+        custom_coding::time_emit(&time, &mut b);
+
+        self.inner.put_stats(b, remaining as u32)
     }
 
     pub fn strace(&self) -> Result<DbStrace, DbError> {

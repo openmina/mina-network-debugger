@@ -14,6 +14,12 @@ where
     fn from_rb_slice(slice: &[u8]) -> Result<Option<Self>, Self::Error>;
 }
 
+pub enum Output<D> {
+    Value(D),
+    /// How many bytes are remaining in the ring buffer
+    Remaining(usize),
+}
+
 pub struct RingBuffer {
     fd: i32,
     mask: usize,
@@ -133,16 +139,15 @@ impl RingBuffer {
         })
     }
 
-    fn read_value<D>(&mut self) -> Result<D, Error>
+    fn read_value<D>(&mut self) -> Result<(Option<D>, usize), Error>
     where
         D: RingBufferData,
     {
-        loop {
-            if let Some(v) = self.read_slice()? {
-                self.read_finish();
-                break Ok(v);
-            }
+        let (v, remaining) = self.read_slice()?;
+        if v.is_some() {
+            self.read_finish();
         }
+        Ok((v, remaining))
     }
 
     fn read_finish(&mut self) {
@@ -151,7 +156,7 @@ impl RingBuffer {
             .store(self.consumer_pos_value, Ordering::Release);
     }
 
-    fn read_slice<D>(&mut self) -> Result<Option<D>, Error>
+    fn read_slice<D>(&mut self) -> Result<(Option<D>, usize), Error>
     where
         D: RingBufferData,
     {
@@ -215,13 +220,13 @@ impl RingBuffer {
                 match D::from_rb_slice(s) {
                     Err(err) => {
                         log::error!("rb parse data: {:?}", err);
-                        Ok(None)
+                        Ok((None, distance))
                     }
-                    Ok(None) => Ok(None),
-                    Ok(Some(value)) => Ok(Some(value)),
+                    Ok(None) => Ok((None, distance)),
+                    Ok(Some(value)) => Ok((Some(value), distance)),
                 }
             } else {
-                Ok(None)
+                Ok((None, distance))
             }
         } else {
             Err(Error::WouldBlock)
@@ -255,7 +260,7 @@ impl RingBuffer {
         }
     }
 
-    pub fn read_blocking<D>(&mut self, terminating: &AtomicBool) -> io::Result<Option<D>>
+    pub fn read_blocking<D>(&mut self, terminating: &AtomicBool) -> io::Result<(Option<D>, usize)>
     where
         D: RingBufferData,
     {
@@ -268,13 +273,13 @@ impl RingBuffer {
                 Err(Error::WouldBlock) => {
                     self.wait(terminating);
                     if terminating.load(Ordering::Relaxed) {
-                        break Ok(None);
+                        break Ok((None, 0));
                     }
                 }
                 Err(Error::Overflown) => {
                     return Err(io::Error::new(io::ErrorKind::Other, "overflow"));
                 }
-                Ok(value) => return Ok(Some(value)),
+                Ok(value) => return Ok(value),
             }
             tries += 1;
         }

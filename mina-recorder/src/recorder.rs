@@ -44,6 +44,12 @@ impl P2pRecorder {
         self.apps.insert(pid, alias);
     }
 
+    pub fn report_remaining(&mut self, remaining: usize, now: SystemTime) {
+        if let Err(err) = self.cx.db.stats(now, remaining) {
+            log::error!("{err}");
+        }
+    }
+
     pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata) {
         if let Some(tester) = &mut self.tester {
             tester.on_connect(incoming, metadata);

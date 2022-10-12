@@ -19,7 +19,7 @@ use thiserror::Error;
 use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-        Timestamp,
+        Timestamp, Time,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter},
     index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx},
@@ -127,11 +127,12 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 9] = [
+    const CFS: [&'static str; 10] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::RANDOMNESS,
         Self::STRACE,
+        Self::STATS,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
@@ -156,6 +157,8 @@ impl DbCore {
     const STRACE: &'static str = "strace";
 
     pub const STRACE_CNT: u8 = 3;
+
+    const STATS: &'static str = "stats";
 
     // indexes
 
@@ -189,11 +192,12 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[1], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[2], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], Default::default()),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(8)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], opts_with_prefix_extractor(16)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], Default::default()),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], opts_with_prefix_extractor(8)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(2)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(18)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(18)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -229,6 +233,10 @@ impl DbCore {
 
     fn strace(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::STRACE).expect("must exist")
+    }
+
+    fn stats(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::STATS).expect("must exist")
     }
 
     fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
@@ -324,13 +332,20 @@ impl DbCore {
         Ok(())
     }
 
+    pub fn put_stats(&self, time: Vec<u8>, bytes: u32) -> Result<(), DbError> {
+        self.inner.put_cf(self.stats(), time, bytes.to_be_bytes())?;
+
+        Ok(())
+    }
+
     #[allow(clippy::type_complexity)]
-    fn decode<T>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<(u64, T)>
+    fn decode<K, T>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<(K, T)>
     where
+        K: for<'pa> AbsorbExt<'pa> + std::fmt::Display,
         T: for<'pa> AbsorbExt<'pa>,
     {
         match item {
-            Ok((key, value)) => match (u64::absorb_ext(&key), T::absorb_ext(&value)) {
+            Ok((key, value)) => match (K::absorb_ext(&key), T::absorb_ext(&value)) {
                 (Ok(key), Ok(v)) => Some((key, v)),
                 (Ok(key), Err(err)) => {
                     log::error!("key {key}, err: {err}");
@@ -767,7 +782,22 @@ impl DbCore {
         let it = self
             .inner
             .iterator_cf(self.strace(), IteratorMode::From(&id, Direction::Forward))
-            .filter_map(Self::decode::<StraceLine>);
+            .filter_map(Self::decode);
+        Ok(it)
+    }
+
+    pub fn fetch_stats(
+        &self,
+        timestamp: u64,
+    ) -> Result<impl Iterator<Item = (Time, u32)> + '_, DbError> {
+        use rocksdb::{IteratorMode, Direction};
+
+        let mut id = [0; 12];
+        id[..8].clone_from_slice(&timestamp.to_be_bytes());
+        let it = self
+            .inner
+            .iterator_cf(self.stats(), IteratorMode::From(&id, Direction::Forward))
+            .filter_map(Self::decode);
         Ok(it)
     }
 }

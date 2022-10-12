@@ -644,20 +644,20 @@ fn main() {
     }
 
     impl Iterator for Source {
-        type Item = SnifferEvent;
+        type Item = (Option<SnifferEvent>, usize);
 
         fn next(&mut self) -> Option<Self::Item> {
             self.rb
                 .read_blocking::<SnifferEvent>(&self.terminating)
                 .ok()
-                .and_then(|x| x)
         }
     }
 
     let mut source = if dry {
-        Box::new(std::iter::empty()) as Box<dyn Iterator<Item = SnifferEvent>>
+        Box::new(std::iter::empty()) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>
     } else {
-        Box::new(Source::initialize(terminating.clone())) as Box<dyn Iterator<Item = SnifferEvent>>
+        Box::new(Source::initialize(terminating.clone()))
+            as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>
     };
 
     // my local sandbox
@@ -676,14 +676,22 @@ fn main() {
     let mut last_ts = 0;
     let mut strace_running = None;
     while !terminating.load(Ordering::Relaxed) {
-        for event in source.by_ref() {
+        for (event, remaining) in source.by_ref() {
+            let now = SystemTime::now();
+
+            recorder.report_remaining(remaining, now);
+
+            let event = match event {
+                Some(v) => v,
+                None => continue,
+            };
+
             if event.ts0 + 1_000_000_000 < last_ts {
                 log::error!("unordered {} < {last_ts}", event.ts0);
             }
             last_ts = event.ts0;
             let time = match &origin {
                 None => {
-                    let now = SystemTime::now();
                     origin = Some(now - Duration::from_nanos(event.ts0));
                     now
                 }

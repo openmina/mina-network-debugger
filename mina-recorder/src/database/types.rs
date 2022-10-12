@@ -303,3 +303,25 @@ mod implementations {
         }
     }
 }
+
+#[derive(Absorb)]
+pub struct Time(#[custom_absorb(custom_coding::time_absorb)] SystemTime);
+
+impl fmt::Display for Time {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use time::OffsetDateTime;
+
+        let (hour, minute, second, nano) = OffsetDateTime::from(self.0).time().as_hms_nano();
+
+        write!(f, "{hour:02}:{minute:02}:{second:02}.{nano:09}")
+    }
+}
+
+impl Serialize for Time {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
