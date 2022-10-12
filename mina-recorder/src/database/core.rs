@@ -256,7 +256,7 @@ impl DbCore {
 
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
         self.inner
-            .put_cf(self.connections(), id.emit(vec![]), v.emit(vec![]))?;
+            .put_cf(self.connections(), id.chain(vec![]), v.chain(vec![]))?;
 
         Ok(())
     }
@@ -269,18 +269,18 @@ impl DbCore {
         tys: Vec<MessageType>,
     ) -> Result<(), DbError> {
         self.inner
-            .put_cf(self.messages(), id.emit(vec![]), v.emit(vec![]))?;
+            .put_cf(self.messages(), id.0.to_be_bytes(), v.chain(vec![]))?;
         let index = AddressIdx {
             addr: *addr,
             id,
         };
-        self.inner.put_cf(self.addr_index(), index.emit(vec![]), vec![])?;
+        self.inner.put_cf(self.addr_index(), index.id.0.to_be_bytes(), vec![])?;
         let index = ConnectionIdx {
             connection_id: v.connection_id,
             id,
         };
         self.inner
-            .put_cf(self.connection_id_index(), index.emit(vec![]), vec![])?;
+            .put_cf(self.connection_id_index(), index.id.0.to_be_bytes(), vec![])?;
         let index = StreamIdx {
             stream_full_id: StreamFullId {
                 cn: v.connection_id,
@@ -289,13 +289,13 @@ impl DbCore {
             id,
         };
         self.inner
-            .put_cf(self.stream_id_index(), index.emit(vec![]), vec![])?;
+            .put_cf(self.stream_id_index(), index.id.0.to_be_bytes(), vec![])?;
         let index = StreamByKindIdx {
             stream_kind: v.stream_kind,
             id,
         };
         self.inner
-            .put_cf(self.stream_kind_index(), index.emit(vec![]), vec![])?;
+            .put_cf(self.stream_kind_index(), index.chain(vec![]), vec![])?;
         for ty in tys {
             if matches!(&ty, &MessageType::HandshakePayload) {
                 // peer id index
@@ -303,7 +303,7 @@ impl DbCore {
 
             let index = MessageKindIdx { ty, id };
             self.inner
-                .put_cf(self.message_kind_index(), index.emit(vec![]), vec![])?;
+                .put_cf(self.message_kind_index(), index.chain(vec![]), vec![])?;
         }
         Ok(())
     }
@@ -415,7 +415,7 @@ impl DbCore {
     }
 
     pub fn set_total<const K: u8>(&self, v: u64) -> Result<(), DbError> {
-        Ok(self.inner.put([K], v.emit(vec![]))?)
+        Ok(self.inner.put([K], v.chain(vec![]))?)
     }
 
     pub fn fetch_connection(&self, id: u64) -> Result<Connection, DbError> {
@@ -602,7 +602,7 @@ impl DbCore {
                         addr,
                         id: MessageId(id),
                     };
-                    let id = id.emit(vec![]);
+                    let id = id.id.0.to_be_bytes();
                     let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
                     let it = self
@@ -619,7 +619,7 @@ impl DbCore {
                         connection_id,
                         id: MessageId(id),
                     };
-                    let id = id.emit(vec![]);
+                    let id = id.id.0.to_be_bytes();
                     let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
                     let it = self
@@ -636,7 +636,7 @@ impl DbCore {
                         stream_full_id,
                         id: MessageId(id),
                     };
-                    let id = id.emit(vec![]);
+                    let id = id.id.0.to_be_bytes();
                     let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
                     let it = self
@@ -657,7 +657,7 @@ impl DbCore {
                             stream_kind,
                             id: MessageId(id),
                         };
-                        let id = id.emit(vec![]);
+                        let id = id.id.0.to_be_bytes();
                         let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
                         self.inner
@@ -679,7 +679,7 @@ impl DbCore {
                             ty: message_kind.clone(),
                             id: MessageId(id),
                         };
-                        let id = id.emit(vec![]);
+                        let id = id.id.0.to_be_bytes();
                         let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
 
                         let message_kind = message_kind.clone();

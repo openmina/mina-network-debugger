@@ -92,7 +92,7 @@ pub struct DbStrace {
 impl DbStrace {
     pub fn add_strace_line(&self, line: StraceLine) -> Result<(), DbError> {
         let id = self.strace_cnt.fetch_add(1, SeqCst);
-        self.inner.put_strace(id, line.emit(vec![]))?;
+        self.inner.put_strace(id, line.chain(vec![]))?;
         self.inner.set_total::<{ DbCore::STRACE_CNT }>(id)?;
 
         Ok(())
@@ -136,7 +136,7 @@ impl DbGroup {
         };
 
         let b = Vec::with_capacity(bytes.len() + ChunkHeader::SIZE);
-        let mut b = header.emit(b);
+        let mut b = header.chain(b);
         b.extend_from_slice(bytes);
 
         let sb = self.inner.get_raw_stream(self.id)?;

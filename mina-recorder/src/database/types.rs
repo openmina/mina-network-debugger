@@ -255,10 +255,10 @@ mod implementations {
 
     impl<W> Emit<W> for StreamKind
     where
-        W: Extend<u8>,
+        W: for<'a> Extend<&'a u8>,
     {
-        fn emit(&self, buffer: W) -> W {
-            (*self as u16).emit(buffer)
+        fn emit(&self, buffer: &mut W) {
+            (*self as u16).emit(buffer);
         }
     }
 
@@ -282,15 +282,15 @@ mod implementations {
 
     impl<W> Emit<W> for StreamId
     where
-        W: Extend<u8>,
+        W: for<'a> Extend<&'a u8>,
     {
-        fn emit(&self, buffer: W) -> W {
+        fn emit(&self, buffer: &mut W) {
             let d = match self {
                 StreamId::Handshake => i64::MIN,
                 StreamId::Forward(s) => *s as i64,
                 StreamId::Backward(s) => -((*s + 1) as i64),
             };
-            d.emit(buffer)
+            d.emit(buffer);
         }
     }
 }

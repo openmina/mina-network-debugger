@@ -20,15 +20,16 @@ pub fn addr_absorb(input: &[u8]) -> nom::IResult<&[u8], SocketAddr, ParseError<&
     })(input)
 }
 
-pub fn addr_emit<W>(value: &SocketAddr, buffer: W) -> W
+pub fn addr_emit<W>(value: &SocketAddr, buffer: &mut W)
 where
-    W: Extend<u8>,
+    W: for<'a> Extend<&'a u8>,
 {
     let ip = match value.ip() {
         IpAddr::V6(ip) => ip.octets(),
         IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
     };
-    value.port().emit(ip.emit(buffer))
+    ip.emit(buffer);
+    value.port().emit(buffer);
 }
 
 pub fn duration_absorb(input: &[u8]) -> nom::IResult<&[u8], Duration, ParseError<&[u8]>> {
@@ -38,25 +39,26 @@ pub fn duration_absorb(input: &[u8]) -> nom::IResult<&[u8], Duration, ParseError
     )(input)
 }
 
-pub fn duration_emit<W>(value: &Duration, buffer: W) -> W
+pub fn duration_emit<W>(value: &Duration, buffer: &mut W)
 where
-    W: Extend<u8>,
+    W: for<'a> Extend<&'a u8>,
 {
-    value.subsec_nanos().emit(value.as_secs().emit(buffer))
+    value.as_secs().emit(buffer);
+    value.subsec_nanos().emit(buffer);
 }
 
 pub fn time_absorb(input: &[u8]) -> nom::IResult<&[u8], SystemTime, ParseError<&[u8]>> {
     nom::combinator::map(duration_absorb, |d| SystemTime::UNIX_EPOCH + d)(input)
 }
 
-pub fn time_emit<W>(value: &SystemTime, buffer: W) -> W
+pub fn time_emit<W>(value: &SystemTime, buffer: &mut W)
 where
-    W: Extend<u8>,
+    W: for<'a> Extend<&'a u8>,
 {
     duration_emit(
         &value
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("after unix epoch"),
         buffer,
-    )
+    );
 }
