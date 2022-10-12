@@ -17,3 +17,5 @@ mod database;
 pub mod server;
 
 pub mod strace;
+
+mod stats;

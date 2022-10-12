@@ -148,7 +148,7 @@ where
                         Msg::First => (),
                         Msg::Second => {
                             self.decrypted += bytes.len();
-                            cx.decrypted += bytes.len();
+                            cx.stats.decrypted += bytes.len();
                             let stream = self.stream.get_or_insert_with(|| {
                                 db.add(StreamId::Handshake, StreamKind::Handshake)
                             });
@@ -156,7 +156,7 @@ where
                         }
                         Msg::Third => {
                             self.decrypted += bytes.len();
-                            cx.decrypted += bytes.len();
+                            cx.stats.decrypted += bytes.len();
                             self.stream
                                 .as_ref()
                                 .expect("must have stream at third message")
@@ -164,7 +164,7 @@ where
                         }
                         Msg::Other => {
                             self.decrypted += bytes.len();
-                            cx.decrypted += bytes.len();
+                            cx.stats.decrypted += bytes.len();
                             db.add_raw(EncryptionStatus::DecryptedNoise, id.incoming, id.metadata.time, bytes)?;
                             self.inner.on_data(id, bytes, cx, db)?;
                         }
@@ -227,14 +227,14 @@ pub enum NoiseError {
 
 impl<Inner> NoiseState<Inner> {
     fn on_error(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db, err: NoiseError) -> DbResult<()> {
-        cx.failed_to_decrypt += bytes.len();
+        cx.stats.failed_to_decrypt += bytes.len();
         self.failed_to_decrypt += bytes.len();
 
         log::error!(
             "{id} {}, total failed {}, total decrypted {}, {err}: {} {}...",
             db.id(),
-            cx.failed_to_decrypt,
-            cx.decrypted,
+            cx.stats.failed_to_decrypt,
+            cx.stats.decrypted,
             bytes.len(),
             hex::encode(&bytes[..32.min(bytes.len())])
         );
@@ -245,8 +245,8 @@ impl<Inner> NoiseState<Inner> {
         let mut b = b"mac_mismatch\x00\x00\x00\x00".to_vec();
         b.extend_from_slice(&self.decrypted.to_be_bytes());
         b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());
-        b.extend_from_slice(&cx.decrypted.to_be_bytes());
-        b.extend_from_slice(&cx.failed_to_decrypt.to_be_bytes());
+        b.extend_from_slice(&cx.stats.decrypted.to_be_bytes());
+        b.extend_from_slice(&cx.stats.failed_to_decrypt.to_be_bytes());
         stream.add(id.incoming, id.metadata.time, &b)?;
 
         Ok(())
