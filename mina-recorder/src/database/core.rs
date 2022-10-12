@@ -7,7 +7,8 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     os::unix::prelude::FileExt,
-    convert::TryInto, net::SocketAddr,
+    convert::TryInto,
+    net::SocketAddr,
 };
 
 use radiation::{AbsorbExt, nom, ParseError, Emit};
@@ -16,14 +17,18 @@ use serde::Serialize;
 use thiserror::Error;
 
 use super::{
-    types::{Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId, Timestamp},
+    types::{
+        Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
+        Timestamp,
+    },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter},
     index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx},
     sorted_intersect::sorted_intersect,
 };
 
 use crate::{
-    decode::{DecodeError, MessageType}, strace::StraceLine,
+    decode::{DecodeError, MessageType},
+    strace::StraceLine,
 };
 
 #[derive(Debug, Error)]
@@ -270,11 +275,9 @@ impl DbCore {
     ) -> Result<(), DbError> {
         self.inner
             .put_cf(self.messages(), id.0.to_be_bytes(), v.chain(vec![]))?;
-        let index = AddressIdx {
-            addr: *addr,
-            id,
-        };
-        self.inner.put_cf(self.addr_index(), index.id.0.to_be_bytes(), vec![])?;
+        let index = AddressIdx { addr: *addr, id };
+        self.inner
+            .put_cf(self.addr_index(), index.id.0.to_be_bytes(), vec![])?;
         let index = ConnectionIdx {
             connection_id: v.connection_id,
             id,
@@ -746,7 +749,11 @@ impl DbCore {
         Ok(hex::encode(&buf))
     }
 
-    pub fn fetch_strace(&self, id: u64, timestamp: u64) -> Result<impl Iterator<Item = (u64, StraceLine)> + '_, DbError> {
+    pub fn fetch_strace(
+        &self,
+        id: u64,
+        timestamp: u64,
+    ) -> Result<impl Iterator<Item = (u64, StraceLine)> + '_, DbError> {
         use rocksdb::{IteratorMode, Direction};
 
         let id = if timestamp == 0 {
@@ -757,7 +764,9 @@ impl DbCore {
         };
 
         let id = id.to_be_bytes();
-        let it = self.inner.iterator_cf(self.strace(), IteratorMode::From(&id, Direction::Forward))
+        let it = self
+            .inner
+            .iterator_cf(self.strace(), IteratorMode::From(&id, Direction::Forward))
             .filter_map(Self::decode::<StraceLine>);
         Ok(it)
     }
@@ -769,7 +778,8 @@ pub trait RandomnessDatabase {
 
 impl RandomnessDatabase for DbCore {
     fn iterate_randomness<'a>(&'a self) -> Box<dyn Iterator<Item = Box<[u8]>> + 'a> {
-        let it = self.inner
+        let it = self
+            .inner
             .iterator_cf(self.randomness(), rocksdb::IteratorMode::End)
             .filter_map(Result::ok)
             .map(|(_, v)| v);

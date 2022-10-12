@@ -165,11 +165,16 @@ where
                         Msg::Other => {
                             self.decrypted += bytes.len();
                             cx.stats.decrypted += bytes.len();
-                            db.add_raw(EncryptionStatus::DecryptedNoise, id.incoming, id.metadata.time, bytes)?;
+                            db.add_raw(
+                                EncryptionStatus::DecryptedNoise,
+                                id.incoming,
+                                id.metadata.time,
+                                bytes,
+                            )?;
                             self.inner.on_data(id, bytes, cx, db)?;
                         }
                     }
-                },
+                }
                 Err(err) => {
                     self.error = true;
                     self.on_error(id, bytes, cx, db, err)?;
@@ -226,7 +231,14 @@ pub enum NoiseError {
 }
 
 impl<Inner> NoiseState<Inner> {
-    fn on_error(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db, err: NoiseError) -> DbResult<()> {
+    fn on_error(
+        &mut self,
+        id: DirectedId,
+        bytes: &mut [u8],
+        cx: &mut Cx,
+        db: &Db,
+        err: NoiseError,
+    ) -> DbResult<()> {
         cx.stats.failed_to_decrypt += bytes.len();
         self.failed_to_decrypt += bytes.len();
 
@@ -239,9 +251,9 @@ impl<Inner> NoiseState<Inner> {
             hex::encode(&bytes[..32.min(bytes.len())])
         );
 
-        let stream = self.stream.get_or_insert_with(|| {
-            db.add(StreamId::Handshake, StreamKind::Handshake)
-        });
+        let stream = self
+            .stream
+            .get_or_insert_with(|| db.add(StreamId::Handshake, StreamKind::Handshake));
         let mut b = b"mac_mismatch\x00\x00\x00\x00".to_vec();
         b.extend_from_slice(&self.decrypted.to_be_bytes());
         b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());
@@ -278,7 +290,11 @@ impl<Inner> NoiseState<Inner> {
             Some(sk)
         }
 
-        fn try_dh(a: &MontgomeryPoint, b: &MontgomeryPoint, cx: &impl RandomnessDatabase) -> Option<[u8; 32]> {
+        fn try_dh(
+            a: &MontgomeryPoint,
+            b: &MontgomeryPoint,
+            cx: &impl RandomnessDatabase,
+        ) -> Option<[u8; 32]> {
             find_sk(a, cx)
                 .map(|sk| b * sk)
                 .or_else(|| find_sk(b, cx).map(|sk| a * sk))
@@ -328,9 +344,7 @@ impl<Inner> NoiseState<Inner> {
                         NoiseError::EphemeralSecretKeyNotFound { i, r_epk, i_epk }
                     })?)
                     .decrypt(&mut r_spk_bytes, &tag)
-                    .map_err(|_| {
-                        NoiseError::SecondMessageMacMismatch
-                    })?
+                    .map_err(|_| NoiseError::SecondMessageMacMismatch)?
                     .mix_shared_secret({
                         r_spk = MontgomeryPoint(r_spk_bytes);
                         try_dh(&r_spk, &i_epk, cx).ok_or_else(|| {
@@ -339,9 +353,7 @@ impl<Inner> NoiseState<Inner> {
                         })?
                     })
                     .decrypt(&mut bytes[82..(len - 16)], &payload_tag)
-                    .map_err(|_| {
-                        NoiseError::SecondMessagePayloadMacMismatch
-                    })?;
+                    .map_err(|_| NoiseError::SecondMessagePayloadMacMismatch)?;
 
                 range = 82..(len - 16);
                 Some(St::SecondMessage { st, r_epk })
@@ -360,9 +372,7 @@ impl<Inner> NoiseState<Inner> {
                     sender, receiver, ..
                 } = st
                     .decrypt(&mut i_spk_bytes, &tag)
-                    .map_err(|_| {
-                        NoiseError::ThirdMessageMacMismatch
-                    })?
+                    .map_err(|_| NoiseError::ThirdMessageMacMismatch)?
                     .mix_shared_secret({
                         i_spk = MontgomeryPoint(i_spk_bytes);
                         try_dh(&i_spk, &r_epk, cx).ok_or_else(|| {
@@ -371,9 +381,7 @@ impl<Inner> NoiseState<Inner> {
                         })?
                     })
                     .decrypt(&mut bytes[50..(len - 16)], &payload_tag)
-                    .map_err(|_| {
-                        NoiseError::ThirdMessagePayloadMacMismatch
-                    })?
+                    .map_err(|_| NoiseError::ThirdMessagePayloadMacMismatch)?
                     .finish::<1, true>();
 
                 range = 50..(len - 16);

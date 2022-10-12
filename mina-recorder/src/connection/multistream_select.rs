@@ -46,7 +46,7 @@ mod hl {
             };
 
             let mut output_ = Output::default();
-            if let Some(lp)= &this.done {
+            if let Some(lp) = &this.done {
                 output_.agreed = Some((lp.clone(), this.inner.end(bytes)));
                 return output_;
             }
@@ -57,7 +57,7 @@ mod hl {
                     Err(err) => {
                         output_.error = Some(err);
                         break;
-                    },
+                    }
                     Ok(ll::Output::String(s)) => {
                         output_.tokens.push(s.clone());
                         if s.starts_with("/multistream/") {
@@ -75,21 +75,19 @@ mod hl {
                             }
                         } else if s.starts_with("select") {
                             //
-                        } else {
-                            if !(this.simultaneous_connect && other.simultaneous_connect) {
-                                this.done = Some(s);
-                                break;
-                            }
+                        } else if !(this.simultaneous_connect && other.simultaneous_connect) {
+                            this.done = Some(s);
+                            break;
                         }
                     }
                     Ok(ll::Output::InitiatorToken) => {
                         this.simultaneous_connect = false;
                         output_.tokens.push("initiator".to_string())
-                    },
+                    }
                     Ok(ll::Output::ResponderToken) => {
                         this.simultaneous_connect = false;
                         output_.tokens.push("responder".to_string())
-                    },
+                    }
                 }
             }
 
@@ -151,13 +149,13 @@ mod ll {
                     if remaining.len() < length {
                         return None;
                     }
-    
+
                     let (msg, remaining) = remaining.split_at(length);
                     let result = str::from_utf8(msg)
                         .map(|s| s.trim_end_matches('\n').to_string())
                         .map(Output::String)
                         .map_err(|err| (err, msg.to_vec()));
-    
+
                     (result, remaining.to_vec())
                 };
                 self.acc = new;

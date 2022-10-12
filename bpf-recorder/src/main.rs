@@ -537,7 +537,9 @@ fn main() {
         },
         time::{SystemTime, Duration},
         env,
-        path::PathBuf, process::{Command, Stdio}, thread,
+        path::PathBuf,
+        process::{Command, Stdio},
+        thread,
     };
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
@@ -570,7 +572,7 @@ fn main() {
     // builder.try_init().expect("cannot setup logging");
     env_logger::init();
 
-    let (db, callback, server_thread) = server::spawn(port, db_path.clone(), key_path, cert_path);
+    let (db, callback, server_thread) = server::spawn(port, db_path, key_path, cert_path);
     let mut db_strace = Some(db.strace().expect("cannot add strace db link"));
     let terminating = Arc::new(AtomicBool::new(dry));
     {
@@ -698,7 +700,7 @@ fn main() {
                         if let Some(db_strace) = db_strace.take() {
                             let child = Command::new("strace")
                                 .env("TZ", "UTC")
-                                .args(&["-f", "-tt", "-p"])
+                                .args(["-f", "-tt", "-p"])
                                 .arg(event.pid.to_string())
                                 .stdout(Stdio::piped())
                                 .stderr(Stdio::piped())

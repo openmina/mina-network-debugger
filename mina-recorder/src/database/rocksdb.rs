@@ -4,14 +4,16 @@ use std::{
     sync::{
         atomic::{AtomicU64, Ordering::SeqCst},
         Arc,
-    }, net::SocketAddr,
+    },
+    net::SocketAddr,
 };
 
 use radiation::Emit;
 
 use crate::{
     event::{ConnectionInfo, ChunkHeader, EncryptionStatus},
-    decode::MessageType, strace::StraceLine,
+    decode::MessageType,
+    strace::StraceLine,
 };
 
 use super::{

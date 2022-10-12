@@ -1,4 +1,9 @@
-use std::{time::{SystemTime, Duration}, fmt, str::FromStr, net::SocketAddr};
+use std::{
+    time::{SystemTime, Duration},
+    fmt,
+    str::FromStr,
+    net::SocketAddr,
+};
 
 use radiation::{Absorb, Emit};
 
@@ -216,13 +221,17 @@ pub trait Timestamp {
 
 impl Timestamp for Message {
     fn timestamp(&self) -> Duration {
-        self.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap()
+        self.timestamp
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
     }
 }
 
 impl Timestamp for FullMessage {
     fn timestamp(&self) -> Duration {
-        self.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap()
+        self.timestamp
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
     }
 }
 

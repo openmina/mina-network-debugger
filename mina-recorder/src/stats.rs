@@ -1,6 +1,5 @@
 use radiation::{Absorb, Emit};
 
-
 #[derive(Default, Absorb, Emit)]
 pub struct Stats {
     pub decrypted: usize,

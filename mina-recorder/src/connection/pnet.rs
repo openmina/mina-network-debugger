@@ -65,11 +65,20 @@ where
         db.add_raw(EncryptionStatus::Raw, id.incoming, id.metadata.time, bytes)?;
         if let Some(cipher) = cipher {
             cipher.apply_keystream(bytes);
-            db.add_raw(EncryptionStatus::DecryptedPnet, id.incoming, id.metadata.time, bytes)?;
+            db.add_raw(
+                EncryptionStatus::DecryptedPnet,
+                id.incoming,
+                id.metadata.time,
+                bytes,
+            )?;
             self.inner.on_data(id, bytes, cx, db)?;
         } else if bytes.len() != 24 {
             self.skip = true;
-            log::warn!("{id} {} skip connection, bytes: {}", db.id(), hex::encode(bytes));
+            log::warn!(
+                "{id} {} skip connection, bytes: {}",
+                db.id(),
+                hex::encode(bytes)
+            );
         } else {
             *cipher = Some(XSalsa20::new(
                 &self.shared_secret,

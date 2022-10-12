@@ -50,11 +50,19 @@ impl P2pRecorder {
             return;
         }
         let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
-        let id = DirectedId { metadata, alias, incoming };
-        match self.cx.db.add(id.metadata.id.clone(), incoming, id.metadata.time) {
+        let id = DirectedId {
+            metadata,
+            alias,
+            incoming,
+        };
+        match self
+            .cx
+            .db
+            .add(id.metadata.id.clone(), incoming, id.metadata.time)
+        {
             Ok(group) => {
                 log::info!("{id} {} new connection", group.id());
-        
+
                 self.cns
                     .insert(id.metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
             }
@@ -71,7 +79,11 @@ impl P2pRecorder {
         }
         let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
         let incoming = false; // warning, we really don't know at this point
-        let id = DirectedId { metadata, alias, incoming };
+        let id = DirectedId {
+            metadata,
+            alias,
+            incoming,
+        };
         if let Some((_, group)) = self.cns.remove(&id.metadata.id) {
             log::info!("{id} {} disconnect", group.id());
         }

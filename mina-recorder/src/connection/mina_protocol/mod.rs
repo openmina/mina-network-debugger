@@ -36,7 +36,7 @@ impl DynamicProtocol for State {
 
 impl HandleData for State {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx, db: &Db) -> DbResult<()> {
         let stream = self
             .stream
             .get_or_insert_with(|| db.add(self.stream_id, self.kind));
@@ -87,7 +87,7 @@ impl HandleData for State {
 
             let rest = &mut s.get_mut()[(8 + len)..];
             if !rest.is_empty() {
-                self.on_data(id, rest, cx, db)
+                self.on_data(id, rest, _cx, db)
             } else {
                 Ok(())
             }

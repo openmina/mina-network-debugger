@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 
 fn main() {
-    use std::{env, fs::File, io::{self, BufRead}};
+    use std::{
+        env,
+        fs::File,
+        io::{self, BufRead},
+    };
 
     let filename = env::args().nth(1).unwrap();
     let file = File::open(filename).unwrap();
@@ -10,8 +14,8 @@ fn main() {
         let line = line.unwrap();
         if let Some(word) = line.split_whitespace().nth(2) {
             if let Some(word) = word.split('(').next() {
-                const ALPHABET: &'static str = "abcdefghijklmnopqrstuvwxyz_";
-                if ALPHABET.chars().find(|c| *c == word.chars().nth(0).unwrap()).is_some() {
+                const ALPHABET: &str = "abcdefghijklmnopqrstuvwxyz_";
+                if ALPHABET.chars().any(|c| c == word.chars().next().unwrap()) {
                     *counters.entry(word.to_owned()).or_insert_with(|| 0usize) += 1;
                 }
             }

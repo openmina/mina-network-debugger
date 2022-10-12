@@ -43,7 +43,14 @@ pub fn process(mut source: Child, db: DbStrace, rx: mpsc::Receiver<()>) {
                 };
                 let start = syscall.start.unwrap_or_default();
                 let pid = syscall.pid.unwrap_or(u32::MAX);
-                if let Err(err) = db.add_strace_line(StraceLine { pid, call, args, result, start }) {
+                let line = StraceLine {
+                    pid,
+                    call,
+                    args,
+                    result,
+                    start,
+                };
+                if let Err(err) = db.add_strace_line(line) {
                     log::error!("database error when writing strace {err}");
                 }
             }

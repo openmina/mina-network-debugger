@@ -84,14 +84,20 @@ fn strace(
         limit: Option<usize>,
     }
 
-    warp::path!("strace").and(warp::query::query()).map(
-        move |Params { id, timestamp, limit }| -> WithStatus<Json> {
-            let v = db.fetch_strace(id.unwrap_or_default(), timestamp.unwrap_or_default())
+    warp::path!("strace")
+        .and(warp::query::query())
+        .map(move |params| -> WithStatus<Json> {
+            let Params {
+                id,
+                timestamp,
+                limit,
+            } = params;
+            let v = db
+                .fetch_strace(id.unwrap_or_default(), timestamp.unwrap_or_default())
                 .unwrap()
                 .take(limit.unwrap_or(100));
             reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        },
-    )
+        })
 }
 
 fn version(
@@ -117,7 +123,7 @@ fn openapi(
 
 fn routes(
     db: DbCore,
-) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone + Sync + Send + 'static {
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
 
     warp::get()
@@ -179,8 +185,7 @@ where
             .bind_with_graceful_shutdown(addr, shutdown);
         thread::spawn(move || rt.block_on(server))
     } else {
-        let (_, server) = warp::serve(routes)
-            .bind_with_graceful_shutdown(addr, shutdown);
+        let (_, server) = warp::serve(routes).bind_with_graceful_shutdown(addr, shutdown);
         thread::spawn(move || rt.block_on(server))
     };
     let callback = move || tx.send(()).expect("corresponding receiver should exist");

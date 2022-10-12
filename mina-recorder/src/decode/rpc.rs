@@ -2,8 +2,9 @@ use std::io::{Cursor, Read};
 
 use serde::Serialize;
 use mina_p2p_messages::{
-    JSONifyPayloadRegistry,
-    utils, rpc_kernel::{QueryHeader, JSONinifyError}, JSONinifyPayloadReader,
+    JSONifyPayloadRegistry, utils,
+    rpc_kernel::{QueryHeader, JSONinifyError},
+    JSONinifyPayloadReader,
 };
 use binprot::{BinProtRead, Nat0};
 
