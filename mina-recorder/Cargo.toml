@@ -44,3 +44,5 @@ warp = { version = "0.3.2", features = ["tls"] }
 
 libp2p-core = { version = "*" }
 # ed25519-dalek = { version = "*" }
+
+pete = { version = "0.9.0" }
