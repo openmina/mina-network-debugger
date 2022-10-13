@@ -109,7 +109,7 @@ where
                     log::warn!("{id}, new stream {name}, but already exist");
                 }
                 let b = (stream_id.i << 3).to_be_bytes();
-                db_stream.add(id.incoming, id.metadata.time, &b)?;
+                db_stream.add(&id, &b)?;
             }
             Tag::Msg => match (self.inners.get_mut(&stream_id), id.incoming) {
                 (Some(Status::Duplex(stream)), _)
@@ -152,7 +152,7 @@ where
                     3
                 };
                 let b = ((stream_id.i << 3) + header).to_be_bytes();
-                db_stream.add(id.incoming, id.metadata.time, &b)?;
+                db_stream.add(&id, &b)?;
             }
             Tag::Reset => {
                 log::debug!(
@@ -167,7 +167,7 @@ where
                     5
                 };
                 let b = ((stream_id.i << 3) + header).to_be_bytes();
-                db_stream.add(id.incoming, id.metadata.time, &b)?;
+                db_stream.add(&id, &b)?;
             }
         };
 

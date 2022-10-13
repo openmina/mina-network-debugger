@@ -44,13 +44,7 @@ impl P2pRecorder {
         self.apps.insert(pid, alias);
     }
 
-    pub fn report_remaining(&mut self, remaining: usize, now: SystemTime) {
-        if let Err(err) = self.cx.db.stats(now, remaining) {
-            log::error!("{err}");
-        }
-    }
-
-    pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata) {
+    pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata, buffered: usize) {
         if let Some(tester) = &mut self.tester {
             tester.on_connect(incoming, metadata);
             return;
@@ -60,6 +54,7 @@ impl P2pRecorder {
             metadata,
             alias,
             incoming,
+            buffered,
         };
         match self
             .cx
@@ -78,7 +73,7 @@ impl P2pRecorder {
         }
     }
 
-    pub fn on_disconnect(&mut self, metadata: EventMetadata) {
+    pub fn on_disconnect(&mut self, metadata: EventMetadata, buffered: usize) {
         if let Some(tester) = &mut self.tester {
             tester.on_disconnect(metadata);
             return;
@@ -89,6 +84,7 @@ impl P2pRecorder {
             metadata,
             alias,
             incoming,
+            buffered,
         };
         if let Some((_, group)) = self.cns.remove(&id.metadata.id) {
             log::info!("{id} {} disconnect", group.id());
@@ -96,7 +92,7 @@ impl P2pRecorder {
     }
 
     #[rustfmt::skip]
-    pub fn on_data(&mut self, incoming: bool, metadata: EventMetadata, mut bytes: Vec<u8>) {
+    pub fn on_data(&mut self, incoming: bool, metadata: EventMetadata, buffered: usize, mut bytes: Vec<u8>) {
         if let Some(tester) = &mut self.tester {
             tester.on_data(incoming, metadata, bytes);
             return;
@@ -107,6 +103,7 @@ impl P2pRecorder {
                 metadata,
                 alias,
                 incoming,
+                buffered,
             };
             if let Err(err) = cn.on_data(id.clone(), &mut bytes, &mut self.cx, &*group) {
                 log::error!("{id}: {err}");

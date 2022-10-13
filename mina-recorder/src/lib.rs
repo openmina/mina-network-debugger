@@ -1,5 +1,5 @@
 mod event;
-pub use self::event::{EventMetadata, ConnectionInfo, ChunkHeader};
+pub use self::event::{EventMetadata, ConnectionInfo, ChunkHeader, DirectedId};
 
 mod recorder;
 pub use self::recorder::P2pRecorder;

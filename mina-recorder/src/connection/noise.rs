@@ -152,7 +152,7 @@ where
                             let stream = self.stream.get_or_insert_with(|| {
                                 db.add(StreamId::Handshake, StreamKind::Handshake)
                             });
-                            stream.add(id.incoming, id.metadata.time, bytes)?;
+                            stream.add(&id, bytes)?;
                         }
                         Msg::Third => {
                             self.decrypted += bytes.len();
@@ -160,7 +160,7 @@ where
                             self.stream
                                 .as_ref()
                                 .expect("must have stream at third message")
-                                .add(id.incoming, id.metadata.time, bytes)?;
+                                .add(&id, bytes)?;
                         }
                         Msg::Other => {
                             self.decrypted += bytes.len();
@@ -259,7 +259,7 @@ impl<Inner> NoiseState<Inner> {
         b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());
         b.extend_from_slice(&cx.stats.decrypted.to_be_bytes());
         b.extend_from_slice(&cx.stats.failed_to_decrypt.to_be_bytes());
-        stream.add(id.incoming, id.metadata.time, &b)?;
+        stream.add(&id, &b)?;
 
         Ok(())
     }

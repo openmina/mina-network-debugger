@@ -208,6 +208,7 @@ impl RingBuffer {
 
             // align the length by 8, and advance our position
             self.consumer_pos_value += HEADER_SIZE + (length + 7) / 8 * 8;
+            let distance = pr_pos - self.consumer_pos_value;
 
             if !discard {
                 // if not discard, yield the slice

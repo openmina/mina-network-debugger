@@ -31,6 +31,7 @@ pub struct DirectedId {
     pub metadata: EventMetadata,
     pub alias: String,
     pub incoming: bool,
+    pub buffered: usize,
 }
 
 impl DirectedId {
@@ -48,6 +49,7 @@ impl DirectedId {
             },
             alias: String::default(),
             incoming: true,
+            buffered: 0,
         }
     }
 }
@@ -62,8 +64,9 @@ impl fmt::Display for DirectedId {
 
         let arrow = if self.incoming { "->" } else { "<-" };
         let alias = &self.alias;
+        let buffered = self.buffered;
 
-        write!(f, "{hour:02}:{minute:02}:{second:02}:{nano:09} {duration:010?} {addr} {fd} {arrow} {alias}_{pid}")
+        write!(f, "{hour:02}:{minute:02}:{second:02}.{nano:09} {duration:010?} {buffered} {addr} {fd} {arrow} {alias}_{pid}")
     }
 }
 

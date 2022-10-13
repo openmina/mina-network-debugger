@@ -18,7 +18,7 @@ ebpf::license!("GPL");
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
-    #[ringbuf(size = 0x20000000)]
+    #[ringbuf(size = 0x8000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
     // 0x1000 processes maximum
@@ -676,11 +676,7 @@ fn main() {
     let mut last_ts = 0;
     let mut strace_running = None;
     while !terminating.load(Ordering::Relaxed) {
-        for (event, remaining) in source.by_ref() {
-            let now = SystemTime::now();
-
-            recorder.report_remaining(remaining, now);
-
+        for (event, buffered) in source.by_ref() {
             let event = match event {
                 Some(v) => v,
                 None => continue,
@@ -692,6 +688,7 @@ fn main() {
             last_ts = event.ts0;
             let time = match &origin {
                 None => {
+                    let now = SystemTime::now();
                     origin = Some(now - Duration::from_nanos(event.ts0));
                     now
                 }
@@ -737,9 +734,9 @@ fn main() {
                         log::warn!("new outgoing connection on already allocated fd");
                         let mut metadata = metadata.clone();
                         metadata.id.addr = old_addr;
-                        recorder.on_disconnect(metadata);
+                        recorder.on_disconnect(metadata, buffered);
                     }
-                    recorder.on_connect(false, metadata);
+                    recorder.on_connect(false, metadata, buffered);
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     let metadata = EventMetadata {
@@ -755,9 +752,9 @@ fn main() {
                         log::warn!("new incoming connection on already allocated fd");
                         let mut metadata = metadata.clone();
                         metadata.id.addr = old_addr;
-                        recorder.on_disconnect(metadata);
+                        recorder.on_disconnect(metadata, buffered);
                     }
-                    recorder.on_connect(true, metadata);
+                    recorder.on_connect(true, metadata, buffered);
                 }
                 SnifferEventVariant::Disconnected => {
                     let key = (event.pid, event.fd);
@@ -771,7 +768,7 @@ fn main() {
                             time,
                             duration,
                         };
-                        recorder.on_disconnect(metadata);
+                        recorder.on_disconnect(metadata, buffered);
                     } else {
                         log::info!(
                             "{} cannot process disconnect {}, not connected",
@@ -792,7 +789,7 @@ fn main() {
                             time,
                             duration,
                         };
-                        recorder.on_data(true, metadata, data);
+                        recorder.on_data(true, metadata, buffered, data);
                     } else {
                         log::debug!(
                             "{} cannot handle data on {}, not connected, {}",
@@ -814,7 +811,7 @@ fn main() {
                             time,
                             duration,
                         };
-                        recorder.on_data(false, metadata, data);
+                        recorder.on_data(false, metadata, buffered, data);
                     } else {
                         log::debug!(
                             "{} cannot handle data on {}, not connected, {}",

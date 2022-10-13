@@ -569,6 +569,7 @@ impl DbCore {
             stream_kind: msg.stream_kind,
             message,
             size: msg.size,
+            buffered: msg.buffered,
         })
     }
 

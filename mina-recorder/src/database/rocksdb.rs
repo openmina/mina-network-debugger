@@ -11,7 +11,7 @@ use std::{
 use radiation::Emit;
 
 use crate::{
-    event::{ConnectionInfo, ChunkHeader, EncryptionStatus},
+    event::{ConnectionInfo, ChunkHeader, EncryptionStatus, DirectedId},
     decode::MessageType,
     strace::StraceLine,
     custom_coding,
@@ -178,7 +178,7 @@ impl Drop for DbStream {
 }
 
 impl DbStream {
-    pub fn add(&self, incoming: bool, timestamp: SystemTime, bytes: &[u8]) -> Result<(), DbError> {
+    pub fn add(&self, did: &DirectedId, bytes: &[u8]) -> Result<(), DbError> {
         let sb = self.inner.get_stream(self.id)?;
         let mut file = sb.lock().expect("poisoned");
         let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
@@ -206,10 +206,11 @@ impl DbStream {
             connection_id: self.id.cn,
             stream_id: self.id.id,
             stream_kind: self.kind,
-            incoming,
-            timestamp,
+            incoming: did.incoming,
+            timestamp: did.metadata.time,
             offset,
             size: bytes.len() as u32,
+            buffered: did.buffered as u32,
         };
         self.inner.put_message(&self.addr, id, v, tys)?;
         self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;

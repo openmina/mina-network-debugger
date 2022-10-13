@@ -59,7 +59,7 @@ impl HandleData for State {
                 Ok(MessageHeader::Heartbeat) => (),
                 Ok(MessageHeader::Query(v)) => {
                     self.rpc_context.insert(v.id, (v.tag, v.version));
-                    stream.add(id.incoming, id.metadata.time, &s.get_ref()[..(8 + len)])?;
+                    stream.add(&id, &s.get_ref()[..(8 + len)])?;
                 }
                 Ok(MessageHeader::Response(v)) => {
                     let pos = s.position();
@@ -75,7 +75,7 @@ impl HandleData for State {
                         let new_len = (len + b.len()) as u64 - pos;
                         b[0..8].clone_from_slice(&new_len.to_le_bytes());
                         b.extend_from_slice(&s.get_ref()[(pos as usize)..(8 + len)]);
-                        stream.add(id.incoming, id.metadata.time, &b)?;
+                        stream.add(&id, &b)?;
                     } else {
                         // magic number, means kind of rpc handshake
                         if v.id != 4411474 {
@@ -92,7 +92,7 @@ impl HandleData for State {
                 Ok(())
             }
         } else {
-            stream.add(id.incoming, id.metadata.time, bytes)
+            stream.add(&id, bytes)
         }
     }
 }

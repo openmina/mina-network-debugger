@@ -200,7 +200,7 @@ where
                 db.add(stream_id, StreamKind::Select)
             });
             for token in output.tokens {
-                stream.add(id.incoming, id.metadata.time, token.as_bytes())?;
+                stream.add(&id, token.as_bytes())?;
             }
         }
 

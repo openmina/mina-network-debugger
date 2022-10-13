@@ -200,6 +200,7 @@ pub struct Message {
     pub timestamp: SystemTime,
     pub offset: u64,
     pub size: u32,
+    pub buffered: u32,
 }
 
 #[derive(Serialize)]
@@ -213,6 +214,7 @@ pub struct FullMessage {
     // dynamic type, the type is depend on `stream_kind`
     pub message: serde_json::Value,
     pub size: u32,
+    pub buffered: u32,
 }
 
 pub trait Timestamp {
