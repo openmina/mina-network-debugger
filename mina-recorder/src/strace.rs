@@ -17,10 +17,6 @@ pub struct StraceLine {
     pub start: Duration,
 }
 
-pub fn ptrace(pid: u32) {
-    let _ = pid;
-}
-
 pub fn process(mut source: Child, db: DbStrace, rx: mpsc::Receiver<()>) {
     let read = source.stderr.as_mut().unwrap();
     let it = structure::iter_finished(raw::parse(read));

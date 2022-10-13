@@ -544,7 +544,7 @@ fn main() {
 
     use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
     use bpf_ring_buffer::RingBuffer;
-    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder, strace};
+    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace};
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
     // let env = env_logger::Env::default().default_filter_or("warn");
@@ -675,8 +675,13 @@ fn main() {
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     let mut strace_running = None;
+    let mut ptrace_task = None::<ptrace::Task>;
+    const THRESHOLD: usize = 1 << 20; // 1 Mib
     while !terminating.load(Ordering::Relaxed) {
         for (event, buffered) in source.by_ref() {
+            if let Some(p) = &mut ptrace_task {
+                p.set_running(buffered <= THRESHOLD);
+            }
             let event = match event {
                 Some(v) => v,
                 None => continue,
@@ -701,6 +706,10 @@ fn main() {
                     recorder.on_alias(event.pid, alias);
                 }
                 SnifferEventVariant::Bind(addr) => {
+                    if ptrace_task.is_none() {
+                        log::info!("run ptrace on {}", event.pid);
+                        ptrace_task = Some(ptrace::Task::spawn(event.pid));
+                    }
                     if strace && strace_running.is_none() && addr.port() == 8302 {
                         if let Some(db_strace) = db_strace.take() {
                             let child = Command::new("strace")
@@ -836,5 +845,10 @@ fn main() {
     if let Some((strace_running, tx)) = strace_running {
         tx.send(()).unwrap_or_default();
         strace_running.join().expect("cannot kill strace");
+    }
+    if let Some(ptrace_task) = ptrace_task {
+        if let Err(err) = ptrace_task.join() {
+            log::error!("join ptrace with error: {err:?}");
+        }
     }
 }

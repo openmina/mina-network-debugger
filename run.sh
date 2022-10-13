@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 sudo kill $(ps aux | grep bpf | grep root | tail -1 | awk -F ' ' '{print $2}') &> /dev/null
 sleep 1
 sudo rm -Rf /tmp/mina-debugger-db-$1 &> /dev/null

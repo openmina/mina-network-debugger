@@ -18,4 +18,6 @@ pub mod server;
 
 pub mod strace;
 
+pub mod ptrace;
+
 mod stats;
