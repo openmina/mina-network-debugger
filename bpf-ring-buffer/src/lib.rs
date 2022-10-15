@@ -40,6 +40,8 @@ struct RingBufferObserver {
     data: Box<[AtomicUsize]>,
     consumer_pos: Box<AtomicUsize>,
     producer_pos: Box<AtomicUsize>,
+    epfd: i32,
+    event: epoll::Event,
 }
 
 impl RingBufferObserver {
@@ -125,6 +127,7 @@ impl RingBuffer {
             page_size,
             max_length - 1
         );
+        let event = epoll::Event::new(epoll::Events::EPOLLIN, 1);
         Ok(RingBuffer {
             fd,
             mask: max_length - 1,
@@ -134,6 +137,15 @@ impl RingBuffer {
                 data,
                 consumer_pos,
                 producer_pos,
+                epfd: {
+                    let epfd = epoll::create(true)?;
+                    epoll::ctl(epfd, epoll::ControlOptions::EPOLL_CTL_ADD, fd, event)?;
+                    let epoll::Event { events, data } = event;
+                    assert_eq!(events, epoll::Events::EPOLLIN.bits());
+                    assert_eq!(data, 1);
+                    epfd
+                },
+                event,
             },
             previous_distance: 0,
         })
@@ -234,6 +246,32 @@ impl RingBuffer {
         }
     }
 
+    fn wait_epoll(&self, terminating: &AtomicBool) {
+        while !terminating.load(Ordering::SeqCst) {
+            match epoll::wait(self.observer.epfd, 50, &mut [self.observer.event]) {
+                Ok(0) => log::debug!("ringbuf wait timeout"),
+                Ok(1) => {
+                    let e = self.observer.event.events;
+                    if e & epoll::Events::EPOLLIN.bits() != 0 {
+                        break;
+                    } else {
+                        log::warn!("unexpected event {e}");
+                    }
+                }
+                // poll should not return bigger then number of fds, we have 1
+                Ok(r) => log::error!("ringbuf poll {}", r),
+                Err(error) => {
+                    if io::ErrorKind::Interrupted != error.kind() {
+                        log::error!("ringbuf error: {:?}", error);
+                    } else {
+                        log::error!("inerrupted: {error:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[allow(dead_code)]
     fn wait(&self, terminating: &AtomicBool) {
         let mut fds = libc::pollfd {
             fd: self.as_raw_fd(),
@@ -252,6 +290,8 @@ impl RingBuffer {
                     let error = io::Error::last_os_error();
                     if io::ErrorKind::Interrupted != error.kind() {
                         log::error!("ringbuf error: {:?}", error);
+                    } else {
+                        log::error!("inerrupted: {error:?}");
                     }
                 }
                 // poll should not return bigger then number of fds, we have 1
@@ -272,9 +312,9 @@ impl RingBuffer {
             }
             match self.read_value() {
                 Err(Error::WouldBlock) => {
-                    self.wait(terminating);
+                    self.wait_epoll(terminating);
                     if terminating.load(Ordering::SeqCst) {
-                        break Ok((None, 0));
+                        break Err(io::Error::new(io::ErrorKind::Other, "terminate"));
                     }
                 }
                 Err(Error::Overflown) => {
@@ -289,6 +329,7 @@ impl RingBuffer {
 
 impl Drop for RingBufferObserver {
     fn drop(&mut self) {
+        epoll::close(self.epfd).unwrap_or_default();
         let len = self.len();
         let p = mem::replace(&mut self.consumer_pos, Box::new(AtomicUsize::new(0)));
         let q = mem::replace(&mut self.producer_pos, Box::new(AtomicUsize::new(0)));
