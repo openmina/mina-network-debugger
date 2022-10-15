@@ -583,7 +583,7 @@ fn main() {
             if let Some(cb) = callback.take() {
                 cb();
             }
-            terminating.store(true, Ordering::Relaxed);
+            terminating.store(true, Ordering::SeqCst);
         };
         if let Err(err) = ctrlc::set_handler(user_handler) {
             log::error!("failed to set ctrlc handler {err}");
@@ -677,7 +677,7 @@ fn main() {
     let mut strace_running = None;
     let mut ptrace_task = None::<ptrace::Task>;
     const THRESHOLD: usize = 1 << 20; // 1 Mib
-    while !terminating.load(Ordering::Relaxed) {
+    while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             if let Some(p) = &mut ptrace_task {
                 p.set_running(buffered <= THRESHOLD);

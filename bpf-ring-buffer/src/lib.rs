@@ -240,7 +240,7 @@ impl RingBuffer {
             events: libc::POLLIN,
             revents: 0,
         };
-        while !terminating.load(Ordering::Relaxed) {
+        while !terminating.load(Ordering::SeqCst) {
             match unsafe { libc::poll(&mut fds, 1, 1_000) } {
                 0 => log::debug!("ringbuf wait timeout"),
                 1 => {
@@ -273,7 +273,7 @@ impl RingBuffer {
             match self.read_value() {
                 Err(Error::WouldBlock) => {
                     self.wait(terminating);
-                    if terminating.load(Ordering::Relaxed) {
+                    if terminating.load(Ordering::SeqCst) {
                         break Ok((None, 0));
                     }
                 }
