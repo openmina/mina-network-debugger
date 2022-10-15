@@ -707,8 +707,8 @@ fn main() {
                 }
                 SnifferEventVariant::Bind(addr) => {
                     if ptrace_task.is_none() {
-                        log::info!("run ptrace on {}", event.pid);
-                        ptrace_task = Some(ptrace::Task::spawn(event.pid));
+                        // log::info!("run ptrace on {}", event.pid);
+                        // ptrace_task = Some(ptrace::Task::spawn(event.pid));
                     }
                     if strace && strace_running.is_none() && addr.port() == 8302 {
                         if let Some(db_strace) = db_strace.take() {
@@ -728,7 +728,6 @@ fn main() {
                         }
                     }
                 }
-                SnifferEventVariant::Error(tag, code) => log::error!("tag: {tag:?}, code: {code}"),
                 SnifferEventVariant::OutgoingConnection(addr) => {
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
@@ -786,6 +785,23 @@ fn main() {
                         );
                     }
                 }
+                SnifferEventVariant::Error(_, -104) => {}
+                SnifferEventVariant::Error(tag, code) => {
+                    let key = (event.pid, event.fd);
+                    if let Some(addr) = p2p_cns.get(&key) {
+                        let metadata = EventMetadata {
+                            id: ConnectionInfo {
+                                addr: *addr,
+                                pid: event.pid,
+                                fd: event.fd,
+                            },
+                            time,
+                            duration,
+                        };
+
+                        log::error!("{metadata},  tag: {tag:?}, code: {code}");
+                    }
+                },
                 SnifferEventVariant::IncomingData(data) => {
                     let key = (event.pid, event.fd);
                     if let Some(addr) = p2p_cns.get(&key) {
