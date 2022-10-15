@@ -23,6 +23,11 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
 }
 
 pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> {
+    use libp2p_core::{
+        PublicKey, PeerId,
+        identity::{ed25519, secp256k1, ecdsa},
+    };
+
     #[derive(Serialize)]
     struct T {
         r#type: String,
@@ -57,19 +62,19 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
             let libp2p_pk = match pk.r#type() {
                 keys_proto::KeyType::Rsa => unimplemented!(),
                 keys_proto::KeyType::Ed25519 => {
-                    let pk = libp2p_core::identity::ed25519::PublicKey::decode(&pk.data).unwrap();
-                    libp2p_core::PublicKey::Ed25519(pk)
+                    let pk = ed25519::PublicKey::decode(&pk.data).unwrap();
+                    PublicKey::Ed25519(pk)
                 }
                 keys_proto::KeyType::Secp256k1 => {
-                    let pk = libp2p_core::identity::secp256k1::PublicKey::decode(&pk.data).unwrap();
-                    libp2p_core::PublicKey::Secp256k1(pk)
+                    let pk = secp256k1::PublicKey::decode(&pk.data).unwrap();
+                    PublicKey::Secp256k1(pk)
                 }
                 keys_proto::KeyType::Ecdsa => {
-                    let pk = libp2p_core::identity::ecdsa::PublicKey::from_bytes(&pk.data).unwrap();
-                    libp2p_core::PublicKey::Ecdsa(pk)
+                    let pk = ecdsa::PublicKey::from_bytes(&pk.data).unwrap();
+                    PublicKey::Ecdsa(pk)
                 }
             };
-            let id = libp2p_core::PeerId::from_public_key(&libp2p_pk);
+            let id = PeerId::from_public_key(&libp2p_pk);
             (
                 pk.r#type().as_str_name().to_string(),
                 hex::encode(pk.data),
