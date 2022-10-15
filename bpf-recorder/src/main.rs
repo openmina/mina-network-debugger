@@ -728,7 +728,7 @@ fn main() {
                         }
                     }
                 }
-                SnifferEventVariant::Error(_, _) => (),
+                SnifferEventVariant::Error(tag, code) => log::error!("tag: {tag:?}, code: {code}"),
                 SnifferEventVariant::OutgoingConnection(addr) => {
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
