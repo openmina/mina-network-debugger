@@ -4,6 +4,7 @@ use crate::database::{DbStream, StreamId, StreamKind};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
+#[derive(Default)]
 pub struct State<Inner> {
     incoming: acc::State<true>,
     outgoing: acc::State<false>,
@@ -80,7 +81,7 @@ mod acc {
                     _ => unreachable!(),
                 };
 
-                let stream_id = if initiator == INCOMING {
+                let stream_id = if v == 0 || initiator == INCOMING {
                     StreamId::Forward(v >> 3)
                 } else {
                     StreamId::Backward(v >> 3)
@@ -126,10 +127,12 @@ mod acc {
                         Ordering::Less => (),
                         // not bad case, accumulator contains exactly whole message
                         Ordering::Equal => {
+                            let acc = mem::take(&mut self.acc);
+
                             return Poll::Ready(Output {
                                 tag,
                                 stream_id,
-                                bytes: Cow::Owned(mem::take(&mut self.acc)),
+                                bytes: Cow::Owned(acc[offset..].to_vec()),
                             });
                         }
                         Ordering::Greater => {
@@ -150,11 +153,66 @@ mod acc {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct Output<'a> {
     stream_id: StreamId,
     variant: OutputVariant<'a>,
 }
 
+impl<'a> fmt::Display for Output<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Output { stream_id, variant } = self;
+        write!(f, "{stream_id}::")?;
+        match variant {
+            OutputVariant::New {
+                header,
+                name,
+                already_exist,
+            } => {
+                write!(f, "new({header}, {name:?}, {already_exist})")
+            }
+            OutputVariant::Msg { bytes, bad_stream } => {
+                let bytes = hex::encode(bytes);
+                write!(f, "msg({bytes}, {bad_stream})")
+            }
+            OutputVariant::Close {
+                header,
+                error: None,
+            } => {
+                write!(f, "close({header}, 0)")
+            }
+            OutputVariant::Close {
+                header,
+                error: Some(CloseError::OnlyOutgoing),
+            } => {
+                write!(f, "close({header}, 4)")
+            }
+            OutputVariant::Close {
+                header,
+                error: Some(CloseError::OnlyIncoming),
+            } => {
+                write!(f, "close({header}, 5)")
+            }
+            OutputVariant::Close {
+                header,
+                error: Some(CloseError::DoesntExist { incoming: true }),
+            } => {
+                write!(f, "close({header}, 6)")
+            }
+            OutputVariant::Close {
+                header,
+                error: Some(CloseError::DoesntExist { incoming: false }),
+            } => {
+                write!(f, "close({header}, 7)")
+            }
+            OutputVariant::Reset { header } => {
+                write!(f, "reset({header})")
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 enum OutputVariant<'a> {
     New {
         header: u64,
@@ -174,29 +232,25 @@ enum OutputVariant<'a> {
     },
 }
 
-struct CloseError {
-    stream_id: StreamId,
-    kind: CloseErrorKind,
-}
-
-enum CloseErrorKind {
+#[derive(Debug, PartialEq, Eq)]
+enum CloseError {
     OnlyOutgoing,
     OnlyIncoming,
     DoesntExist { incoming: bool },
 }
 
-impl fmt::Display for CloseErrorKind {
+impl fmt::Display for CloseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CloseErrorKind::OnlyOutgoing => write!(
+            CloseError::OnlyOutgoing => write!(
                 f,
                 "closing incoming part of stream where only outgoing part remains"
             ),
-            CloseErrorKind::OnlyIncoming => write!(
+            CloseError::OnlyIncoming => write!(
                 f,
                 "closing outgoing part of stream where only incoming part remains"
             ),
-            CloseErrorKind::DoesntExist { incoming } => {
+            CloseError::DoesntExist { incoming } => {
                 let s = if *incoming { "incoming" } else { "outgoing" };
                 write!(f, "closing {s} part of stream that doesn't exist")
             }
@@ -204,16 +258,9 @@ impl fmt::Display for CloseErrorKind {
     }
 }
 
-impl fmt::Display for CloseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let CloseError { stream_id, kind } = self;
-        write!(f, "{stream_id}: {kind}")
-    }
-}
-
 impl<Inner> State<Inner>
 where
-    Inner: HandleData + From<(u64, bool)>,
+    Inner: From<(u64, bool)>,
 {
     // TODO: refactor it, implement `From<StreamId>` for `Inner`
     fn inner_state(stream_id: StreamId) -> Inner {
@@ -226,12 +273,14 @@ where
 
     fn process<'a>(&mut self, incoming: bool, bytes: &'a [u8]) -> Vec<Output<'a>> {
         let mut output = vec![];
+        let mut bytes = bytes;
         loop {
             let acc = if incoming {
                 self.incoming.accumulate(bytes)
             } else {
                 self.outgoing.accumulate(bytes)
             };
+            bytes = &[];
             if let Poll::Ready(o) = acc {
                 let acc::Output {
                     tag,
@@ -270,7 +319,7 @@ where
                         output.push(Output { stream_id, variant })
                     }
                     acc::Tag::Close => {
-                        let error_kind = match (self.inners.remove(&stream_id), incoming) {
+                        let error = match (self.inners.remove(&stream_id), incoming) {
                             (Some(Status::Duplex(stream)), true) => {
                                 self.inners.insert(stream_id, Status::OutgoingOnly(stream));
                                 None
@@ -281,20 +330,17 @@ where
                             }
                             (Some(Status::IncomingOnly(_)), true) => None,
                             (Some(Status::OutgoingOnly(_)), false) => None,
-                            (Some(Status::OutgoingOnly(_)), true) => {
-                                Some(CloseErrorKind::OnlyOutgoing)
-                            }
+                            (Some(Status::OutgoingOnly(_)), true) => Some(CloseError::OnlyOutgoing),
                             (Some(Status::IncomingOnly(_)), false) => {
-                                Some(CloseErrorKind::OnlyIncoming)
+                                Some(CloseError::OnlyIncoming)
                             }
-                            (None, incoming) => Some(CloseErrorKind::DoesntExist { incoming }),
+                            (None, incoming) => Some(CloseError::DoesntExist { incoming }),
                         };
                         let header = match stream_id {
                             StreamId::Handshake => u64::MAX,
                             StreamId::Forward(id) => 4 + (id << 3),
                             StreamId::Backward(id) => 3 + (id << 3),
                         };
-                        let error = error_kind.map(|kind| CloseError { stream_id, kind });
                         let variant = OutputVariant::Close { header, error };
                         output.push(Output { stream_id, variant })
                     }
@@ -373,4 +419,76 @@ where
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+
+    fn generic(
+        case: impl IntoIterator<Item = (bool, &'static str, impl IntoIterator<Item = &'static str>)>,
+    ) {
+        let mut state = State::<(u64, bool)>::default();
+        for (incoming, bytes, expected) in case {
+            let bytes = hex::decode(bytes).unwrap();
+            for (actual, expected) in state.process(incoming, &bytes).into_iter().zip(expected) {
+                assert_eq!(actual.to_string(), expected);
+            }
+        }
+    }
+
+    macro_rules! generic_test {
+        ($name:ident, $case:expr) => {
+            #[test]
+            fn $name() {
+                generic($case)
+            }
+        };
+    }
+
+    generic_test!(
+        header_new,
+        [(true, "0000", ["forward_00000000::new(0, \"\", false)"])]
+    );
+    generic_test!(
+        header_new_1,
+        [(true, "0800", ["forward_00000001::new(8, \"\", false)"])]
+    );
+    generic_test!(
+        header_new_named,
+        [(
+            true,
+            "1009736f6d655f6e616d65",
+            ["forward_00000002::new(16, \"some_name\", false)"]
+        ),]
+    );
+    generic_test!(
+        header_new_repeat,
+        [(
+            true,
+            "18001800",
+            [
+                "forward_00000003::new(24, \"\", false)",
+                "forward_00000003::new(24, \"\", true)",
+            ]
+        )]
+    );
+    generic_test!(
+        msg,
+        [(
+            true,
+            "00000203abcdef",
+            [
+                "forward_00000000::new(0, \"\", false)",
+                "forward_00000000::msg(abcdef, false)",
+            ]
+        )]
+    );
+    generic_test!(
+        msg_opposite,
+        [
+            (true, "000002", ["forward_00000000::new(0, \"\", false)"]),
+            (false, "0103", ["forward_00000000::msg(abcdef, false)"]),
+        ]
+    );
 }
