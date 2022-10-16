@@ -159,15 +159,11 @@ impl FromStr for StreamId {
         if s == "handshake" {
             Ok(StreamId::Handshake)
         } else if s.starts_with("forward_") {
-            let i = s
-                .trim_start_matches("forward_")
-                .parse::<u64>()
+            let i = u64::from_str_radix(s.trim_start_matches("forward_"), 16)
                 .map_err(|err| err.to_string())?;
             Ok(StreamId::Forward(i))
         } else if s.starts_with("backward_") {
-            let i = s
-                .trim_start_matches("backward_")
-                .parse::<u64>()
+            let i = u64::from_str_radix(s.trim_start_matches("backward_"), 16)
                 .map_err(|err| err.to_string())?;
             Ok(StreamId::Backward(i))
         } else {

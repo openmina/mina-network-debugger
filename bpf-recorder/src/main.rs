@@ -801,7 +801,7 @@ fn main() {
 
                         log::error!("{metadata},  tag: {tag:?}, code: {code}");
                     }
-                },
+                }
                 SnifferEventVariant::IncomingData(data) => {
                     let key = (event.pid, event.fd);
                     if let Some(addr) = p2p_cns.get(&key) {
