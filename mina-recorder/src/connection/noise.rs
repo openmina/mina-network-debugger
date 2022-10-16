@@ -33,11 +33,14 @@ pub struct ChunkState<Inner> {
 
 impl<Inner> DynamicProtocol for ChunkState<Inner>
 where
-    Inner: Default,
+    Inner: DynamicProtocol,
 {
-    fn from_name(name: &str, _: u64, _: bool) -> Self {
-        assert_eq!(name, "/noise");
-        Self::default()
+    fn from_name(name: &str, id: u64, forward: bool) -> Self {
+        ChunkState {
+            accumulator_incoming: vec![],
+            accumulator_outgoing: vec![],
+            inner: Inner::from_name(name, id, forward),
+        }
     }
 }
 
@@ -87,6 +90,22 @@ pub struct NoiseState<Inner> {
     inner: Inner,
     decrypted: usize,
     failed_to_decrypt: usize,
+}
+
+impl<Inner> DynamicProtocol for NoiseState<Inner>
+where
+    Inner: From<(u64, bool)>,
+{
+    fn from_name(name: &str, _: u64, _: bool) -> Self {
+        if name != "/noise" {
+            NoiseState {
+                error: true,
+                ..Default::default()
+            }
+        } else {
+            Self::default()
+        }
+    }
 }
 
 impl<Inner> Default for NoiseState<Inner>
