@@ -81,7 +81,7 @@ mod acc {
                     _ => unreachable!(),
                 };
 
-                let stream_id = if v == 0 || initiator == INCOMING {
+                let stream_id = if initiator == INCOMING {
                     StreamId::Forward(v >> 3)
                 } else {
                     StreamId::Backward(v >> 3)
