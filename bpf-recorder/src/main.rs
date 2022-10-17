@@ -18,7 +18,7 @@ ebpf::license!("GPL");
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
-    #[ringbuf(size = 0x8000000)]
+    #[ringbuf(size = 0x40000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
     // 0x1000 processes maximum
@@ -675,13 +675,12 @@ fn main() {
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     let mut strace_running = None;
-    let mut ptrace_task = None::<ptrace::Task>;
-    const THRESHOLD: usize = 1 << 20; // 1 Mib
+    let mut ptrace_task = ptrace::Task::new();
+    const THRESHOLD: usize = 1 << 20;
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
-            if let Some(p) = &mut ptrace_task {
-                p.set_running(buffered <= THRESHOLD);
-            }
+            ptrace_task.set_running(buffered <= THRESHOLD);
+
             let event = match event {
                 Some(v) => v,
                 None => continue,
@@ -706,10 +705,7 @@ fn main() {
                     recorder.on_alias(event.pid, alias);
                 }
                 SnifferEventVariant::Bind(addr) => {
-                    if ptrace_task.is_none() {
-                        // log::info!("run ptrace on {}", event.pid);
-                        // ptrace_task = Some(ptrace::Task::spawn(event.pid));
-                    }
+                    ptrace_task.attach(event.pid);
                     if strace && strace_running.is_none() && addr.port() == 8302 {
                         if let Some(db_strace) = db_strace.take() {
                             let child = Command::new("strace")
@@ -862,9 +858,7 @@ fn main() {
         tx.send(()).unwrap_or_default();
         strace_running.join().expect("cannot kill strace");
     }
-    if let Some(ptrace_task) = ptrace_task {
-        if let Err(err) = ptrace_task.join() {
-            log::error!("join ptrace with error: {err:?}");
-        }
+    if let Err(err) = ptrace_task.join() {
+        log::error!("join ptrace with error: {err:?}");
     }
 }

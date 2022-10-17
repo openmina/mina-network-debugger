@@ -62,7 +62,7 @@ impl P2pRecorder {
             .add(id.metadata.id.clone(), incoming, id.metadata.time)
         {
             Ok(group) => {
-                log::info!("{id} {} new connection", group.id());
+                log::debug!("{id} {} new connection", group.id());
 
                 self.cns
                     .insert(id.metadata.id, (Cn::new(self.chain_id.as_bytes()), group));
@@ -87,7 +87,7 @@ impl P2pRecorder {
             buffered,
         };
         if let Some((_, group)) = self.cns.remove(&id.metadata.id) {
-            log::info!("{id} {} disconnect", group.id());
+            log::debug!("{id} {} disconnect", group.id());
         }
     }
 
