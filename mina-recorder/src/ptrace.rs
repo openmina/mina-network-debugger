@@ -7,7 +7,7 @@ use std::{
     sync::mpsc,
 };
 
-use pete::{Error, Ptracer, Pid, Stop, Restart};
+use pete::{Error, Ptracer, Pid, Stop, Restart, Signal};
 
 pub struct Task {
     running_state: bool,
@@ -125,17 +125,24 @@ impl Task {
                         }
                     }
                 }
-            } else if tracee.pid != channel_pid
-                && !running
-                && matches!(&tracee.stop, Stop::SyscallExit)
-            {
-                let regs = tracee.registers()?;
-                if matches!(regs.orig_rax, 215 | 232 | 281) {
-                    log::info!("suspend {}", tracee.pid);
-                    suspended.insert(tracee.pid, tracee);
-                    // do not continue execution, the thread must remains stopped
-                    // until resume command arrive
-                    continue 'main;
+            } else if tracee.pid != channel_pid && !running {
+                // log::info!("want suspend {} {:?}", tracee.pid, tracee.stop);
+                if matches!(
+                    &tracee.stop,
+                    Stop::SyscallExit
+                        | Stop::SignalDelivery {
+                            signal: Signal::SIGTRAP
+                        }
+                ) {
+                    let regs = tracee.registers()?;
+                    // log::info!("want suspend {} {}", tracee.pid, regs.orig_rax);
+                    if matches!(regs.orig_rax, 215 | 232 | 281) {
+                        log::info!("suspend {}", tracee.pid);
+                        suspended.insert(tracee.pid, tracee);
+                        // do not continue execution, the thread must remains stopped
+                        // until resume command arrive
+                        continue 'main;
+                    }
                 }
             } else if tracee.pid != channel_pid && matches!(&tracee.stop, Stop::Exiting { .. }) {
                 tracees.remove(&tracee.pid);
