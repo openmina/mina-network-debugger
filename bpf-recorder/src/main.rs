@@ -774,7 +774,7 @@ fn main() {
                         };
                         recorder.on_disconnect(metadata, buffered);
                     } else {
-                        log::info!(
+                        log::debug!(
                             "{} cannot process disconnect {}, not connected",
                             event.pid,
                             event.fd

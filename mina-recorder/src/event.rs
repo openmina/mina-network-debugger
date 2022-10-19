@@ -17,6 +17,16 @@ pub struct EventMetadata {
     pub duration: Duration,
 }
 
+impl Default for EventMetadata {
+    fn default() -> Self {
+        EventMetadata {
+            id: ConnectionInfo::default(),
+            time: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_secs(0),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Emit, Absorb, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionInfo {
     #[custom_absorb(custom_coding::addr_absorb)]
@@ -24,6 +34,16 @@ pub struct ConnectionInfo {
     pub addr: SocketAddr,
     pub pid: u32,
     pub fd: u32,
+}
+
+impl Default for ConnectionInfo {
+    fn default() -> Self {
+        ConnectionInfo {
+            addr: "127.0.0.1:0".parse().expect("valid constant"),
+            pid: 1,
+            fd: 1,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -34,19 +54,10 @@ pub struct DirectedId {
     pub buffered: usize,
 }
 
-impl DirectedId {
-    #[cfg(test)]
-    pub fn fake() -> Self {
+impl Default for DirectedId {
+    fn default() -> Self {
         DirectedId {
-            metadata: EventMetadata {
-                id: ConnectionInfo {
-                    addr: "127.0.0.1:0".parse().expect("valid constant"),
-                    pid: 1,
-                    fd: 1,
-                },
-                time: SystemTime::now(),
-                duration: Duration::from_secs(1),
-            },
+            metadata: EventMetadata::default(),
             alias: String::default(),
             incoming: true,
             buffered: 0,

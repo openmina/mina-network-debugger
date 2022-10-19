@@ -459,7 +459,7 @@ fn noise() {
         hex::decode("1c283e25c80f64f2806d9e19da1a393873d40bdf3d903a3776e013c4fdd97cb3").expect("valid constant").try_into().expect("valid constant"),
     ]);
 
-    let mut id = DirectedId::fake();
+    let mut id = DirectedId::default();
     id.incoming = true;
     noise.on_data_(id.incoming, &mut hex::decode("00209844288f8c8f0337dff411d66e0378d950fb7590f9f44d6df969fd59a18ab849").expect("valid constant"), &mut cx).expect("test");
     id.incoming = false;
