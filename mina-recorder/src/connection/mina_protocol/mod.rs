@@ -7,7 +7,7 @@ use mina_p2p_messages::{
     utils,
 };
 
-use crate::database::{StreamId, StreamKind, DbStream};
+use crate::database::{StreamId, StreamKind, DbStream, ConnectionStats};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -87,12 +87,20 @@ impl HandleData for State {
 
             let rest = &mut s.get_mut()[(8 + len)..];
             if !rest.is_empty() {
-                self.on_data(id, rest, _cx, db)
-            } else {
-                Ok(())
+                self.on_data(id.clone(), rest, _cx, db)?;
             }
         } else {
-            stream.add(&id, bytes)
+            stream.add(&id, bytes)?;
         }
+
+        db.update(
+            ConnectionStats {
+                total_bytes: 0,
+                decrypted_bytes: 0,
+                decrypted_chunks: 0,
+                messages: 1,
+            },
+            id.incoming,
+        )
     }
 }

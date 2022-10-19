@@ -14,7 +14,7 @@ use vru_noise::{
 use thiserror::Error;
 
 use crate::{
-    database::{DbStream, StreamId, StreamKind, RandomnessDatabase},
+    database::{DbStream, StreamId, StreamKind, RandomnessDatabase, ConnectionStats},
     chunk::EncryptionStatus,
 };
 
@@ -163,27 +163,32 @@ where
             match self.on_data_(id.incoming, bytes, &cx.db.core()) {
                 Ok(range) => {
                     let bytes = &mut bytes[range];
+                    self.decrypted += bytes.len();
+                    cx.stats.decrypted += bytes.len();
+                    db.update(
+                        ConnectionStats {
+                            total_bytes: bytes.len() as u64,
+                            decrypted_bytes: bytes.len() as u64,
+                            decrypted_chunks: 1,
+                            messages: 0,
+                        },
+                        id.incoming,
+                    )?;
                     match msg {
                         Msg::First => (),
                         Msg::Second => {
-                            self.decrypted += bytes.len();
-                            cx.stats.decrypted += bytes.len();
                             let stream = self.stream.get_or_insert_with(|| {
                                 db.add(StreamId::Handshake, StreamKind::Handshake)
                             });
                             stream.add(&id, bytes)?;
                         }
                         Msg::Third => {
-                            self.decrypted += bytes.len();
-                            cx.stats.decrypted += bytes.len();
                             self.stream
                                 .as_ref()
                                 .expect("must have stream at third message")
                                 .add(&id, bytes)?;
                         }
                         Msg::Other => {
-                            self.decrypted += bytes.len();
-                            cx.stats.decrypted += bytes.len();
                             db.add_raw(
                                 EncryptionStatus::DecryptedNoise,
                                 id.incoming,
@@ -260,6 +265,15 @@ impl<Inner> NoiseState<Inner> {
     ) -> DbResult<()> {
         cx.stats.failed_to_decrypt += bytes.len();
         self.failed_to_decrypt += bytes.len();
+        db.update(
+            ConnectionStats {
+                total_bytes: bytes.len() as u64,
+                decrypted_bytes: 0,
+                decrypted_chunks: 0,
+                messages: 0,
+            },
+            id.incoming,
+        )?;
 
         log::error!(
             "{id} {}, total failed {}, total decrypted {}, {err}: {} {}...",

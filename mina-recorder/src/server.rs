@@ -1,4 +1,8 @@
-use std::{thread, path::Path};
+use std::{
+    thread,
+    path::Path,
+    time::{self, SystemTime},
+};
 
 use warp::{
     Filter, Rejection, Reply,
@@ -13,7 +17,24 @@ fn connection(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("connection" / u64).map(move |id: u64| -> reply::WithStatus<Json> {
         match db.fetch_connection(id) {
-            Ok(v) => reply::with_status(reply::json(&v), StatusCode::OK),
+            Ok(v) => {
+                let end = if v.timestamp_close == time::UNIX_EPOCH {
+                    SystemTime::now()
+                } else {
+                    v.timestamp_close
+                };
+                let duration = end.duration_since(v.timestamp).expect("must not fail");
+                let stats_in = v.stats_in.calc_speed(duration);
+                let stats_out = v.stats_out.calc_speed(duration);
+                let mut v = serde_json::to_value(v).expect("must not fail");
+                v.as_object_mut()
+                    .unwrap()
+                    .insert("stats_in".to_owned(), stats_in);
+                v.as_object_mut()
+                    .unwrap()
+                    .insert("stats_out".to_owned(), stats_out);
+                reply::with_status(reply::json(&v), StatusCode::OK)
+            }
             Err(err) => reply::with_status(
                 reply::json(&err.to_string()),
                 StatusCode::INTERNAL_SERVER_ERROR,

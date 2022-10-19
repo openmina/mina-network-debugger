@@ -1,5 +1,5 @@
 mod types;
-pub use self::types::{StreamKind, StreamId, ConnectionId};
+pub use self::types::{StreamKind, StreamId, ConnectionId, ConnectionStats};
 
 mod rocksdb;
 pub use self::rocksdb::{DbFacade, DbGroup, DbStream, DbStrace};

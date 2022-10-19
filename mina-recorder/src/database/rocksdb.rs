@@ -20,7 +20,10 @@ use crate::{
 
 use super::{
     core::{DbCore, DbError},
-    types::{Connection, ConnectionId, StreamFullId, Message, MessageId, StreamId, StreamKind},
+    types::{
+        Connection, ConnectionId, StreamFullId, Message, MessageId, StreamId, StreamKind,
+        ConnectionStats,
+    },
 };
 
 pub struct DbFacade {
@@ -71,6 +74,9 @@ impl DbFacade {
             info,
             incoming,
             timestamp,
+            stats_in: ConnectionStats::default(),
+            stats_out: ConnectionStats::default(),
+            timestamp_close: SystemTime::UNIX_EPOCH,
         };
         self.inner.put_cn(id, v)?;
         self.inner.set_total::<{ DbCore::CONNECTIONS_CNT }>(id.0)?;
@@ -132,6 +138,16 @@ impl DbGroup {
         self.id
     }
 
+    pub fn update(&self, stats: ConnectionStats, incoming: bool) -> Result<(), DbError> {
+        let mut cn = self.inner.fetch_connection(self.id.0)?;
+        if incoming {
+            cn.stats_in += stats;
+        } else {
+            cn.stats_out += stats;
+        }
+        self.inner.put_cn(self.id, cn)
+    }
+
     pub fn add_raw(
         &self,
         encryption_status: EncryptionStatus,
@@ -160,6 +176,14 @@ impl DbGroup {
 
 impl Drop for DbGroup {
     fn drop(&mut self) {
+        let id = self.id;
+        if let Ok(mut cn) = self.inner.fetch_connection(id.0) {
+            cn.timestamp_close = SystemTime::now();
+            if let Err(err) = self.inner.put_cn(id, cn) {
+                log::error!("connection {id}, error: {err}")
+            }
+        }
+
         self.inner.remove_raw_stream(self.id);
     }
 }
@@ -211,7 +235,6 @@ impl DbStream {
             timestamp: did.metadata.time,
             offset,
             size: bytes.len() as u32,
-            buffered: did.buffered as u32,
         };
         self.inner.put_message(&self.addr, id, v, tys)?;
         self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;

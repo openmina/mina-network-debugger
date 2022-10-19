@@ -3,6 +3,7 @@ use std::{
     fmt,
     str::FromStr,
     net::SocketAddr,
+    ops::AddAssign,
 };
 
 use radiation::{Absorb, Emit};
@@ -28,6 +29,54 @@ pub struct Connection {
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub timestamp: SystemTime,
+
+    #[serde(skip)]
+    pub stats_in: ConnectionStats,
+    #[serde(skip)]
+    pub stats_out: ConnectionStats,
+
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub timestamp_close: SystemTime,
+}
+
+#[derive(Default, Clone, Absorb, Emit, Serialize)]
+pub struct ConnectionStats {
+    pub total_bytes: u64,
+    pub decrypted_bytes: u64,
+    pub decrypted_chunks: u64,
+    pub messages: u64,
+}
+
+impl ConnectionStats {
+    pub fn calc_speed(&self, duration: Duration) -> serde_json::Value {
+        let speed = self.total_bytes as f64 / duration.as_secs_f64();
+        let speed = serde_json::to_value(speed).expect("must not fail");
+        let mut v = serde_json::to_value(self).expect("must not fail");
+        v.as_object_mut()
+            .unwrap()
+            .insert("speed".to_string(), speed);
+        v
+    }
+}
+
+impl AddAssign<ConnectionStats> for ConnectionStats {
+    fn add_assign(&mut self, rhs: ConnectionStats) {
+        self.total_bytes += rhs.total_bytes;
+        self.decrypted_bytes += rhs.decrypted_bytes;
+        self.decrypted_chunks += rhs.decrypted_chunks;
+        self.messages += rhs.messages;
+    }
+}
+
+#[derive(Default, Clone, Absorb, Emit, Serialize)]
+pub struct OveralStats {
+    pub conections: u32,
+    pub buffered: u32,
+    pub total_bytes: u64,
+    pub decrypted_bytes: u64,
+    pub chunks: u64,
+    pub messages: u64,
 }
 
 impl AsRef<SystemTime> for Connection {
@@ -196,7 +245,6 @@ pub struct Message {
     pub timestamp: SystemTime,
     pub offset: u64,
     pub size: u32,
-    pub buffered: u32,
 }
 
 #[derive(Serialize)]
@@ -210,7 +258,6 @@ pub struct FullMessage {
     // dynamic type, the type is depend on `stream_kind`
     pub message: serde_json::Value,
     pub size: u32,
-    pub buffered: u32,
 }
 
 pub trait Timestamp {
