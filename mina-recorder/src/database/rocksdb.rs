@@ -11,7 +11,8 @@ use std::{
 use radiation::Emit;
 
 use crate::{
-    event::{ConnectionInfo, ChunkHeader, EncryptionStatus, DirectedId},
+    event::{ConnectionInfo, DirectedId},
+    chunk::{ChunkHeader, EncryptionStatus},
     decode::MessageType,
     strace::StraceLine,
     custom_coding,

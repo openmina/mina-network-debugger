@@ -390,7 +390,7 @@ fn simultaneous_connect_with_accumulator_test() {
 #[test]
 #[rustfmt::skip]
 fn simultaneous_connect_misordered_noise_replay_test() {
-    use crate::event::ChunkHeader;
+    use crate::chunk::ChunkHeader;
     use radiation::AbsorbExt;
 
     let mut bytes = *include_bytes!("test_data/connection000002b1");

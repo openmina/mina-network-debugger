@@ -1,6 +1,6 @@
-use std::{env, fs, io::Read};
-use mina_recorder::ChunkHeader;
-use radiation::AbsorbExt;
+use std::{env, fs};
+
+use mina_recorder::ChunkParser;
 
 fn main() {
     let filename = env::args().nth(1).unwrap();
@@ -8,17 +8,10 @@ fn main() {
     // group together all messages in row from the same party
     let glue = env::args().nth(2).is_some();
 
-    let mut bytes = Vec::new();
-    fs::File::open(filename)
-        .unwrap()
-        .read_to_end(&mut bytes)
-        .unwrap();
-    let mut offset = 0;
+    let parser = ChunkParser::new(fs::File::open(filename).unwrap());
+
     let mut prev = None;
-    while offset < bytes.len() {
-        let header = ChunkHeader::absorb_ext(&bytes[offset..(offset + ChunkHeader::SIZE)]).unwrap();
-        let data_offset = offset + ChunkHeader::SIZE;
-        offset = data_offset + (header.size as usize);
+    for (header, data) in parser {
         if glue {
             if prev.is_none() || prev.unwrap_or(false) != header.incoming {
                 if prev.is_some() {
@@ -27,12 +20,12 @@ fn main() {
                 print!("{header} ");
                 prev = Some(header.incoming);
             }
-            print!("{}", hex::encode(&bytes[data_offset..offset]));
-            if &bytes[data_offset..(data_offset + 2)] == b"\x00\x20" {
+            print!("{}", hex::encode(&data));
+            if &data[..2] == b"\x00\x20" {
                 break;
             }
         } else {
-            println!("{header} {}", hex::encode(&bytes[data_offset..offset]));
+            println!("{header} {}", hex::encode(&data));
         }
     }
     println!();

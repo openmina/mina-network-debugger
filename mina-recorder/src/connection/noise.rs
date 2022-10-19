@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::{
     database::{DbStream, StreamId, StreamKind, RandomnessDatabase},
-    event::EncryptionStatus,
+    chunk::EncryptionStatus,
 };
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};

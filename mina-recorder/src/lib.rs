@@ -1,5 +1,8 @@
 mod event;
-pub use self::event::{EventMetadata, ConnectionInfo, ChunkHeader, DirectedId, EncryptionStatus};
+pub use self::event::{EventMetadata, ConnectionInfo, DirectedId};
+
+mod chunk;
+pub use self::chunk::{ChunkHeader, EncryptionStatus, ChunkParser};
 
 mod recorder;
 pub use self::recorder::P2pRecorder;

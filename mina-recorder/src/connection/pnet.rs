@@ -4,7 +4,7 @@ use salsa20::{
     XSalsa20,
 };
 
-use crate::event::EncryptionStatus;
+use crate::chunk::EncryptionStatus;
 
 use super::{HandleData, DirectedId, Cx, Db, DbResult};
 
