@@ -660,18 +660,12 @@ fn main() {
             as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>
     };
 
-    // my local sandbox
-    // /coda/0.0.1/dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
-    const MAINNET_CHAIN: &str =
-        "/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
-    let chain_id = env::var("CHAIN_ID").unwrap_or_else(|_| MAINNET_CHAIN.to_string());
-
     let test = env::var("TEST").is_ok();
     let strace = env::var("STRACE").is_ok();
 
     // const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
-    let mut recorder = P2pRecorder::new(db, chain_id, test);
+    let mut recorder = P2pRecorder::new(db, test);
     let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     let mut strace_running = None;

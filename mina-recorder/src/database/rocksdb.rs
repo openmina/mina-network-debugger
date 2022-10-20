@@ -66,6 +66,7 @@ impl DbFacade {
         &self,
         info: ConnectionInfo,
         incoming: bool,
+        alias: String,
         timestamp: SystemTime,
     ) -> Result<DbGroup, DbError> {
         let id = ConnectionId(self.cns.fetch_add(1, SeqCst));
@@ -77,6 +78,7 @@ impl DbFacade {
             stats_in: ConnectionStats::default(),
             stats_out: ConnectionStats::default(),
             timestamp_close: SystemTime::UNIX_EPOCH,
+            alias,
         };
         self.inner.put_cn(id, v)?;
         self.inner.set_total::<{ DbCore::CONNECTIONS_CNT }>(id.0)?;

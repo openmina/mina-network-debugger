@@ -34,13 +34,12 @@ Use environment variables for configuration:
 * `DB_PATH`. Default value is `target/db`.
 * `DRY`. By default the variable is not set. Set any value `DRY=1` to disable BPF. Useful for inspecting database.
 * `HTTPS_KEY_PATH` and `HTTPS_CERT_PATH`. By default the variables are not set. Set the path to crypto stuff in order to enable tls (https).
-* `CHAIN_ID`. Default value is mainnet chain id: `coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1`.
 
 Line in log `libbpf: BTF loading error: -22` may be ignored.
 
 In separate terminal run the application with env variable `BPF_ALIAS=` set.
-The value of the variable doesn't matter. That is for bpf-recorder
-to recognize the target application.
+The value of the variable must start with `mainnet-` or `devnet-` or `berkeley-`.
+For example: `BPF_ALIAS=berkeley-node`.
 
 Maybe, we will pass some useful info to the debugger using this env variables.
 

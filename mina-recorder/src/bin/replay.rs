@@ -11,11 +11,10 @@ fn main() {
         .expect("connection dump file: `/streams/connection00004d8b");
 
     let db = DbFacade::open("target/replay_db").unwrap();
-    const MAINNET_CHAIN: &str =
-        "/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1";
 
-    let mut recorder = P2pRecorder::new(db, MAINNET_CHAIN.to_string(), false);
+    let mut recorder = P2pRecorder::new(db, false);
     let metadata = EventMetadata::default();
+    recorder.on_alias(metadata.id.pid, "mainnet-node".to_owned());
     recorder.on_connect(true, metadata, 0);
 
     let mut bytes = Vec::new();

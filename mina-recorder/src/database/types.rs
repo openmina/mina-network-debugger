@@ -38,6 +38,8 @@ pub struct Connection {
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub timestamp_close: SystemTime,
+
+    pub alias: String,
 }
 
 #[derive(Default, Clone, Absorb, Emit, Serialize)]
