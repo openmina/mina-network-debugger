@@ -16,6 +16,7 @@ pub trait HandleData {
 pub mod pnet;
 pub mod multistream_select;
 pub mod noise;
+pub mod mux;
 pub mod mplex;
-pub mod mplex_;
+pub mod yamux;
 pub mod mina_protocol;

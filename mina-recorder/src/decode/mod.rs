@@ -99,6 +99,8 @@ pub enum MessageType {
     Select,
     #[tag(0x0a00)]
     Mplex,
+    #[tag(0x0b00)]
+    Yamux,
 }
 
 impl fmt::Display for MessageType {
@@ -139,6 +141,7 @@ impl fmt::Display for MessageType {
             MessageType::NodeStatus => write!(f, "node_status"),
             MessageType::Select => write!(f, "select"),
             MessageType::Mplex => write!(f, "mplex"),
+            MessageType::Yamux => write!(f, "yamux"),
         }
     }
 }
@@ -183,6 +186,7 @@ impl FromStr for MessageType {
             "node_status" => Ok(MessageType::NodeStatus),
             "select" => Ok(MessageType::Select),
             "mplex" => Ok(MessageType::Mplex),
+            "yamux" => Ok(MessageType::Yamux),
             _ => Err(()),
         }
     }

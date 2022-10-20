@@ -226,6 +226,7 @@ impl DbStream {
             StreamKind::NodeStatus => vec![MessageType::NodeStatus],
             StreamKind::Select => vec![MessageType::Select],
             StreamKind::Mplex => vec![MessageType::Mplex],
+            StreamKind::Yamux => vec![MessageType::Mplex],
         };
 
         let id = MessageId(self.messages.fetch_add(1, SeqCst));

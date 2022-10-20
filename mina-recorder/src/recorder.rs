@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::SystemTime};
 
 use super::{
     event::{EventMetadata, ConnectionInfo, DirectedId},
-    connection::{HandleData, pnet, multistream_select, noise, mplex_, mina_protocol},
+    connection::{HandleData, pnet, multistream_select, noise, mux, mina_protocol},
     database::{DbFacade, DbGroup},
     tester::Tester,
     stats::Stats,
@@ -10,7 +10,7 @@ use super::{
 
 type Cn = pnet::State<Noise>;
 type Noise = multistream_select::State<noise::State<Encrypted>>;
-type Encrypted = multistream_select::State<mplex_::State<Inner>>;
+type Encrypted = multistream_select::State<mux::State<Inner>>;
 type Inner = multistream_select::State<mina_protocol::State>;
 
 pub struct P2pRecorder {

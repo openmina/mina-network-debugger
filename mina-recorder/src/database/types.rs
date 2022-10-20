@@ -120,6 +120,7 @@ pub enum StreamKind {
     Rpc = 0x0500,
     Select = 0x0600,
     Mplex = 0x0700,
+    Yamux = 0x0701,
 }
 
 impl fmt::Display for StreamKind {
@@ -137,6 +138,7 @@ impl fmt::Display for StreamKind {
             StreamKind::Rpc => write!(f, "coda/rpcs/0.0.1"),
             StreamKind::Select => write!(f, "/multistream/1.0.0"),
             StreamKind::Mplex => write!(f, "/coda/mplex/1.0.0"),
+            StreamKind::Yamux => write!(f, "/coda/yamux/1.0.0"),
             StreamKind::Unknown => write!(f, "unknown"),
         }
     }
@@ -169,6 +171,7 @@ impl FromStr for StreamKind {
             "coda/rpcs/0.0.1" => Ok(StreamKind::Rpc),
             "/multistream/1.0.0" => Ok(StreamKind::Select),
             "/coda/mplex/1.0.0" => Ok(StreamKind::Mplex),
+            "/coda/yamux/1.0.0" => Ok(StreamKind::Yamux),
             _ => Ok(StreamKind::Unknown),
         }
     }
@@ -189,6 +192,7 @@ impl StreamKind {
             StreamKind::Rpc,
             StreamKind::Select,
             StreamKind::Mplex,
+            StreamKind::Yamux,
             StreamKind::Unknown,
         ]
         .into_iter()

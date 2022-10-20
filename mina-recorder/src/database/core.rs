@@ -558,6 +558,7 @@ impl DbCore {
                 serde_json::to_value(&msg)
                     .map_err(|err| DbError::Decode(DecodeError::Serde(err)))?
             }
+            StreamKind::Yamux => serde_json::Value::String(hex::encode(&buf)),
             StreamKind::Unknown => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {
