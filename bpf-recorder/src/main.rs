@@ -3,7 +3,6 @@
     no_std,
     no_main,
     feature(lang_items),
-    feature(core_ffi_c)
 )]
 
 #[cfg(feature = "kern")]
@@ -18,7 +17,7 @@ ebpf::license!("GPL");
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
-    #[ringbuf(size = 0x40000000)]
+    #[ringbuf(size = 0x80000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
     // 0x1000 processes maximum
@@ -269,8 +268,31 @@ impl App {
                 // cannot read first two bytes of the address
                 return Err(0);
             }
-            if ty != AF_INET && ty != AF_INET6 {
+            if ty == AF_INET {
+                let mut ip = [0u8; 4];
+                let c = unsafe { helpers::probe_read_user(ip.as_mut_ptr() as *mut _, 4, ptr.offset(4) as _) };
+                if c != 0 {
+                    return Err(0);
+                }
+
+                if ip[0] == 127 && ip[1] == 0 && ip[2] == 0 {
+                    return Err(0);
+                }
+            } else if ty == AF_INET6 {
+                // filter there something
+            } else {
                 // ignore everything else
+                return Err(0);
+            }
+
+            let mut port = 0u16;
+            let c = unsafe {
+                helpers::probe_read_user((&mut port) as *mut _ as _, 2, ptr.offset(2) as _)
+            };
+            if c != 0 {
+                return Err(0);
+            }
+            if matches!(ty, 0 | 53 | 443 | 80 | 65535) {
                 return Err(0);
             }
 
@@ -699,8 +721,11 @@ fn main() {
                     recorder.on_alias(event.pid, alias);
                 }
                 SnifferEventVariant::Bind(addr) => {
-                    ptrace_task.attach(event.pid);
-                    if strace && strace_running.is_none() && addr.port() == 8302 {
+                    let matches_port = matches!(addr.port(), 8302 | 8303);
+                    if matches_port {
+                        ptrace_task.attach(event.pid);
+                    }
+                    if strace && strace_running.is_none() && matches_port {
                         if let Some(db_strace) = db_strace.take() {
                             let child = Command::new("strace")
                                 .env("TZ", "UTC")
