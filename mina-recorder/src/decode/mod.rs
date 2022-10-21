@@ -4,6 +4,7 @@ pub mod kademlia;
 pub mod rpc;
 pub mod identify;
 pub mod json_string;
+pub mod yamux;
 
 mod utils;
 
@@ -15,6 +16,8 @@ use radiation::{Absorb, Emit, nom, ParseError};
 use thiserror::Error;
 
 use mina_p2p_messages::rpc_kernel::JSONinifyError;
+
+use super::connection::yamux as yamux_parser;
 
 #[derive(Debug, Error)]
 pub enum DecodeError {
@@ -30,6 +33,8 @@ pub enum DecodeError {
     UnexpectedSize { actual: usize, expected: usize },
     #[error("parse error {_0}")]
     Parse(nom::Err<ParseError<Vec<u8>>>),
+    #[error("yamux parse error {0}")]
+    Yamux(yamux_parser::HeaderParseError),
 }
 
 impl From<binprot::Error> for DecodeError {
