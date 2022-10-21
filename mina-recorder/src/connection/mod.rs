@@ -1,11 +1,11 @@
 use super::{
     recorder::Cx,
     event::DirectedId,
-    database::{DbGroup as Db, DbResult},
+    database::{DbGroup as Db, DbResult, StreamId},
 };
 
 pub trait DynamicProtocol {
-    fn from_name(name: &str, id: u64, forward: bool) -> Self;
+    fn from_name(name: &str, stream_id: StreamId) -> Self;
 }
 
 pub trait HandleData {

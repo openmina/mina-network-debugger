@@ -199,9 +199,10 @@ impl StreamKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamId {
+    #[default]
     Handshake,
     Forward(u64),
     Backward(u64),

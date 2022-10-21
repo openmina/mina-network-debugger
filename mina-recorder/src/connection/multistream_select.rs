@@ -1,12 +1,10 @@
-use crate::database::{DbStream, StreamId, StreamKind};
+use crate::database::StreamKind;
 
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult, StreamId};
 
 pub struct State<Inner> {
-    stream_id: u64,
-    stream_forward: bool,
+    stream_id: StreamId,
     error: bool,
-    stream: Option<DbStream>,
     inner: Option<Inner>,
     hl: hl::State,
 }
@@ -165,13 +163,11 @@ mod ll {
     }
 }
 
-impl<Inner> From<(u64, bool)> for State<Inner> {
-    fn from((stream_id, stream_forward): (u64, bool)) -> Self {
+impl<Inner> From<StreamId> for State<Inner> {
+    fn from(stream_id: StreamId) -> Self {
         State {
             stream_id,
-            stream_forward,
             error: false,
-            stream: None,
             inner: None,
             hl: hl::State::default(),
         }
@@ -191,16 +187,9 @@ where
         let output = self.hl.poll(id.incoming, bytes);
 
         if !output.tokens.is_empty() {
-            let stream = self.stream.get_or_insert_with(|| {
-                let stream_id = if self.stream_forward {
-                    StreamId::Forward(self.stream_id)
-                } else {
-                    StreamId::Backward(self.stream_id)
-                };
-                db.add(stream_id, StreamKind::Select)
-            });
+            let stream = db.add(self.stream_id);
             for token in output.tokens {
-                stream.add(&id, token.as_bytes())?;
+                stream.add(&id, StreamKind::Select, token.as_bytes())?;
             }
         }
 
@@ -219,7 +208,7 @@ where
                 log::error!("{id} {}, bad protocol name {protocol}", db.id());
             }
             let inner = self.inner.get_or_insert_with(|| {
-                Inner::from_name(&protocol, self.stream_id, self.stream_forward)
+                Inner::from_name(&protocol, self.stream_id)
             });
             inner.on_data(id, data.to_mut(), cx, db)?;
         }
@@ -232,7 +221,7 @@ where
 #[test]
 #[rustfmt::skip]
 fn simple_test() {
-    let mut state = State::<()>::from((0, false));
+    let mut state = State::<()>::from(StreamId::Handshake);
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
     let result = state.hl.poll(false, &mut data);
@@ -255,7 +244,7 @@ fn simple_test() {
 #[test]
 #[rustfmt::skip]
 fn simple_glue_payload_test() {
-    let mut state = State::<()>::from((0, false));
+    let mut state = State::<()>::from(StreamId::Handshake);
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
     let result = state.hl.poll(false, &mut data);
@@ -279,7 +268,7 @@ fn simple_glue_payload_test() {
 #[test]
 #[rustfmt::skip]
 fn simple_early_payload_test() {
-    let mut state = State::<()>::from((0, false));
+    let mut state = State::<()>::from(StreamId::Handshake);
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a").expect("valid constant");
     let result = state.hl.poll(false, &mut data);
@@ -306,7 +295,7 @@ fn simple_early_payload_test() {
 #[test]
 #[rustfmt::skip]
 fn simultaneous_connect_test() {
-    let mut state = State::<()>::from((0, false));
+    let mut state = State::<()>::from(StreamId::Handshake);
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
     let result = state.hl.poll(false, &mut data);
@@ -337,7 +326,7 @@ fn simultaneous_connect_test() {
 #[test]
 #[rustfmt::skip]
 fn simultaneous_connect_with_accumulator_test() {
-    let mut state = State::<()>::from((0, false));
+    let mut state = State::<()>::from(StreamId::Handshake);
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a072f6e6f6973650a").expect("valid constant");
     let result = state.hl.poll(false, &mut data);
@@ -395,7 +384,7 @@ fn simultaneous_connect_misordered_noise_replay_test() {
 
     let mut bytes = *include_bytes!("test_data/connection000002b1");
     let mut offset = 0;
-    let mut state = State::<()>::from((0, false));
+    let mut state = State::<()>::from(StreamId::Handshake);
     for i in 0..19 {
         let header = ChunkHeader::absorb_ext(&bytes[offset..(offset + ChunkHeader::SIZE)]).unwrap();
         let data_offset = offset + ChunkHeader::SIZE;
@@ -418,7 +407,7 @@ fn simultaneous_connect_misordered_noise_replay_test() {
 #[test]
 #[rustfmt::skip]
 fn simultaneous_connect_misordered_noise_test() {
-    let mut state = State::<()>::from((0, false));
+    let mut state = State::<()>::from(StreamId::Handshake);
 
     let mut data = hex::decode("132f6d756c746973747265616d2f312e302e300a1d2f6c69627032702f73696d756c74616e656f75732d636f6e6e6563740a").expect("valid constant");
     let chunks = [1, 19, 1, 29];

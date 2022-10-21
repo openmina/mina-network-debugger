@@ -1,13 +1,12 @@
 use std::{collections::BTreeMap, task::Poll};
 
-use crate::database::{DbStream, StreamId, StreamKind};
+use crate::database::StreamKind;
 
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult, StreamId};
 
 pub struct State<Inner> {
     incoming: acc::State<true>,
     outgoing: acc::State<false>,
-    stream: Option<DbStream>,
     error: bool,
     #[allow(dead_code)]
     inners: BTreeMap<StreamId, Status<Inner>>,
@@ -31,12 +30,11 @@ impl<Inner> AsMut<Inner> for Status<Inner> {
 }
 
 impl<Inner> DynamicProtocol for State<Inner> {
-    fn from_name(name: &str, _: u64, _: bool) -> Self {
+    fn from_name(name: &str, _: StreamId) -> Self {
         assert_eq!(name, "/coda/yamux/1.0.0");
         State {
             incoming: acc::State::default(),
             outgoing: acc::State::default(),
-            stream: None,
             error: false,
             inners: BTreeMap::new(),
         }
@@ -303,7 +301,7 @@ mod acc {
 
 impl<Inner> State<Inner>
 where
-    Inner: From<(u64, bool)>,
+    Inner: From<StreamId>,
 {
     fn process<'a>(&mut self, incoming: bool, bytes: &'a [u8]) -> Vec<Result<acc::Output<'a>, acc::Error>> {
         let mut output = vec![];
@@ -328,7 +326,7 @@ where
 
 impl<Inner> HandleData for State<Inner>
 where
-    Inner: HandleData + From<(u64, bool)>,
+    Inner: HandleData + From<StreamId>,
 {
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx, db: &Db) -> DbResult<()> {
         if self.error {
@@ -347,15 +345,20 @@ where
                 Ok(acc::Output { header, bytes }) => {
                     // TODO:
                     let _ = bytes;
-                    let db_stream = self
-                        .stream
-                        .get_or_insert_with(|| db.add(StreamId::Handshake, StreamKind::Yamux));
+                    let stream_id = if header.stream_id == 0 {
+                        StreamId::Handshake
+                    } else if header.stream_id % 2 == 0 {
+                        StreamId::Forward((header.stream_id / 2) as u64)
+                    } else {
+                        StreamId::Backward((header.stream_id / 2) as u64)
+                    };
+                    let db_stream = db.add(stream_id);
                     let header_bytes = <[u8; 12]>::from(&header);
-                    db_stream.add(&id, &header_bytes)?;
+                    db_stream.add(&id, StreamKind::Yamux, &header_bytes)?;
                 }
             }
         }
-        
+
         Ok(())
     }
 }

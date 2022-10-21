@@ -14,7 +14,7 @@ use vru_noise::{
 use thiserror::Error;
 
 use crate::{
-    database::{DbStream, StreamId, StreamKind, RandomnessDatabase, ConnectionStats},
+    database::{StreamId, StreamKind, RandomnessDatabase, ConnectionStats},
     chunk::EncryptionStatus,
 };
 
@@ -24,7 +24,6 @@ type C = (Hmac<Sha256>, Sha256, typenum::B0, ChaCha20Poly1305);
 
 pub type State<Inner> = ChunkState<NoiseState<Inner>>;
 
-#[derive(Default)]
 pub struct ChunkState<Inner> {
     accumulator_incoming: Vec<u8>,
     accumulator_outgoing: Vec<u8>,
@@ -35,11 +34,11 @@ impl<Inner> DynamicProtocol for ChunkState<Inner>
 where
     Inner: DynamicProtocol,
 {
-    fn from_name(name: &str, id: u64, forward: bool) -> Self {
+    fn from_name(name: &str, stream_id: StreamId) -> Self {
         ChunkState {
             accumulator_incoming: vec![],
             accumulator_outgoing: vec![],
-            inner: Inner::from_name(name, id, forward),
+            inner: Inner::from_name(name, stream_id),
         }
     }
 }
@@ -84,7 +83,6 @@ where
 
 pub struct NoiseState<Inner> {
     machine: Option<St>,
-    stream: Option<DbStream>,
     initiator_is_incoming: bool,
     error: bool,
     inner: Inner,
@@ -94,31 +92,14 @@ pub struct NoiseState<Inner> {
 
 impl<Inner> DynamicProtocol for NoiseState<Inner>
 where
-    Inner: From<(u64, bool)>,
+    Inner: From<StreamId>,
 {
-    fn from_name(name: &str, _: u64, _: bool) -> Self {
-        if name != "/noise" {
-            NoiseState {
-                error: true,
-                ..Default::default()
-            }
-        } else {
-            Self::default()
-        }
-    }
-}
-
-impl<Inner> Default for NoiseState<Inner>
-where
-    Inner: From<(u64, bool)>,
-{
-    fn default() -> Self {
+    fn from_name(name: &str, stream_id: StreamId) -> Self {
         NoiseState {
             machine: None,
-            stream: None,
             initiator_is_incoming: false,
-            error: false,
-            inner: Inner::from((0, false)),
+            error: name != "/noise",
+            inner: Inner::from(stream_id),
             decrypted: 0,
             failed_to_decrypt: 0,
         }
@@ -177,16 +158,12 @@ where
                     match msg {
                         Msg::First => (),
                         Msg::Second => {
-                            let stream = self.stream.get_or_insert_with(|| {
-                                db.add(StreamId::Handshake, StreamKind::Handshake)
-                            });
-                            stream.add(&id, bytes)?;
+                            db.add(StreamId::Handshake)
+                                .add(&id, StreamKind::Handshake, bytes)?;
                         }
                         Msg::Third => {
-                            self.stream
-                                .as_ref()
-                                .expect("must have stream at third message")
-                                .add(&id, bytes)?;
+                            db.add(StreamId::Handshake)
+                                .add(&id, StreamKind::Handshake, bytes)?;
                         }
                         Msg::Other => {
                             db.add_raw(
@@ -284,15 +261,13 @@ impl<Inner> NoiseState<Inner> {
             hex::encode(&bytes[..32.min(bytes.len())])
         );
 
-        let stream = self
-            .stream
-            .get_or_insert_with(|| db.add(StreamId::Handshake, StreamKind::Handshake));
+        let stream = db.add(StreamId::Handshake);
         let mut b = b"mac_mismatch\x00\x00\x00\x00".to_vec();
         b.extend_from_slice(&self.decrypted.to_be_bytes());
         b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());
         b.extend_from_slice(&cx.stats.decrypted.to_be_bytes());
         b.extend_from_slice(&cx.stats.failed_to_decrypt.to_be_bytes());
-        stream.add(&id, &b)?;
+        stream.add(&id, StreamKind::Handshake, &b)?;
 
         Ok(())
     }
@@ -467,7 +442,7 @@ fn noise() {
         }
     }
 
-    let mut noise = NoiseState::<super::multistream_select::State<()>>::default();
+    let mut noise = NoiseState::<super::multistream_select::State<()>>::from_name("/noise", StreamId::Handshake);
     let mut cx = Randomness([
         hex::decode("d1f3bca173136dd555dd97262336ce644a76ec31d521d2befe87caec8678c1a7").expect("valid constant").try_into().expect("valid constant"),
         hex::decode("1c283e25c80f64f2806d9e19da1a393873d40bdf3d903a3776e013c4fdd97cb3").expect("valid constant").try_into().expect("valid constant"),

@@ -126,11 +126,11 @@ pub struct DbGroup {
 }
 
 impl DbGroup {
-    pub fn add(&self, id: StreamId, kind: StreamKind) -> DbStream {
+    // TODO: rename it
+    pub fn add(&self, id: StreamId) -> DbStream {
         DbStream {
             addr: self.addr,
             id: StreamFullId { cn: self.id, id },
-            kind,
             messages: self.messages.clone(),
             inner: self.inner.clone(),
         }
@@ -190,10 +190,10 @@ impl Drop for DbGroup {
     }
 }
 
+#[derive(Clone)]
 pub struct DbStream {
     addr: SocketAddr,
     id: StreamFullId,
-    kind: StreamKind,
     messages: Arc<AtomicU64>,
     inner: DbCore,
 }
@@ -205,13 +205,13 @@ impl Drop for DbStream {
 }
 
 impl DbStream {
-    pub fn add(&self, did: &DirectedId, bytes: &[u8]) -> Result<(), DbError> {
+    pub fn add(&self, did: &DirectedId, stream_kind: StreamKind, bytes: &[u8]) -> Result<(), DbError> {
         let sb = self.inner.get_stream(self.id)?;
         let mut file = sb.lock().expect("poisoned");
         let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
         drop(file);
 
-        let tys = match self.kind {
+        let tys = match stream_kind {
             StreamKind::Unknown => vec![],
             StreamKind::Meshsub => crate::decode::meshsub::parse_types(bytes)?,
             StreamKind::Kad => crate::decode::kademlia::parse_types(bytes)?,
@@ -233,7 +233,7 @@ impl DbStream {
         let v = Message {
             connection_id: self.id.cn,
             stream_id: self.id.id,
-            stream_kind: self.kind,
+            stream_kind,
             incoming: did.incoming,
             timestamp: did.metadata.time,
             offset,

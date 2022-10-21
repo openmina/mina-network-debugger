@@ -6,7 +6,7 @@ use salsa20::{
 
 use crate::chunk::EncryptionStatus;
 
-use super::{HandleData, DirectedId, Cx, Db, DbResult};
+use super::{HandleData, DirectedId, Cx, Db, DbResult, StreamId};
 
 pub struct State<Inner> {
     shared_secret: GenericArray<u8, typenum::U32>,
@@ -18,7 +18,7 @@ pub struct State<Inner> {
 
 impl<Inner> State<Inner>
 where
-    Inner: From<(u64, bool)>,
+    Inner: From<StreamId>,
 {
     pub fn new(chain_id: &[u8]) -> Self {
         State {
@@ -26,7 +26,7 @@ where
             cipher_in: None,
             cipher_out: None,
             skip: false,
-            inner: Inner::from((0, false)),
+            inner: Inner::from(StreamId::Handshake),
         }
     }
 }
@@ -50,7 +50,7 @@ impl<Inner> State<Inner> {
 
 impl<Inner> HandleData for State<Inner>
 where
-    Inner: HandleData,
+    Inner: HandleData + From<StreamId>,
 {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {

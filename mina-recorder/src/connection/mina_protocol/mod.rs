@@ -7,7 +7,7 @@ use mina_p2p_messages::{
     utils,
 };
 
-use crate::database::{StreamId, StreamKind, DbStream, ConnectionStats};
+use crate::database::{StreamId, StreamKind, ConnectionStats};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -15,21 +15,14 @@ pub struct State {
     stream_id: StreamId,
     kind: StreamKind,
     rpc_context: BTreeMap<i64, (BString, i32)>,
-    stream: Option<DbStream>,
 }
 
 impl DynamicProtocol for State {
-    fn from_name(name: &str, id: u64, forward: bool) -> Self {
-        let stream_id = if forward {
-            StreamId::Forward(id)
-        } else {
-            StreamId::Backward(id)
-        };
+    fn from_name(name: &str, stream_id: StreamId) -> Self {
         State {
             stream_id,
             kind: name.parse().expect("cannot fail"),
             rpc_context: BTreeMap::default(),
-            stream: None,
         }
     }
 }
@@ -37,9 +30,7 @@ impl DynamicProtocol for State {
 impl HandleData for State {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx, db: &Db) -> DbResult<()> {
-        let stream = self
-            .stream
-            .get_or_insert_with(|| db.add(self.stream_id, self.kind));
+        let stream = db.add(self.stream_id);
         if self.kind == StreamKind::Rpc {
             let mut s = Cursor::new(bytes);
             let len = match utils::stream_decode_size(&mut s) {
@@ -59,7 +50,7 @@ impl HandleData for State {
                 Ok(MessageHeader::Heartbeat) => (),
                 Ok(MessageHeader::Query(v)) => {
                     self.rpc_context.insert(v.id, (v.tag, v.version));
-                    stream.add(&id, &s.get_ref()[..(8 + len)])?;
+                    stream.add(&id, self.kind, &s.get_ref()[..(8 + len)])?;
                 }
                 Ok(MessageHeader::Response(v)) => {
                     let pos = s.position();
@@ -75,7 +66,7 @@ impl HandleData for State {
                         let new_len = (len + b.len()) as u64 - pos;
                         b[0..8].clone_from_slice(&new_len.to_le_bytes());
                         b.extend_from_slice(&s.get_ref()[(pos as usize)..(8 + len)]);
-                        stream.add(&id, &b)?;
+                        stream.add(&id, self.kind, &b)?;
                     } else {
                         // magic number, means kind of rpc handshake
                         if v.id != 4411474 {
@@ -90,7 +81,7 @@ impl HandleData for State {
                 self.on_data(id.clone(), rest, _cx, db)?;
             }
         } else {
-            stream.add(&id, bytes)?;
+            stream.add(&id, self.kind, bytes)?;
         }
 
         db.update(

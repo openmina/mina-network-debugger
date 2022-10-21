@@ -1,24 +1,22 @@
 use std::{collections::BTreeMap, borrow::Cow, task::Poll, fmt};
 
-use crate::database::{DbStream, StreamId, StreamKind};
+use crate::database::StreamKind;
 
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult, StreamId};
 
 #[derive(Default)]
 pub struct State<Inner> {
     incoming: acc::State<true>,
     outgoing: acc::State<false>,
-    stream: Option<DbStream>,
     inners: BTreeMap<StreamId, Status<Inner>>,
 }
 
 impl<Inner> DynamicProtocol for State<Inner> {
-    fn from_name(name: &str, _: u64, _: bool) -> Self {
+    fn from_name(name: &str, _: StreamId) -> Self {
         assert_eq!(name, "/coda/mplex/1.0.0");
         State {
             incoming: acc::State::default(),
             outgoing: acc::State::default(),
-            stream: None,
             inners: BTreeMap::default(),
         }
     }
@@ -260,17 +258,8 @@ impl fmt::Display for CloseError {
 
 impl<Inner> State<Inner>
 where
-    Inner: From<(u64, bool)>,
+    Inner: From<StreamId>,
 {
-    // TODO: refactor it, implement `From<StreamId>` for `Inner`
-    fn inner_state(stream_id: StreamId) -> Inner {
-        match stream_id {
-            StreamId::Handshake => panic!("mplex stream cannot be handshake"),
-            StreamId::Forward(id) => Inner::from((id, true)),
-            StreamId::Backward(id) => Inner::from((id, false)),
-        }
-    }
-
     fn process<'a>(&mut self, incoming: bool, bytes: &'a [u8]) -> Vec<Output<'a>> {
         let mut output = vec![];
         let mut bytes = bytes;
@@ -291,7 +280,7 @@ where
                     acc::Tag::New => {
                         let name = String::from_utf8(bytes.to_vec())
                             .unwrap_or_else(|_| hex::encode(bytes));
-                        let stream = Self::inner_state(stream_id);
+                        let stream = Inner::from(stream_id);
                         let already_exist = self
                             .inners
                             .insert(stream_id, Status::Duplex(stream))
@@ -366,14 +355,12 @@ where
 
 impl<Inner> HandleData for State<Inner>
 where
-    Inner: HandleData + From<(u64, bool)>,
+    Inner: HandleData + From<StreamId>,
 {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         for Output { stream_id, variant } in self.process(id.incoming, bytes) {
-            let db_stream = self
-                .stream
-                .get_or_insert_with(|| db.add(stream_id, StreamKind::Mplex));
+            let db_stream = db.add(stream_id);
 
             match variant {
                 OutputVariant::New {
@@ -384,7 +371,7 @@ where
                     if already_exist {
                         log::warn!("{id}, {stream_id}: new stream \"{name}\", but already exist");
                     }
-                    db_stream.add(&id, &header.to_be_bytes())?;
+                    db_stream.add(&id, StreamKind::Mplex, &header.to_be_bytes())?;
                 }
                 OutputVariant::Msg {
                     bytes,
@@ -409,10 +396,10 @@ where
                     if let Some(error) = error {
                         log::error!("{id} {error}");
                     }
-                    db_stream.add(&id, &header.to_be_bytes())?;
+                    db_stream.add(&id, StreamKind::Mplex, &header.to_be_bytes())?;
                 }
                 OutputVariant::Reset { header } => {
-                    db_stream.add(&id, &header.to_be_bytes())?;
+                    db_stream.add(&id, StreamKind::Mplex, &header.to_be_bytes())?;
                 }
             }
         }
@@ -423,12 +410,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::State;
+    use super::{State, StreamId};
 
     fn generic(
         case: impl IntoIterator<Item = (bool, &'static str, impl IntoIterator<Item = &'static str>)>,
     ) {
-        let mut state = State::<(u64, bool)>::default();
+        let mut state = State::<StreamId>::default();
         for (incoming, bytes, expected) in case {
             let bytes = hex::decode(bytes).unwrap();
             for (actual, expected) in state.process(incoming, &bytes).into_iter().zip(expected) {

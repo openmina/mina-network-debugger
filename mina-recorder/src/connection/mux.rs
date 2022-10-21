@@ -1,4 +1,4 @@
-use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult, mplex, yamux};
+use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult, mplex, yamux, StreamId};
 
 pub enum State<Inner> {
     Mplex(mplex::State<Inner>),
@@ -6,10 +6,10 @@ pub enum State<Inner> {
 }
 
 impl<Inner> DynamicProtocol for State<Inner> {
-    fn from_name(name: &str, id: u64, forward: bool) -> Self {
+    fn from_name(name: &str, stream_id: StreamId) -> Self {
         match name {
-            "/coda/mplex/1.0.0" => State::Mplex(mplex::State::from_name(name, id, forward)),
-            "/coda/yamux/1.0.0" => State::Yamux(yamux::State::from_name(name, id, forward)),
+            "/coda/mplex/1.0.0" => State::Mplex(mplex::State::from_name(name, stream_id)),
+            "/coda/yamux/1.0.0" => State::Yamux(yamux::State::from_name(name, stream_id)),
             n => panic!("unexpected mux protocol: {n}"),
         }
     }
@@ -17,7 +17,7 @@ impl<Inner> DynamicProtocol for State<Inner> {
 
 impl<Inner> HandleData for State<Inner>
 where
-    Inner: HandleData + From<(u64, bool)>,
+    Inner: HandleData + From<StreamId>,
 {
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         match self {
