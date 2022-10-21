@@ -187,7 +187,7 @@ where
         let output = self.hl.poll(id.incoming, bytes);
 
         if !output.tokens.is_empty() {
-            let stream = db.add(self.stream_id);
+            let stream = db.get(self.stream_id);
             for token in output.tokens {
                 stream.add(&id, StreamKind::Select, token.as_bytes())?;
             }
@@ -207,9 +207,9 @@ where
             if let StreamKind::Unknown = protocol.parse().expect("cannot fail") {
                 log::error!("{id} {}, bad protocol name {protocol}", db.id());
             }
-            let inner = self.inner.get_or_insert_with(|| {
-                Inner::from_name(&protocol, self.stream_id)
-            });
+            let inner = self
+                .inner
+                .get_or_insert_with(|| Inner::from_name(&protocol, self.stream_id));
             inner.on_data(id, data.to_mut(), cx, db)?;
         }
 

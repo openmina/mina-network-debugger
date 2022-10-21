@@ -1,9 +1,4 @@
-#![cfg_attr(
-    feature = "kern",
-    no_std,
-    no_main,
-    feature(lang_items),
-)]
+#![cfg_attr(feature = "kern", no_std, no_main, feature(lang_items))]
 
 #[cfg(feature = "kern")]
 use ebpf_kern as ebpf;
@@ -270,7 +265,9 @@ impl App {
             }
             if ty == AF_INET {
                 let mut ip = [0u8; 4];
-                let c = unsafe { helpers::probe_read_user(ip.as_mut_ptr() as *mut _, 4, ptr.offset(4) as _) };
+                let c = unsafe {
+                    helpers::probe_read_user(ip.as_mut_ptr() as *mut _, 4, ptr.offset(4) as _)
+                };
                 if c != 0 {
                     return Err(0);
                 }

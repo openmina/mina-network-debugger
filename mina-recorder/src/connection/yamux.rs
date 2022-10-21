@@ -47,12 +47,12 @@ mod header {
 
     #[derive(Debug, Error)]
     pub enum HeaderParseError {
-        #[error("unknown version {0}")]
-        UnknownVersion(u8),
+        #[error("the version {0} is not supported")]
+        NotSupportedVersion(u8),
         #[error("unknown type {0}")]
-        UnknownType(u8),
+        Type(u8),
         #[error("unknown flags {0}")]
-        UnknownFlags(u16),
+        Flags(u16),
         #[error("unknown error code {0}")]
         UnknownErrorCode(u32),
     }
@@ -63,7 +63,7 @@ mod header {
         fn try_from(v: [u8; 12]) -> Result<Self, Self::Error> {
             let version = v[0];
             if version != 0 {
-                return Err(HeaderParseError::UnknownVersion(version));
+                return Err(HeaderParseError::NotSupportedVersion(version));
             }
 
             let last = {
@@ -96,7 +96,7 @@ mod header {
                     };
                     HeaderType::GoAway(result)
                 }
-                t => return Err(HeaderParseError::UnknownType(t)),
+                t => return Err(HeaderParseError::Type(t)),
             };
 
             let flags = {
@@ -106,7 +106,7 @@ mod header {
             };
 
             if flags >= 16 {
-                return Err(HeaderParseError::UnknownFlags(flags));
+                return Err(HeaderParseError::Flags(flags));
             }
 
             let stream_id = {
@@ -125,7 +125,14 @@ mod header {
     }
 
     impl<'a> From<&'a Header> for [u8; 12] {
-        fn from(Header { version, ty, flags, stream_id }: &'a Header) -> Self {
+        fn from(
+            Header {
+                version,
+                ty,
+                flags,
+                stream_id,
+            }: &'a Header,
+        ) -> Self {
             let mut v = [0; 12];
             v[0] = *version;
             match ty {
@@ -182,15 +189,9 @@ mod header {
     #[serde(rename_all = "snake_case")]
     #[serde(tag = "type")]
     pub enum HeaderType {
-        Data {
-            length: u32,
-        },
-        WindowUpdate {
-            delta: i32,
-        },
-        Ping {
-            opaque: u32,
-        },
+        Data { length: u32 },
+        WindowUpdate { delta: i32 },
+        Ping { opaque: u32 },
         GoAway(Result<(), YamuxError>),
     }
 
@@ -303,7 +304,11 @@ impl<Inner> State<Inner>
 where
     Inner: From<StreamId>,
 {
-    fn process<'a>(&mut self, incoming: bool, bytes: &'a [u8]) -> Vec<Result<acc::Output<'a>, acc::Error>> {
+    fn process<'a>(
+        &mut self,
+        incoming: bool,
+        bytes: &'a [u8],
+    ) -> Vec<Result<acc::Output<'a>, acc::Error>> {
         let mut output = vec![];
         let mut bytes = bytes;
         loop {
@@ -352,7 +357,7 @@ where
                     } else {
                         StreamId::Backward((header.stream_id / 2) as u64)
                     };
-                    let db_stream = db.add(stream_id);
+                    let db_stream = db.get(stream_id);
                     let header_bytes = <[u8; 12]>::from(&header);
                     db_stream.add(&id, StreamKind::Yamux, &header_bytes)?;
                 }

@@ -126,8 +126,7 @@ pub struct DbGroup {
 }
 
 impl DbGroup {
-    // TODO: rename it
-    pub fn add(&self, id: StreamId) -> DbStream {
+    pub fn get(&self, id: StreamId) -> DbStream {
         DbStream {
             addr: self.addr,
             id: StreamFullId { cn: self.id, id },
@@ -205,7 +204,12 @@ impl Drop for DbStream {
 }
 
 impl DbStream {
-    pub fn add(&self, did: &DirectedId, stream_kind: StreamKind, bytes: &[u8]) -> Result<(), DbError> {
+    pub fn add(
+        &self,
+        did: &DirectedId,
+        stream_kind: StreamKind,
+        bytes: &[u8],
+    ) -> Result<(), DbError> {
         let sb = self.inner.get_stream(self.id)?;
         let mut file = sb.lock().expect("poisoned");
         let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;

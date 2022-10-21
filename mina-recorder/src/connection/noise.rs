@@ -158,11 +158,11 @@ where
                     match msg {
                         Msg::First => (),
                         Msg::Second => {
-                            db.add(StreamId::Handshake)
+                            db.get(StreamId::Handshake)
                                 .add(&id, StreamKind::Handshake, bytes)?;
                         }
                         Msg::Third => {
-                            db.add(StreamId::Handshake)
+                            db.get(StreamId::Handshake)
                                 .add(&id, StreamKind::Handshake, bytes)?;
                         }
                         Msg::Other => {
@@ -261,7 +261,7 @@ impl<Inner> NoiseState<Inner> {
             hex::encode(&bytes[..32.min(bytes.len())])
         );
 
-        let stream = db.add(StreamId::Handshake);
+        let stream = db.get(StreamId::Handshake);
         let mut b = b"mac_mismatch\x00\x00\x00\x00".to_vec();
         b.extend_from_slice(&self.decrypted.to_be_bytes());
         b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());

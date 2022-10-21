@@ -9,6 +9,9 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
             .map_err(DecodeError::Yamux)
             .and_then(|header| serde_json::to_value(&header).map_err(DecodeError::Serde))
     } else {
-        Err(DecodeError::UnexpectedSize { actual: bytes.len(), expected: 12 })
+        Err(DecodeError::UnexpectedSize {
+            actual: bytes.len(),
+            expected: 12,
+        })
     }
 }

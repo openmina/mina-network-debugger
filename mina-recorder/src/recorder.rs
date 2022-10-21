@@ -22,10 +22,19 @@ pub struct P2pRecorder {
 
 // my local sandbox
 // /coda/0.0.1/dd0f3f26be5a093f00077d1cd5d89abc253c95f301e9c12ae59e2d7c6052cc4d
-const CHAINS: [(&'static str, &'static str); 3] = [
-    ("mainnet", "/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1"),
-    ("devnet", "/coda/0.0.1/b6ee40d336f4cc3f33c1cc04dee7618eb8e556664c2b2d82ad4676b512a82418"),
-    ("berkeley", "/coda/0.0.1/2b646a149605bebef6d1fca27a4d8f4c174d4842af05907101166cc6ff44b71d"),
+const CHAINS: [(&str, &str); 3] = [
+    (
+        "mainnet",
+        "/coda/0.0.1/5f704cc0c82e0ed70e873f0893d7e06f148524e3f0bdae2afb02e7819a0c24d1",
+    ),
+    (
+        "devnet",
+        "/coda/0.0.1/b6ee40d336f4cc3f33c1cc04dee7618eb8e556664c2b2d82ad4676b512a82418",
+    ),
+    (
+        "berkeley",
+        "/coda/0.0.1/2b646a149605bebef6d1fca27a4d8f4c174d4842af05907101166cc6ff44b71d",
+    ),
 ];
 
 pub struct Cx {
@@ -58,24 +67,22 @@ impl P2pRecorder {
         let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
         let mut it = alias.split('-');
         let network = it.next().expect("`split` must yield at least one");
-        let chain_id = CHAINS.iter().find_map(|(k, v)| {
-            if *k == network {
-                Some(*v)
-            } else {
-                None
-            }
-        }).unwrap_or(CHAINS[0].1);
+        let chain_id = CHAINS
+            .iter()
+            .find_map(|(k, v)| if *k == network { Some(*v) } else { None })
+            .unwrap_or(CHAINS[0].1);
         let id = DirectedId {
             metadata,
             alias,
             incoming,
             buffered,
         };
-        match self
-            .cx
-            .db
-            .add(id.metadata.id.clone(), incoming, id.alias.clone(), id.metadata.time)
-        {
+        match self.cx.db.add(
+            id.metadata.id.clone(),
+            incoming,
+            id.alias.clone(),
+            id.metadata.time,
+        ) {
             Ok(group) => {
                 log::debug!("{id} {} new connection", group.id());
 
