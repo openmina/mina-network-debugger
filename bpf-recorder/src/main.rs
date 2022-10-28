@@ -719,9 +719,6 @@ fn main() {
                 }
                 SnifferEventVariant::Bind(addr) => {
                     let matches_port = matches!(addr.port(), 8302 | 8303);
-                    if matches_port {
-                        ptrace_task.attach(event.pid);
-                    }
                     if strace && strace_running.is_none() && matches_port {
                         if let Some(db_strace) = db_strace.take() {
                             let child = Command::new("strace")
@@ -741,6 +738,8 @@ fn main() {
                     }
                 }
                 SnifferEventVariant::OutgoingConnection(addr) => {
+                    ptrace_task.attach(event.pid);
+
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
                             addr,
@@ -759,6 +758,8 @@ fn main() {
                     recorder.on_connect(false, metadata, buffered);
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
+                    ptrace_task.attach(event.pid);
+
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
                             addr,

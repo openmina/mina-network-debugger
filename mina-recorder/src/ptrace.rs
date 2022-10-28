@@ -13,6 +13,7 @@ pub struct Task {
     running_state: bool,
     task: Option<thread::JoinHandle<Result<(), Error>>>,
     sender: mpsc::Sender<Act>,
+    tracees: BTreeSet<Pid>,
 }
 
 #[derive(Debug)]
@@ -57,6 +58,7 @@ impl Task {
             running_state: true,
             task: Some(task),
             sender,
+            tracees: BTreeSet::default(),
         }
     }
 
@@ -85,7 +87,6 @@ impl Task {
 
         let mut running = true;
         let mut suspended = BTreeMap::new();
-        let mut tracees = BTreeSet::new();
 
         'main: while let Some(mut tracee) = tracer.wait()? {
             if tracee.pid == channel_pid && matches!(&tracee.stop, Stop::SyscallExit) {
@@ -117,16 +118,13 @@ impl Task {
                                 running = false;
                             }
                             Act::Attach(pid) => {
-                                if tracees.insert(pid) {
-                                    log::info!("attach {pid}");
-                                    tracer.attach(pid)?;
-                                }
+                                log::info!("attach {pid}");
+                                tracer.attach(pid)?;
                             }
                         }
                     }
                 }
             } else if tracee.pid != channel_pid && !running {
-                // log::info!("want suspend {} {:?}", tracee.pid, tracee.stop);
                 if matches!(
                     &tracee.stop,
                     Stop::SyscallExit
@@ -135,7 +133,6 @@ impl Task {
                         }
                 ) {
                     let regs = tracee.registers()?;
-                    // log::info!("want suspend {} {}", tracee.pid, regs.orig_rax);
                     if matches!(regs.orig_rax, 215 | 232 | 281) {
                         log::info!("suspend {}", tracee.pid);
                         suspended.insert(tracee.pid, tracee);
@@ -145,7 +142,7 @@ impl Task {
                     }
                 }
             } else if tracee.pid != channel_pid && matches!(&tracee.stop, Stop::Exiting { .. }) {
-                tracees.remove(&tracee.pid);
+                // self.tracees.remove(&tracee.pid);
             }
             tracer.restart(tracee, Restart::Syscall)?;
         }
@@ -157,9 +154,12 @@ impl Task {
     }
 
     pub fn attach(&mut self, pid: u32) {
-        self.sender
-            .send(Act::Attach(Pid::from_raw(pid as i32)))
-            .unwrap_or_default();
+        let pid = Pid::from_raw(pid as i32);
+        if self.tracees.insert(pid) {
+            self.sender
+                .send(Act::Attach(pid))
+                .unwrap_or_default();
+        }
     }
 
     pub fn set_running(&mut self, running: bool) {
