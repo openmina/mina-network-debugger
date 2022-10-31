@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, task::Poll};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    task::Poll,
+};
 
 use crate::database::StreamKind;
 
@@ -9,6 +12,7 @@ pub struct State<Inner> {
     outgoing: acc::State<false>,
     error: bool,
     inners: BTreeMap<StreamId, Status<Inner>>,
+    recent_reset: VecDeque<StreamId>,
 }
 
 pub enum Status<Inner> {
@@ -35,6 +39,7 @@ impl<Inner> DynamicProtocol for State<Inner> {
             outgoing: acc::State::default(),
             error: false,
             inners: BTreeMap::new(),
+            recent_reset: VecDeque::with_capacity(512),
         }
     }
 }
@@ -397,6 +402,10 @@ where
                         // TODO: report
                         let _ = error;
                     } else if out.header.flags.contains(HeaderFlags::RST) {
+                        if self.recent_reset.len() == 512 {
+                            self.recent_reset.pop_front();
+                        }
+                        self.recent_reset.push_back(stream_id);
                         self.inners.remove(&stream_id);
                     }
                 }
@@ -441,7 +450,9 @@ where
                         if let Some(s) = self.inners.get_mut(&stream_id) {
                             s.as_mut().on_data(id.clone(), bytes.to_mut(), cx, db)?;
                         } else {
-                            log::warn!("{id} {} message for {stream_id}, doesn't exist", db.id());
+                            if !self.recent_reset.contains(&stream_id) {
+                                log::warn!("{id} {} doesn't exist {stream_id}", db.id());
+                            }
                         }
                     } else {
                         let header_bytes = <[u8; 12]>::from(&header);
