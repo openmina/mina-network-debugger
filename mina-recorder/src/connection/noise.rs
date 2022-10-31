@@ -69,7 +69,9 @@ where
                 let len = u16::from_be_bytes(len) as usize;
                 if accumulator.len() >= 2 + len {
                     let (chunk, remaining) = accumulator.split_at_mut(2 + len);
-                    self.inner.on_data(id.clone(), chunk, cx, db)?;
+                    if let Err(err) = self.inner.on_data(id.clone(), chunk, cx, db) {
+                        log::error!("{id} {}: {err}", db.id());
+                    }
                     *accumulator = remaining.to_vec();
                     continue;
                 }

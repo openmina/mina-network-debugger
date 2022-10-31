@@ -8,11 +8,9 @@ pub struct State<Inner> {
     incoming: acc::State<true>,
     outgoing: acc::State<false>,
     error: bool,
-    #[allow(dead_code)]
     inners: BTreeMap<StreamId, Status<Inner>>,
 }
 
-#[allow(dead_code)]
 pub enum Status<Inner> {
     Duplex(Inner),
     IncomingOnly(Inner),
@@ -55,6 +53,16 @@ mod header {
         Flags(u16),
         #[error("unknown error code {0}")]
         UnknownErrorCode(u32),
+    }
+
+    bitflags::bitflags! {
+        #[derive(Serialize, Deserialize)]
+        pub struct HeaderFlags: u16 {
+            const SYN = 0b0001;
+            const ACK = 0b0010;
+            const FIN = 0b0100;
+            const RST = 0b1000;
+        }
     }
 
     impl TryFrom<[u8; 12]> for Header {
@@ -102,12 +110,12 @@ mod header {
             let flags = {
                 let mut x = [0; 2];
                 x.clone_from_slice(&v[2..4]);
-                u16::from_be_bytes(x)
+                let bits = u16::from_be_bytes(x);
+                match HeaderFlags::from_bits(bits) {
+                    Some(v) => v,
+                    None => return Err(HeaderParseError::Flags(bits)),
+                }
             };
-
-            if flags >= 16 {
-                return Err(HeaderParseError::Flags(flags));
-            }
 
             let stream_id = {
                 let mut x = [0; 4];
@@ -161,7 +169,7 @@ mod header {
                     v[8..].clone_from_slice(&2u32.to_be_bytes());
                 }
             }
-            v[2..4].clone_from_slice(&flags.to_be_bytes());
+            v[2..4].clone_from_slice(&flags.bits().to_be_bytes());
             v[4..8].clone_from_slice(&stream_id.to_be_bytes());
 
             v
@@ -172,7 +180,7 @@ mod header {
     pub struct Header {
         pub version: u8,
         pub ty: HeaderType,
-        pub flags: u16,
+        pub flags: HeaderFlags,
         pub stream_id: u32,
     }
 
@@ -202,7 +210,7 @@ mod header {
         Internal,
     }
 }
-pub use self::header::{HeaderParseError, Header, HeaderType, YamuxError};
+pub use self::header::{HeaderParseError, Header, HeaderType, HeaderFlags, YamuxError};
 
 // TODO: reuse `mplex::acc`
 mod acc {
@@ -321,7 +329,7 @@ mod acc_next {
     }
 
     impl<const INCOMING: bool> State<INCOMING> {
-        pub fn accumulate<'a>(&mut self, bytes: &'a [u8]) -> Poll<Output> {
+        pub fn accumulate(&mut self, bytes: &[u8]) -> Poll<Output> {
             if let Some(header) = &self.header {
                 self.acc.extend_from_slice(bytes);
                 if self.acc.len() >= header.payload_length() {
@@ -357,6 +365,41 @@ where
             };
             bytes = &[];
             if let Poll::Ready(result) = acc {
+                if let Ok(out) = &result {
+                    let header = &out.header;
+                    let stream_id = if header.stream_id == 0 {
+                        StreamId::Handshake
+                    } else if header.stream_id % 2 == 0 {
+                        StreamId::Forward((header.stream_id / 2) as u64)
+                    } else {
+                        StreamId::Backward((header.stream_id / 2) as u64)
+                    };
+
+                    if header.flags.contains(HeaderFlags::SYN) {
+                        let stream = Inner::from(stream_id);
+                        self.inners.insert(stream_id, Status::Duplex(stream));
+                    } else if out.header.flags.contains(HeaderFlags::FIN) {
+                        let error = match (self.inners.remove(&stream_id), incoming) {
+                            (Some(Status::Duplex(stream)), true) => {
+                                self.inners.insert(stream_id, Status::OutgoingOnly(stream));
+                                false
+                            }
+                            (Some(Status::Duplex(stream)), false) => {
+                                self.inners.insert(stream_id, Status::IncomingOnly(stream));
+                                false
+                            }
+                            (Some(Status::IncomingOnly(_)), true) => false,
+                            (Some(Status::OutgoingOnly(_)), false) => false,
+                            (Some(Status::OutgoingOnly(_)), true) => true,
+                            (Some(Status::IncomingOnly(_)), false) => true,
+                            (None, _) => true,
+                        };
+                        // TODO: report
+                        let _ = error;
+                    } else if out.header.flags.contains(HeaderFlags::RST) {
+                        self.inners.remove(&stream_id);
+                    }
+                }
                 output.push(result);
             } else {
                 break;
@@ -371,7 +414,7 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData + From<StreamId>,
 {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         if self.error {
             // TODO: report
             return Ok(());
@@ -385,9 +428,7 @@ where
                     log::error!("{id} {} {err}", db.id());
                     return Ok(());
                 }
-                Ok(acc::Output { header, bytes }) => {
-                    // TODO:
-                    let _ = bytes;
+                Ok(acc::Output { header, mut bytes }) => {
                     let stream_id = if header.stream_id == 0 {
                         StreamId::Handshake
                     } else if header.stream_id % 2 == 0 {
@@ -396,8 +437,16 @@ where
                         StreamId::Backward((header.stream_id / 2) as u64)
                     };
                     let db_stream = db.get(stream_id);
-                    let header_bytes = <[u8; 12]>::from(&header);
-                    db_stream.add(&id, StreamKind::Yamux, &header_bytes)?;
+                    if let HeaderType::Data { .. } = &header.ty {
+                        if let Some(s) = self.inners.get_mut(&stream_id) {
+                            s.as_mut().on_data(id.clone(), bytes.to_mut(), cx, db)?;
+                        } else {
+                            log::warn!("{id} {} message for {stream_id}, doesn't exist", db.id());
+                        }
+                    } else {
+                        let header_bytes = <[u8; 12]>::from(&header);
+                        db_stream.add(&id, StreamKind::Yamux, &header_bytes)?;
+                    }
                 }
             }
         }

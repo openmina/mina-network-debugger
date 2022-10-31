@@ -1,6 +1,5 @@
 /// For given vector of *sorted* iterators, return new vector containing values
 /// present in *every* iterator
-#[allow(dead_code)]
 pub fn sorted_intersect<I>(iters: &mut [I], limit: usize, forward: bool) -> Vec<I::Item>
 where
     I: Iterator,

@@ -31,6 +31,10 @@ impl HandleData for State {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx, db: &Db) -> DbResult<()> {
         let stream = db.get(self.stream_id);
+        if self.kind == StreamKind::Rpc || self.kind == StreamKind::Meshsub {
+            // doesn't work, need to accumulate yamux messages
+            return Ok(());
+        }
         if self.kind == StreamKind::Rpc {
             let mut s = Cursor::new(bytes);
             let len = match utils::stream_decode_size(&mut s) {
