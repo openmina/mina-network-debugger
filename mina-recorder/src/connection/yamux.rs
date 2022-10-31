@@ -265,8 +265,9 @@ mod acc {
                 }
             } else {
                 self.acc.extend_from_slice(bytes);
-                if bytes.len() >= offset {
-                    let header_bytes = <[u8; 12]>::try_from(&bytes[..offset]).expect("cannot fail");
+                if self.acc.len() >= offset {
+                    let header_bytes =
+                        <[u8; 12]>::try_from(&self.acc[..offset]).expect("cannot fail");
                     let header = match Header::try_from(header_bytes) {
                         Ok(v) => v,
                         Err(err) => return Poll::Ready(Err(Error::HeaderParse(err))),
@@ -311,7 +312,7 @@ mod acc_next {
         msg: Vec<u8>,
         error: Option<String>,
     }
-    
+
     #[derive(Default)]
     pub struct State<const INCOMING: bool> {
         inner: acc::State<INCOMING>,
@@ -381,7 +382,7 @@ where
                 Err(err) => {
                     self.error = true;
                     // TODO: report
-                    log::error!("{id} {err}");
+                    log::error!("{id} {} {err}", db.id());
                     return Ok(());
                 }
                 Ok(acc::Output { header, bytes }) => {
@@ -402,5 +403,28 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::database::StreamId;
+
+    use super::{State, DynamicProtocol};
+
+    #[test]
+    fn trivial_acc() {
+        let mut st = State::<StreamId>::from_name("/coda/yamux/1.0.0", StreamId::Handshake);
+
+        let data = hex::decode("000000000000001100000010ffffffff").unwrap();
+        let r = st.process(true, &data);
+        assert!(r.is_empty());
+
+        let data = hex::decode("ffffffffffffffffffffffff").unwrap();
+        let r = st.process(true, &data);
+
+        let output = r[0].as_ref().unwrap();
+        assert_eq!(output.header.payload_length(), 16);
+        assert_eq!(output.bytes.as_ref(), [0xff; 16]);
     }
 }

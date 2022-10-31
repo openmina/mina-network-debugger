@@ -156,9 +156,7 @@ impl Task {
     pub fn attach(&mut self, pid: u32) {
         let pid = Pid::from_raw(pid as i32);
         if self.tracees.insert(pid) {
-            self.sender
-                .send(Act::Attach(pid))
-                .unwrap_or_default();
+            self.sender.send(Act::Attach(pid)).unwrap_or_default();
         }
     }
 
