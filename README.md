@@ -2,9 +2,7 @@
 
 (readme for developers)
 
-## Build
-
-See dockerfile.
+## Prepare for build
 
 Most likely developer machine already have all deps.
 
@@ -16,7 +14,13 @@ rustup component add rust-src --toolchain nightly-2022-10-10-x86_64-unknown-linu
 cargo install bpf-linker --git https://github.com/vlad9486/bpf-linker --branch keep-btf
 ```
 
-## Run
+Need dependencies, on ubuntu:
+
+```
+sudo apt install libelf-dev protobuf-compiler
+```
+
+## Build and Run
 
 ```
 cargo build --bin bpf-recorder --release
