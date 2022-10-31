@@ -10,6 +10,7 @@ pub use self::recorder::P2pRecorder;
 pub mod tester;
 
 mod connection;
+pub use self::connection::yamux;
 
 mod decode;
 
