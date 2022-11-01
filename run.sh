@@ -9,4 +9,4 @@ nohup sudo \
     HTTPS_KEY_PATH='/etc/letsencrypt/live/debug.dev.tezedge.com/privkey.pem' \
     HTTPS_CERT_PATH='/etc/letsencrypt/live/debug.dev.tezedge.com/fullchain.pem' \
     DB_PATH="/tmp/mina-debugger-db-$1" \
-    ~/.cargo/bin/bpf-recorder &> ~/mina-debugger-log-$1 &
+    ~/.cargo/bin/bpf-recorder &> ~/mina-log/$1.log &
