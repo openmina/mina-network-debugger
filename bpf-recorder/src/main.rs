@@ -750,7 +750,7 @@ fn main() {
                         duration,
                     };
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                        log::warn!("new outgoing connection on already allocated fd");
+                        log::debug!("new outgoing connection on already allocated fd");
                         let mut metadata = metadata.clone();
                         metadata.id.addr = old_addr;
                         recorder.on_disconnect(metadata, buffered);
@@ -770,7 +770,7 @@ fn main() {
                         duration,
                     };
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                        log::warn!("new incoming connection on already allocated fd");
+                        log::debug!("new incoming connection on already allocated fd");
                         let mut metadata = metadata.clone();
                         metadata.id.addr = old_addr;
                         recorder.on_disconnect(metadata, buffered);
