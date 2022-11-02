@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use mina_p2p_messages::GossipNetMessageV1;
+use mina_p2p_messages::{GossipNetMessageV1, gossip::GossipNetMessageV2};
 use binprot::BinProtRead;
 use serde::Serialize;
 use prost::{bytes::Bytes, Message};
@@ -29,6 +29,15 @@ pub enum Event {
         key: Option<String>,
         topic: String,
         message: Box<GossipNetMessageV1>,
+    },
+    #[serde(rename = "publish_v2")]
+    PublishV2 {
+        from: Option<String>,
+        seqno: Option<String>,
+        signature: Option<String>,
+        key: Option<String>,
+        topic: String,
+        message: Box<GossipNetMessageV2>,
     },
     #[serde(rename = "publish")]
     PublishPreview {
@@ -146,24 +155,56 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
         })
         .map(|(data, topic, from, seqno, signature, key)| {
             let mut c = Cursor::new(&data[8..]);
-            let message = Box::new(GossipNetMessageV1::binprot_read(&mut c).unwrap());
-            if preview {
-                let message = match &*message {
-                    GossipNetMessageV1::NewState(_) => GossipNetMessagePreview::NewState,
-                    GossipNetMessageV1::SnarkPoolDiff(_) => GossipNetMessagePreview::SnarkPoolDiff,
-                    GossipNetMessageV1::TransactionPoolDiff(_) => {
-                        GossipNetMessagePreview::TransactionPoolDiff
+            match GossipNetMessageV1::binprot_read(&mut c) {
+                Ok(msg) => {
+                    let message = Box::new(msg);
+                    if preview {
+                        let message = match &*message {
+                            GossipNetMessageV1::NewState(_) => GossipNetMessagePreview::NewState,
+                            GossipNetMessageV1::SnarkPoolDiff(_) => {
+                                GossipNetMessagePreview::SnarkPoolDiff
+                            }
+                            GossipNetMessageV1::TransactionPoolDiff(_) => {
+                                GossipNetMessagePreview::TransactionPoolDiff
+                            }
+                        };
+                        Event::PublishPreview { topic, message }
+                    } else {
+                        Event::Publish {
+                            from: from.map(hex::encode),
+                            seqno: seqno.map(hex::encode),
+                            signature: signature.map(hex::encode),
+                            key: key.map(hex::encode),
+                            topic,
+                            message,
+                        }
                     }
-                };
-                Event::PublishPreview { topic, message }
-            } else {
-                Event::Publish {
-                    from: from.map(hex::encode),
-                    seqno: seqno.map(hex::encode),
-                    signature: signature.map(hex::encode),
-                    key: key.map(hex::encode),
-                    topic,
-                    message,
+                }
+                Err(_) => {
+                    let mut c = Cursor::new(&data[8..]);
+                    let msg = GossipNetMessageV2::binprot_read(&mut c).unwrap();
+                    let message = Box::new(msg);
+                    if preview {
+                        let message = match &*message {
+                            GossipNetMessageV2::NewState(_) => GossipNetMessagePreview::NewState,
+                            GossipNetMessageV2::SnarkPoolDiff(_) => {
+                                GossipNetMessagePreview::SnarkPoolDiff
+                            }
+                            GossipNetMessageV2::TransactionPoolDiff(_) => {
+                                GossipNetMessagePreview::TransactionPoolDiff
+                            }
+                        };
+                        Event::PublishPreview { topic, message }
+                    } else {
+                        Event::PublishV2 {
+                            from: from.map(hex::encode),
+                            seqno: seqno.map(hex::encode),
+                            signature: signature.map(hex::encode),
+                            key: key.map(hex::encode),
+                            topic,
+                            message,
+                        }
+                    }
                 }
             }
         });
