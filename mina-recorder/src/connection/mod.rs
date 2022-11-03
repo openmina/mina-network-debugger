@@ -13,6 +13,8 @@ pub trait HandleData {
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()>;
 }
 
+mod accumulator;
+
 pub mod pnet;
 pub mod multistream_select;
 pub mod noise;

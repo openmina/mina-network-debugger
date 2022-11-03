@@ -1,52 +1,26 @@
 use prost::decode_length_delimiter;
 
+use super::accumulator;
+
 #[derive(Default)]
-pub struct State {
-    pos: usize,
-    acc: Vec<u8>,
-}
+pub struct State(accumulator::State);
 
 impl State {
-    /// Try accept immediately, without accumulation
-    /// if returns false, the `bytes` contains full message, and accumulator is empty
-    pub fn extend(&mut self, mut bytes: &[u8]) -> bool {
+    fn decode_size(mut bytes: &[u8]) -> Option<(usize, usize)> {
         let original = <&[u8]>::clone(&bytes);
-        if self.acc.is_empty() {
-            if decode_length_delimiter(&mut bytes).unwrap() as usize == bytes.len() {
-                return false;
-            }
-        }
-        self.acc.extend_from_slice(original);
-        true
+        let l1 = decode_length_delimiter(&mut bytes).ok()?;
+        let l0 = original.len() - bytes.len();
+        Some((l0, l1))
     }
 
-    fn drop_buffer(&mut self) {
-        self.acc = self.acc[self.pos..].to_vec();
-        self.pos = 0;
+    /// Try accept immediately, without accumulation
+    /// if returns false, the `bytes` contains full message, and accumulator is empty
+    pub fn extend(&mut self, bytes: &[u8]) -> bool {
+        self.0.extend(Self::decode_size, bytes)
     }
 
     pub fn next_msg(&mut self) -> Option<&[u8]> {
-        if self.acc.is_empty() || self.acc.len() == self.pos {
-            self.drop_buffer();
-            return None;
-        }
-
-        let mut bytes = &self.acc.as_slice()[self.pos..];
-        let len = decode_length_delimiter(&mut bytes).ok()? as usize;
-        if bytes.len() >= len {
-            let new_pos = self.acc.len() - bytes.len() + len;
-            if self.pos == new_pos {
-                self.drop_buffer();
-                None
-            } else {
-                let s = &self.acc[self.pos..new_pos];
-                self.pos = new_pos;
-                Some(s)
-            }
-        } else {
-            self.drop_buffer();
-            None
-        }
+        self.0.next_msg(Self::decode_size)
     }
 }
 
@@ -59,9 +33,9 @@ mod tests {
         let mut st = super::State::default();
         assert!(st.extend(&msg));
         assert!(st.next_msg().is_some());
-        assert_ne!(st.pos, 0);
+        assert_ne!(st.0.pos(), 0);
         assert!(st.next_msg().is_some());
         assert!(st.next_msg().is_none());
-        assert_eq!(st.pos, 0);
+        assert_eq!(st.0.pos(), 0);
     }
 }

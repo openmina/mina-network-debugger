@@ -682,7 +682,6 @@ fn main() {
     let test = env::var("TEST").is_ok();
     let strace = env::var("STRACE").is_ok();
 
-    // const P2P_PORT: u16 = 8302;
     let mut p2p_cns = BTreeMap::new();
     let mut recorder = P2pRecorder::new(db, test);
     let mut origin = None::<SystemTime>;
