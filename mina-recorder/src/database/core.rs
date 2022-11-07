@@ -814,7 +814,7 @@ impl DbCore {
         self.fetch_details_inner(msg, false)
     }
 
-    pub fn fetch_full_message_hex(&self, id: u64) -> Result<String, DbError> {
+    pub fn fetch_full_message_bin(&self, id: u64) -> Result<Vec<u8>, DbError> {
         let msg = self.get::<Message, _>(self.messages(), id.to_be_bytes())?;
 
         let stream_full_id = StreamFullId {
@@ -827,6 +827,11 @@ impl DbCore {
         file.read(msg.offset, &mut buf)
             .map_err(|err| DbError::Io(stream_full_id, err))?;
         drop(file);
+        Ok(buf)
+    }
+
+    pub fn fetch_full_message_hex(&self, id: u64) -> Result<String, DbError> {
+        let buf = self.fetch_full_message_bin(id)?;
         Ok(hex::encode(&buf))
     }
 

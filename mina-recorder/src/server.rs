@@ -91,6 +91,21 @@ fn message_hex(
     })
 }
 
+fn message_bin(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Vec<u8>>,), Error = Rejection> + Clone + Sync + Send + 'static
+{
+    warp::path!("message_bin" / u64).map(move |id: u64| -> reply::WithStatus<Vec<u8>> {
+        match db.fetch_full_message_bin(id) {
+            Ok(v) => reply::with_status(v, StatusCode::OK),
+            Err(err) => reply::with_status(
+                err.to_string().as_bytes().to_vec(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    })
+}
+
 fn strace(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
@@ -179,6 +194,7 @@ fn routes(
                 .or(connections(db.clone()))
                 .or(message(db.clone()))
                 .or(message_hex(db.clone()))
+                .or(message_bin(db.clone()))
                 .or(messages(db.clone()))
                 .or(strace(db.clone()))
                 .or(stats(db))
