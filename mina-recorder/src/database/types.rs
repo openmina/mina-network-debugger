@@ -1,5 +1,5 @@
 use std::{
-    time::{SystemTime, Duration},
+    time::{SystemTime, Duration, UNIX_EPOCH},
     fmt,
     str::FromStr,
     net::SocketAddr,
@@ -40,6 +40,28 @@ pub struct Connection {
     pub timestamp_close: SystemTime,
 
     pub alias: String,
+}
+
+impl Connection {
+    pub fn post_process(&self, now: Option<SystemTime>) -> serde_json::Value {
+        let end = if self.timestamp_close == UNIX_EPOCH {
+            now.unwrap_or(SystemTime::now())
+        } else {
+            self.timestamp_close
+        };
+        let duration = end.duration_since(self.timestamp).expect("must not fail");
+        let stats_in = self.stats_in.calc_speed(duration);
+        let stats_out = self.stats_out.calc_speed(duration);
+        let mut v = serde_json::to_value(self).expect("must not fail");
+        v.as_object_mut()
+            .unwrap()
+            .insert("stats_in".to_owned(), stats_in);
+        v.as_object_mut()
+            .unwrap()
+            .insert("stats_out".to_owned(), stats_out);
+
+        v
+    }
 }
 
 #[derive(Default, Clone, Absorb, Emit, Serialize)]
@@ -291,6 +313,28 @@ impl Timestamp for FullMessage {
 impl Timestamp for StraceLine {
     fn timestamp(&self) -> Duration {
         self.start
+    }
+}
+
+impl Timestamp for Connection {
+    fn timestamp(&self) -> Duration {
+        self.timestamp
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+    }
+}
+
+impl Timestamp for serde_json::Value {
+    fn timestamp(&self) -> Duration {
+        fn inner(v: &serde_json::Value) -> Option<SystemTime> {
+            let timestamp = v.as_object()?.get("timestamp")?;
+            serde_json::from_value(timestamp.clone()).ok()
+        }
+
+        match inner(self) {
+            Some(timestamp) => timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap(),
+            None => Duration::ZERO,
+        }
     }
 }
 

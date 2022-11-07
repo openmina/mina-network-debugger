@@ -1,6 +1,6 @@
 use std::{
     path::{PathBuf, Path},
-    time::Duration,
+    time::{Duration, SystemTime},
     cmp::Ordering,
     sync::{Mutex, Arc},
     collections::BTreeMap,
@@ -21,7 +21,7 @@ use super::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
         Timestamp, Time,
     },
-    params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter},
+    params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
     index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx},
     sorted_intersect::sorted_intersect,
 };
@@ -589,8 +589,24 @@ impl DbCore {
         })
     }
 
+    fn connection_id(&self, params: &ValidParamsConnection) -> (bool, u64) {
+        match params.coordinate.start {
+            Coordinate::ById { id, explicit } => (explicit, id),
+            Coordinate::ByTimestamp(timestamp) => {
+                let total = self.total::<{ Self::CONNECTIONS_CNT }>().unwrap_or(0);
+                match self.search_timestamp::<Connection>(self.connections(), total, timestamp) {
+                    Ok(c) => (true, c),
+                    Err(err) => {
+                        log::error!("cannot find timestamp {timestamp}, err: {err}");
+                        (false, 0)
+                    }
+                }
+            }
+        }
+    }
+
     fn message_id(&self, params: &ValidParams) -> (bool, u64) {
-        match params.start {
+        match params.coordinate.start {
             Coordinate::ById { id, explicit } => (explicit, id),
             Coordinate::ByTimestamp(timestamp) => {
                 let total = self.total::<{ Self::MESSAGES_CNT }>().unwrap_or(0);
@@ -622,11 +638,44 @@ impl DbCore {
         Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
     }
 
+    pub fn fetch_connections(
+        &self,
+        params: &ValidParamsConnection,
+    ) -> impl Iterator<Item = (u64, serde_json::Value)> + '_ {
+        let (present, id) = self.connection_id(params);
+
+        let coordinate = &params.coordinate;
+        let direction = coordinate.direction;
+
+        let id = id.to_be_bytes();
+        let mode = if present {
+            rocksdb::IteratorMode::From(&id, direction.into())
+        } else {
+            direction.into()
+        };
+
+        let it = self
+            .inner
+            .iterator_cf(self.connections(), mode)
+            .filter_map(Self::decode);
+        let it = Box::new(it) as Box<dyn Iterator<Item = (u64, Connection)>>;
+        let now = SystemTime::now();
+        params.limit(it.filter_map(move |(id, cn)| {
+            if cn.stats_in.total_bytes == 0 && cn.stats_out.total_bytes == 0 {
+                return None;
+            }
+            Some((id, cn.post_process(Some(now))))
+        }))
+    }
+
     pub fn fetch_messages(
         &self,
         params: &ValidParams,
     ) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
         let (present, id) = self.message_id(params);
+
+        let coordinate = &params.coordinate;
+        let direction = coordinate.direction;
 
         let it = if params.stream_filter.is_some() || params.kind_filter.is_some() {
             let stream_indexes = match &params.stream_filter {
@@ -638,7 +687,7 @@ impl DbCore {
                         id: MessageId(id),
                     };
                     let id = id.chain(vec![]);
-                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+                    let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
                     let it = self
                         .inner
@@ -655,7 +704,7 @@ impl DbCore {
                         id: MessageId(id),
                     };
                     let id = id.chain(vec![]);
-                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+                    let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
                     let it = self
                         .inner
@@ -672,7 +721,7 @@ impl DbCore {
                         id: MessageId(id),
                     };
                     let id = id.chain(vec![]);
-                    let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+                    let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
                     let it = self
                         .inner
@@ -693,7 +742,7 @@ impl DbCore {
                             id: MessageId(id),
                         };
                         let id = id.chain(vec![]);
-                        let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+                        let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
                         self.inner
                             .iterator_cf(self.stream_kind_index(), mode)
@@ -702,7 +751,7 @@ impl DbCore {
                             .map(|StreamByKindIdx { id, .. }| id)
                     });
 
-                    let reverse = matches!(params.direction, Direction::Reverse);
+                    let reverse = matches!(direction, Direction::Reverse);
                     let predicate = move |a: &MessageId, b: &MessageId| (*a < *b) ^ reverse;
                     let it = itertools::kmerge_by(its, predicate);
 
@@ -715,7 +764,7 @@ impl DbCore {
                             id: MessageId(id),
                         };
                         let id = id.chain(vec![]);
-                        let mode = rocksdb::IteratorMode::From(&id, params.direction.into());
+                        let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
                         let message_kind = message_kind.clone();
                         self.inner
@@ -725,7 +774,7 @@ impl DbCore {
                             .map(|MessageKindIdx { id, .. }| id)
                     });
 
-                    let reverse = matches!(params.direction, Direction::Reverse);
+                    let reverse = matches!(direction, Direction::Reverse);
                     let predicate = move |a: &MessageId, b: &MessageId| (*a < *b) ^ reverse;
                     let it = itertools::kmerge_by(its, predicate);
 
@@ -735,8 +784,8 @@ impl DbCore {
             };
             match (stream_indexes, kind_indexes) {
                 (Some(a), Some(b)) => {
-                    let forward = matches!(&params.direction, &Direction::Forward);
-                    let it = sorted_intersect(&mut [a, b], params.limit, forward).into_iter();
+                    let forward = matches!(&direction, &Direction::Forward);
+                    let it = sorted_intersect(&mut [a, b], coordinate.limit, forward).into_iter();
                     self.fetch_messages_by_indexes(it)
                 }
                 (Some(i), None) => self.fetch_messages_by_indexes(i),
@@ -746,9 +795,9 @@ impl DbCore {
         } else {
             let id = id.to_be_bytes();
             let mode = if present {
-                rocksdb::IteratorMode::From(&id, params.direction.into())
+                rocksdb::IteratorMode::From(&id, direction.into())
             } else {
-                params.direction.into()
+                direction.into()
             };
 
             let it = self
