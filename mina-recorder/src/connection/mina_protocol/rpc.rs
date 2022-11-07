@@ -24,9 +24,7 @@ struct Header {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("response {id} without request")]
-    ResponseWithoutRequest {
-        id: i64,
-    }
+    ResponseWithoutRequest { id: i64 },
 }
 
 impl State {
@@ -64,20 +62,13 @@ impl State {
             }
             Ok(MessageHeader::Heartbeat) => Ok(None),
             Ok(MessageHeader::Query(QueryHeader { tag, version, id })) => {
-                let header = Header {
-                    tag,
-                    version,
-                };
+                let header = Header { tag, version };
                 self.pending.insert(id, header);
                 Ok(Some(Cow::Borrowed(bytes)))
             }
             Ok(MessageHeader::Response(ResponseHeader { id })) => {
                 if let Some(Header { tag, version }) = self.pending.remove(&id) {
-                    let q = QueryHeader {
-                        tag,
-                        version,
-                        id,
-                    };
+                    let q = QueryHeader { tag, version, id };
                     let mut b = [0; 8].to_vec();
                     b.push(2);
                     q.binprot_write(&mut b).unwrap();

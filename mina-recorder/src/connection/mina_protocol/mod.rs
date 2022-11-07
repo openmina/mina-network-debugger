@@ -46,15 +46,13 @@ impl HandleData for State {
             let st = self.rpc_state.as_mut().expect("must exist");
             match st.extend(bytes) {
                 Err(err) => log::error!("{id} {}: {err}", db.id()),
-                Ok(None) => {
-                    loop {
-                        match st.next_msg() {
-                            Err(err) => log::error!("{id} {}: {err}", db.id()),
-                            Ok(None) => break,
-                            Ok(Some(msg)) => {
-                                if let Err(err) = stream.add(&id, self.kind, &msg) {
-                                    log::error!("{id} {}: {err}", db.id());
-                                }
+                Ok(None) => loop {
+                    match st.next_msg() {
+                        Err(err) => log::error!("{id} {}: {err}", db.id()),
+                        Ok(None) => break,
+                        Ok(Some(msg)) => {
+                            if let Err(err) = stream.add(&id, self.kind, &msg) {
+                                log::error!("{id} {}: {err}", db.id());
                             }
                         }
                     }

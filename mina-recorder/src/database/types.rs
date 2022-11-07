@@ -252,6 +252,7 @@ pub struct Message {
     pub timestamp: SystemTime,
     pub offset: u64,
     pub size: u32,
+    pub brief: String,
 }
 
 #[derive(Serialize)]

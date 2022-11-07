@@ -8,6 +8,7 @@ use std::{
     net::SocketAddr,
 };
 
+use itertools::Itertools;
 use radiation::Emit;
 
 use crate::{
@@ -242,6 +243,7 @@ impl DbStream {
             timestamp: did.metadata.time,
             offset,
             size: bytes.len() as u32,
+            brief: tys.iter().map(|ty| ty.to_string()).join(","),
         };
         self.inner.put_message(&self.addr, id, v, tys)?;
         self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;

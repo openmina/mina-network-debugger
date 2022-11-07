@@ -485,15 +485,31 @@ impl DbCore {
     }
 
     fn fetch_details(&self, (key, msg): (u64, Message)) -> Option<(u64, FullMessage)> {
-        match self.fetch_details_inner(msg, true) {
-            Ok(v) => Some((key, v)),
+        let r = self.get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes());
+        let connection = match r {
+            Ok(v) => v,
             Err(err) => {
                 log::error!("{err}");
-                None
+                return None;
             }
-        }
+        };
+
+        Some((
+            key,
+            FullMessage {
+                connection_id: msg.connection_id,
+                remote_addr: connection.info.addr,
+                incoming: msg.incoming,
+                timestamp: msg.timestamp,
+                stream_id: msg.stream_id,
+                stream_kind: msg.stream_kind,
+                message: serde_json::Value::String(msg.brief),
+                size: msg.size,
+            },
+        ))
     }
 
+    // TODO: preview is useless
     fn fetch_details_inner(&self, msg: Message, preview: bool) -> Result<FullMessage, DbError> {
         let stream_full_id = StreamFullId {
             cn: msg.connection_id,
