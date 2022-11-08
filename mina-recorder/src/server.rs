@@ -188,13 +188,17 @@ fn routes(
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
 
+    let binary = warp::get()
+        .and(message_bin(db.clone()))
+        .with(with::header("Content-Type", "application/octet-stream"))
+        .with(with::header("Access-Control-Allow-Origin", "*"));
+
     warp::get()
         .and(
             connection(db.clone())
                 .or(connections(db.clone()))
                 .or(message(db.clone()))
                 .or(message_hex(db.clone()))
-                .or(message_bin(db.clone()))
                 .or(messages(db.clone()))
                 .or(strace(db.clone()))
                 .or(stats(db))
@@ -202,6 +206,7 @@ fn routes(
         )
         .with(with::header("Content-Type", "application/json"))
         .with(with::header("Access-Control-Allow-Origin", "*"))
+        .or(binary)
 }
 
 pub fn spawn<P, Q, R>(
