@@ -3,7 +3,8 @@ use std::{
     time::{SystemTime, Duration},
 };
 
-use radiation::{Absorb, Emit, nom, ParseError};
+use radiation::{Absorb, Emit, nom, ParseError, RadiationBuffer};
+use libp2p_core::PeerId;
 
 pub fn addr_absorb(input: &[u8]) -> nom::IResult<&[u8], SocketAddr, ParseError<&[u8]>> {
     let pair = nom::sequence::pair(<[u8; 16]>::absorb::<()>, u16::absorb::<()>);
@@ -61,4 +62,28 @@ where
             .expect("after unix epoch"),
         buffer,
     );
+}
+
+pub fn peer_id_absorb(input: &[u8]) -> nom::IResult<&[u8], PeerId, ParseError<&[u8]>> {
+    nom::combinator::map_res(Vec::<u8>::absorb::<()>, |v| PeerId::from_bytes(&v))(input)
+}
+
+pub fn peer_id_emit<W>(value: &PeerId, buffer: &mut W)
+where
+    W: for<'a> Extend<&'a u8> + RadiationBuffer,
+{
+    value.to_bytes().emit(buffer);
+}
+
+pub fn serialize_peer_id<S>(v: &PeerId, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::Serialize;
+
+    if serializer.is_human_readable() {
+        v.to_base58().serialize(serializer)
+    } else {
+        v.to_bytes().serialize(serializer)
+    }
 }

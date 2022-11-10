@@ -5,6 +5,7 @@ pub mod rpc;
 pub mod identify;
 pub mod json_string;
 pub mod yamux;
+pub mod meshsub_stats;
 
 mod utils;
 
@@ -37,6 +38,12 @@ pub enum DecodeError {
     Yamux(yamux_parser::HeaderParseError),
 }
 
+impl<'pa> From<nom::Err<ParseError<&'pa [u8]>>> for DecodeError {
+    fn from(err: nom::Err<ParseError<&'pa [u8]>>) -> Self {
+        DecodeError::Parse(err.map(ParseError::into_vec))
+    }
+}
+
 impl From<binprot::Error> for DecodeError {
     fn from(v: binprot::Error) -> Self {
         DecodeError::BinProt(v)
@@ -63,6 +70,7 @@ pub enum MessageType {
     PublishSnarkPoolDiff,
     PublishTransactionPoolDiff,
     Control,
+    ExternalTransitionStats,
     // kademlia
     #[tag(0x0200)]
     PutValue,
@@ -117,6 +125,7 @@ impl fmt::Display for MessageType {
             MessageType::PublishSnarkPoolDiff => write!(f, "publish_snark_pool_diff"),
             MessageType::PublishTransactionPoolDiff => write!(f, "publish_transaction_pool_diff"),
             MessageType::Control => write!(f, "meshsub_control"),
+            MessageType::ExternalTransitionStats => write!(f, "external_transition_stats"),
             MessageType::PutValue => write!(f, "put_value"),
             MessageType::GetValue => write!(f, "get_value"),
             MessageType::AddProvider => write!(f, "add_provider"),
@@ -162,6 +171,7 @@ impl FromStr for MessageType {
             "publish_snark_pool_diff" => Ok(MessageType::PublishSnarkPoolDiff),
             "publish_transaction_pool_diff" => Ok(MessageType::PublishTransactionPoolDiff),
             "meshsub_control" => Ok(MessageType::Control),
+            "external_transition_stats" => Ok(MessageType::ExternalTransitionStats),
             "put_value" => Ok(MessageType::PutValue),
             "get_value" => Ok(MessageType::GetValue),
             "add_provider" => Ok(MessageType::AddProvider),
