@@ -6,7 +6,7 @@ use binprot::BinProtRead;
 use serde::Serialize;
 use prost::{bytes::Bytes, Message};
 
-use super::{DecodeError, MessageType};
+use super::{DecodeError, MessageType, noise};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
@@ -198,7 +198,13 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                         Event::PublishPreview { topic, message }
                     } else {
                         Event::PublishV2 {
-                            from: from.map(hex::encode),
+                            from: from.map(|b| {
+                                if let Ok((_, peer_id)) = noise::parse_peer_id(&b) {
+                                    peer_id.to_base58()
+                                } else {
+                                    hex::encode(b)
+                                }
+                            }),
                             seqno: seqno.map(hex::encode),
                             signature: signature.map(hex::encode),
                             key: key.map(hex::encode),
@@ -272,8 +278,9 @@ pub fn parse_external_transition(
 
     publish
         .into_iter()
-        .filter_map(|msg| Some((msg.data?, msg.from?)))
-        .filter_map(|(data, producer)| {
+        .filter_map(|msg| Some((msg.data?, msg.from?, msg.topic)))
+        .filter_map(|(data, producer, topic)| {
+            let _ = topic;
             let mut c = Cursor::new(&data[8..]);
             let msg = GossipNetMessageV2::binprot_read(&mut c).ok()?;
             match msg {
