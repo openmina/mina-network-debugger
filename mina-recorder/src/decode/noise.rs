@@ -2,6 +2,11 @@ use prost::{bytes::Bytes, Message};
 use radiation::{Absorb, AbsorbExt, ParseError};
 use serde::Serialize;
 
+use libp2p_core::{
+    PublicKey, PeerId,
+    identity::{ed25519, secp256k1, ecdsa},
+};
+
 use super::{DecodeError, MessageType};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -11,6 +16,27 @@ mod pb {
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod keys_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
+}
+
+pub fn parse_peer_id(bytes: &[u8]) -> Result<(PublicKey, PeerId), DecodeError> {
+    let pk = keys_proto::PublicKey::decode(bytes).map_err(DecodeError::Protobuf)?;
+    let libp2p_pk = match pk.r#type() {
+        keys_proto::KeyType::Rsa => unimplemented!(),
+        keys_proto::KeyType::Ed25519 => {
+            let pk = ed25519::PublicKey::decode(&pk.data).unwrap();
+            PublicKey::Ed25519(pk)
+        }
+        keys_proto::KeyType::Secp256k1 => {
+            let pk = secp256k1::PublicKey::decode(&pk.data).unwrap();
+            PublicKey::Secp256k1(pk)
+        }
+        keys_proto::KeyType::Ecdsa => {
+            let pk = ecdsa::PublicKey::from_bytes(&pk.data).unwrap();
+            PublicKey::Ecdsa(pk)
+        }
+    };
+    let id = PeerId::from_public_key(&libp2p_pk);
+    Ok((libp2p_pk, id))
 }
 
 pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
@@ -23,11 +49,6 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
 }
 
 pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> {
-    use libp2p_core::{
-        PublicKey, PeerId,
-        identity::{ed25519, secp256k1, ecdsa},
-    };
-
     #[derive(Serialize)]
     struct T {
         r#type: String,

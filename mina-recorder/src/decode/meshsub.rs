@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
-use mina_p2p_messages::{GossipNetMessageV1, gossip::GossipNetMessageV2};
+use libp2p_core::{PeerId, PublicKey};
+use mina_p2p_messages::{GossipNetMessageV1, gossip::GossipNetMessageV2, v2};
 use binprot::BinProtRead;
 use serde::Serialize;
 use prost::{bytes::Bytes, Message};
@@ -256,6 +257,34 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
         .chain(control)
         .collect::<Vec<_>>();
     serde_json::to_value(&t).map_err(DecodeError::Serde)
+}
+
+#[allow(dead_code)]
+pub fn parse_external_transition(
+    mut bytes: &[u8],
+) -> impl Iterator<Item = (v2::MinaBlockBlockStableV2, PublicKey, PeerId)> {
+    let publish = {
+        match <pb::Rpc as Message>::decode_length_delimited(&mut bytes) {
+            Ok(m) => m.publish,
+            Err(_) => vec![],
+        }
+    };
+
+    publish
+        .into_iter()
+        .filter_map(|msg| Some((msg.data?, msg.from?)))
+        .filter_map(|(data, producer)| {
+            let mut c = Cursor::new(&data[8..]);
+            let msg = GossipNetMessageV2::binprot_read(&mut c).ok()?;
+            match msg {
+                GossipNetMessageV2::NewState(state) => {
+                    let (pk, id) = crate::decode::noise::parse_peer_id(&producer).ok()?;
+
+                    Some((state, pk, id))
+                },
+                _ => None,
+            }
+        })
 }
 
 #[cfg(test)]
