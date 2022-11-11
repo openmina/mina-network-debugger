@@ -3,7 +3,10 @@ use super::accumulator;
 mod meshsub;
 mod rpc;
 
-use crate::database::{StreamId, StreamKind, ConnectionStats};
+use crate::{
+    database::{StreamId, StreamKind, ConnectionStats, DbStream},
+    stats::StatsState,
+};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -40,7 +43,7 @@ impl DynamicProtocol for State {
 
 impl HandleData for State {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], _cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
         let stream = db.get(self.stream_id);
         if self.kind == StreamKind::Rpc {
             let st = self.rpc_state.as_mut().expect("must exist");
@@ -66,14 +69,10 @@ impl HandleData for State {
         } else if self.kind == StreamKind::Meshsub {
             let st = self.meshsub_state.as_mut().expect("must exist");
             if !st.extend(bytes) {
-                if let Err(err) = stream.add(&id, self.kind, bytes) {
-                    log::error!("{id} {}: {err}, {}", db.id(), hex::encode(bytes));
-                }
+                meshsub_sink(&id, db, &stream, &mut cx.stats_state, bytes);
             } else {
                 while let Some(slice) = st.next_msg() {
-                    if let Err(err) = stream.add(&id, self.kind, slice) {
-                        log::error!("{id} {}: {err} {}", db.id(), hex::encode(slice));
-                    }
+                    meshsub_sink(&id, db, &stream, &mut cx.stats_state, slice);
                 }
             }
         } else {
@@ -89,5 +88,20 @@ impl HandleData for State {
             },
             id.incoming,
         )
+    }
+}
+
+fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, st: &mut StatsState, msg: &[u8]) {
+    use radiation::Emit;
+
+    for stats in st.observe(msg, id.incoming, id.metadata.time) {
+        let bytes = stats.chain(vec![]);
+        // TODO: don't use stream for that
+        if let Err(err) = stream.add(&id, StreamKind::MeshsubStats, &bytes) {
+            log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
+        }
+    }
+    if let Err(err) = stream.add(&id, StreamKind::Meshsub, msg) {
+        log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
     }
 }

@@ -5,7 +5,7 @@ use super::{
     connection::{HandleData, pnet, multistream_select, noise, mux, mina_protocol},
     database::{DbFacade, DbGroup},
     tester::Tester,
-    stats::Stats,
+    stats::{Stats, StatsState},
 };
 
 type Cn = pnet::State<Noise>;
@@ -40,6 +40,7 @@ const CHAINS: [(&str, &str); 3] = [
 pub struct Cx {
     pub db: DbFacade,
     pub stats: Stats,
+    pub stats_state: StatsState,
 }
 
 impl P2pRecorder {
@@ -50,6 +51,7 @@ impl P2pRecorder {
             cx: Cx {
                 db,
                 stats: Stats::default(),
+                stats_state: StatsState::default(),
             },
             apps: BTreeMap::default(),
         }

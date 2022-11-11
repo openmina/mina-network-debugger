@@ -87,3 +87,14 @@ where
         v.to_bytes().serialize(serializer)
     }
 }
+
+// https://github.com/serde-rs/serde/issues/723
+pub fn serialize_peer_id_opt<S>(v: &Option<PeerId>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match v {
+        Some(v) => serialize_peer_id(v, serializer),
+        None => serializer.serialize_none(),
+    }
+}

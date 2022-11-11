@@ -93,16 +93,6 @@ impl AddAssign<ConnectionStats> for ConnectionStats {
     }
 }
 
-#[derive(Default, Clone, Absorb, Emit, Serialize)]
-pub struct OveralStats {
-    pub conections: u32,
-    pub buffered: u32,
-    pub total_bytes: u64,
-    pub decrypted_bytes: u64,
-    pub chunks: u64,
-    pub messages: u64,
-}
-
 impl AsRef<SystemTime> for Connection {
     fn as_ref(&self) -> &SystemTime {
         &self.timestamp
@@ -139,6 +129,7 @@ pub enum StreamKind {
     BitswapExchange = 0x0301,
     NodeStatus = 0x0302,
     Meshsub = 0x0400,
+    MeshsubStats = 0x0401,
     Rpc = 0x0500,
     Select = 0x0600,
     Mplex = 0x0700,
@@ -157,6 +148,7 @@ impl fmt::Display for StreamKind {
             StreamKind::BitswapExchange => write!(f, "/mina/bitswap-exchange"),
             StreamKind::NodeStatus => write!(f, "/mina/node-status"),
             StreamKind::Meshsub => write!(f, "/meshsub/1.1.0"),
+            StreamKind::MeshsubStats => write!(f, "/debugger/meshsub_stats"),
             StreamKind::Rpc => write!(f, "coda/rpcs/0.0.1"),
             StreamKind::Select => write!(f, "/multistream/1.0.0"),
             StreamKind::Mplex => write!(f, "/coda/mplex/1.0.0"),
@@ -190,6 +182,7 @@ impl FromStr for StreamKind {
             "/mina/bitswap-exchange" => Ok(StreamKind::BitswapExchange),
             "/mina/node-status" => Ok(StreamKind::NodeStatus),
             "/meshsub/1.1.0" => Ok(StreamKind::Meshsub),
+            "/debugger/meshsub_stats" => Ok(StreamKind::MeshsubStats),
             "coda/rpcs/0.0.1" => Ok(StreamKind::Rpc),
             "/multistream/1.0.0" => Ok(StreamKind::Select),
             "/coda/mplex/1.0.0" => Ok(StreamKind::Mplex),
@@ -211,6 +204,7 @@ impl StreamKind {
             StreamKind::BitswapExchange,
             StreamKind::NodeStatus,
             StreamKind::Meshsub,
+            StreamKind::MeshsubStats,
             StreamKind::Rpc,
             StreamKind::Select,
             StreamKind::Mplex,

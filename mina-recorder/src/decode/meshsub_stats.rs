@@ -45,7 +45,6 @@ impl From<BigInt> for Hash {
     }
 }
 
-#[allow(dead_code)]
 pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> {
     let t = T::absorb_ext(&bytes)?;
 

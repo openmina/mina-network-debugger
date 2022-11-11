@@ -575,6 +575,7 @@ impl DbCore {
                     .map_err(|err| DbError::Decode(DecodeError::Serde(err)))?
             }
             StreamKind::Yamux => crate::decode::yamux::parse(buf, preview)?,
+            StreamKind::MeshsubStats => crate::decode::meshsub_stats::parse(buf, preview)?,
             StreamKind::Unknown => serde_json::Value::String(hex::encode(&buf)),
         };
         Ok(FullMessage {

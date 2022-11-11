@@ -18,27 +18,6 @@ mod keys_proto {
     include!(concat!(env!("OUT_DIR"), "/keys_proto.rs"));
 }
 
-pub fn parse_peer_id(bytes: &[u8]) -> Result<(PublicKey, PeerId), DecodeError> {
-    let pk = keys_proto::PublicKey::decode(bytes).map_err(DecodeError::Protobuf)?;
-    let libp2p_pk = match pk.r#type() {
-        keys_proto::KeyType::Rsa => unimplemented!(),
-        keys_proto::KeyType::Ed25519 => {
-            let pk = ed25519::PublicKey::decode(&pk.data).unwrap();
-            PublicKey::Ed25519(pk)
-        }
-        keys_proto::KeyType::Secp256k1 => {
-            let pk = secp256k1::PublicKey::decode(&pk.data).unwrap();
-            PublicKey::Secp256k1(pk)
-        }
-        keys_proto::KeyType::Ecdsa => {
-            let pk = ecdsa::PublicKey::from_bytes(&pk.data).unwrap();
-            PublicKey::Ecdsa(pk)
-        }
-    };
-    let id = PeerId::from_public_key(&libp2p_pk);
-    Ok((libp2p_pk, id))
-}
-
 pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     let ty = if bytes.starts_with(b"mac_mismatch\x00\x00\x00\x00") {
         MessageType::FailedToDecrypt
@@ -116,10 +95,14 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
     serde_json::to_value(&t).map_err(DecodeError::Serde)
 }
 
-// #[cfg(test)]
-// #[test]
-// fn de() {
-//     let hex = "12200000165c00000000000000000000000000000000000000000000000000000000";
-//     let id = libp2p_core::PeerId::from_bytes(&hex::decode(hex).unwrap()).unwrap();
-//     dbg!(id.to_base58());
-// }
+#[cfg(test)]
+#[test]
+fn parse_peer_id_test() {
+    let hex = "002408011220da91decf6f4c769327ca8ff03986e66fcfe6c59dca63d68c5ee359e52f8dc6e6";
+    let data = hex::decode(hex).unwrap();
+    let id = PeerId::from_bytes(&data).unwrap();
+    assert_eq!(
+        id.to_base58(),
+        "12D3KooWQXa4AdCEZWe9QwoHnrANyMAXirozBdroNHkkvTMhT8bf"
+    );
+}

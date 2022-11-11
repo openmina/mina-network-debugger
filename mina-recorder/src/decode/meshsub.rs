@@ -1,12 +1,13 @@
 use std::io::Cursor;
 
-use libp2p_core::{PeerId, PublicKey};
-use mina_p2p_messages::{GossipNetMessageV1, gossip::GossipNetMessageV2, v2};
+use libp2p_core::PeerId;
+use mina_p2p_messages::{GossipNetMessageV1, gossip::GossipNetMessageV2};
 use binprot::BinProtRead;
 use serde::Serialize;
 use prost::{bytes::Bytes, Message};
 
-use super::{DecodeError, MessageType, noise};
+use super::{DecodeError, MessageType, meshsub_stats::Hash};
+use crate::custom_coding;
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
@@ -33,12 +34,15 @@ pub enum Event {
     },
     #[serde(rename = "publish_v2")]
     PublishV2 {
-        from: Option<String>,
+        #[serde(serialize_with = "custom_coding::serialize_peer_id_opt")]
+        from: Option<PeerId>,
         seqno: Option<String>,
         signature: Option<String>,
         key: Option<String>,
         topic: String,
         message: Box<GossipNetMessageV2>,
+        #[serde(skip_serializing)]
+        hash: [u8; 32],
     },
     #[serde(rename = "publish")]
     PublishPreview {
@@ -58,6 +62,14 @@ pub enum Event {
 pub struct ControlIHave {
     topic_id: Option<String>,
     message_ids: Vec<String>,
+}
+
+impl ControlIHave {
+    pub fn hashes(&self) -> impl Iterator<Item = Hash> + '_ {
+        self.message_ids
+            .iter()
+            .filter_map(|id| Some(Hash(hex::decode(id).ok()?.try_into().ok()?)))
+    }
 }
 
 #[derive(Serialize)]
@@ -133,12 +145,20 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
 }
 
 pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {
-    let buf = Bytes::from(bytes);
+    let t = parse_it(&bytes, preview, false)?.collect::<Vec<_>>();
+    serde_json::to_value(&t).map_err(DecodeError::Serde)
+}
+
+pub fn parse_it(
+    bytes: &[u8],
+    preview: bool,
+    calc_hash: bool,
+) -> Result<impl Iterator<Item = Event>, DecodeError> {
     let pb::Rpc {
         subscriptions,
         publish,
         control,
-    } = Message::decode_length_delimited(buf).map_err(DecodeError::Protobuf)?;
+    } = Message::decode_length_delimited(bytes).map_err(DecodeError::Protobuf)?;
     let subscriptions = subscriptions.into_iter().map(|v| {
         let subscribe = v.subscribe();
         let topic = v.topic_id.unwrap_or_default();
@@ -151,10 +171,16 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     let publish = publish
         .into_iter()
         .filter_map(|msg| {
-            msg.data
-                .map(|d| (d, msg.topic, msg.from, msg.seqno, msg.signature, msg.key))
+            Some((
+                msg.data?,
+                msg.topic,
+                msg.from,
+                msg.seqno,
+                msg.signature,
+                msg.key,
+            ))
         })
-        .map(|(data, topic, from, seqno, signature, key)| {
+        .map(move |(data, topic, from, seqno, signature, key)| {
             let mut c = Cursor::new(&data[8..]);
             match GossipNetMessageV1::binprot_read(&mut c) {
                 Ok(msg) => {
@@ -197,19 +223,34 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                         };
                         Event::PublishPreview { topic, message }
                     } else {
+                        let hash = if calc_hash {
+                            use blake2::digest::{Mac, Update, FixedOutput, typenum};
+
+                            let key;
+                            let key = if topic.as_bytes().len() <= 64 {
+                                topic.as_bytes()
+                            } else {
+                                key = blake2::Blake2b::<typenum::U32>::default()
+                                    .chain(topic.as_bytes())
+                                    .finalize_fixed();
+                                key.as_slice()
+                            };
+                            blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
+                                .unwrap()
+                                .chain(data)
+                                .finalize_fixed()
+                                .into()
+                        } else {
+                            [0; 32]
+                        };
                         Event::PublishV2 {
-                            from: from.map(|b| {
-                                if let Ok((_, peer_id)) = noise::parse_peer_id(&b) {
-                                    peer_id.to_base58()
-                                } else {
-                                    hex::encode(b)
-                                }
-                            }),
+                            from: from.and_then(|b| PeerId::from_bytes(&b).ok()),
                             seqno: seqno.map(hex::encode),
                             signature: signature.map(hex::encode),
                             key: key.map(hex::encode),
                             topic,
                             message,
+                            hash,
                         }
                     }
                 }
@@ -258,40 +299,8 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
                 .collect(),
         },
     );
-    let t = subscriptions
-        .chain(publish)
-        .chain(control)
-        .collect::<Vec<_>>();
-    serde_json::to_value(&t).map_err(DecodeError::Serde)
-}
 
-#[allow(dead_code)]
-pub fn parse_external_transition(
-    mut bytes: &[u8],
-) -> impl Iterator<Item = (v2::MinaBlockBlockStableV2, PublicKey, PeerId)> {
-    let publish = {
-        match <pb::Rpc as Message>::decode_length_delimited(&mut bytes) {
-            Ok(m) => m.publish,
-            Err(_) => vec![],
-        }
-    };
-
-    publish
-        .into_iter()
-        .filter_map(|msg| Some((msg.data?, msg.from?, msg.topic)))
-        .filter_map(|(data, producer, topic)| {
-            let _ = topic;
-            let mut c = Cursor::new(&data[8..]);
-            let msg = GossipNetMessageV2::binprot_read(&mut c).ok()?;
-            match msg {
-                GossipNetMessageV2::NewState(state) => {
-                    let (pk, id) = crate::decode::noise::parse_peer_id(&producer).ok()?;
-
-                    Some((state, pk, id))
-                },
-                _ => None,
-            }
-        })
+    Ok(subscriptions.chain(publish).chain(control))
 }
 
 #[cfg(test)]
