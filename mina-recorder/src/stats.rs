@@ -29,12 +29,17 @@ pub struct Stats {
 
 #[derive(Default)]
 pub struct StatsState {
-    incoming: BTreeMap<meshsub_stats::Hash, (PeerId, u32, u32)>,
+    incoming: BTreeMap<meshsub_stats::Hash, (SystemTime, PeerId, u32, u32)>,
     stats: meshsub_stats::T,
     block_height: u32,
 }
 
 impl StatsState {
+    fn clear(&mut self) {
+        self.incoming.clear();
+        self.stats.clear();
+    }
+
     pub fn observe<'a>(
         &'a mut self,
         msg: &[u8],
@@ -78,13 +83,29 @@ impl StatsState {
                                     .0 as u32;
                             if incoming {
                                 if self.block_height < block_height {
+                                    self.clear();
                                     self.block_height = block_height;
-                                    self.incoming.clear();
-                                    self.stats.events.clear();
+                                    self.stats.height = block_height;
                                 }
-                                if !self.incoming.contains_key(&hash) {
-                                    let v = (producer_id, block_height, global_slot);
+                                if let Some((prev, ..)) = self.incoming.get(&hash) {
+                                    self.stats.receive_latency.push(meshsub_stats::Latency {
+                                        producer_id,
+                                        hash,
+                                        peer_addr: peer,
+                                        latency: time.duration_since(*prev).unwrap_or_default(),
+                                    });
+                                } else {
+                                    let v = (time, producer_id, block_height, global_slot);
                                     self.incoming.insert(hash, v);
+                                }
+                            } else {
+                                if let Some((prev, ..)) = self.incoming.get(&hash) {
+                                    self.stats.send_latency.push(meshsub_stats::Latency {
+                                        producer_id,
+                                        hash,
+                                        peer_addr: peer,
+                                        latency: time.duration_since(*prev).unwrap_or_default(),
+                                    });
                                 }
                             }
                             let kind = if incoming {
@@ -125,7 +146,7 @@ impl StatsState {
                         (hash, kind)
                     });
                     for (hash, kind) in h.chain(w) {
-                        if let Some((producer_id, block_height, global_slot)) = self.incoming.get(&hash) {
+                        if let Some((_, producer_id, block_height, global_slot)) = self.incoming.get(&hash) {
                             let block_height = *block_height;
                             let global_slot = *global_slot;
                             let producer_id = producer_id.clone();
