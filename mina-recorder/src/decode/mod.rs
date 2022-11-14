@@ -66,11 +66,10 @@ pub enum MessageType {
     #[tag(0x0100)]
     Subscribe,
     Unsubscribe,
-    PublishExternalTransition,
+    PublishNewState,
     PublishSnarkPoolDiff,
     PublishTransactionPoolDiff,
     Control,
-    ExternalTransitionStats,
     // kademlia
     #[tag(0x0200)]
     PutValue,
@@ -121,11 +120,10 @@ impl fmt::Display for MessageType {
         match self {
             MessageType::Subscribe => write!(f, "subscribe"),
             MessageType::Unsubscribe => write!(f, "unsubscribe"),
-            MessageType::PublishExternalTransition => write!(f, "publish_external_transition"),
+            MessageType::PublishNewState => write!(f, "publish_new_state"),
             MessageType::PublishSnarkPoolDiff => write!(f, "publish_snark_pool_diff"),
             MessageType::PublishTransactionPoolDiff => write!(f, "publish_transaction_pool_diff"),
             MessageType::Control => write!(f, "meshsub_control"),
-            MessageType::ExternalTransitionStats => write!(f, "external_transition_stats"),
             MessageType::PutValue => write!(f, "put_value"),
             MessageType::GetValue => write!(f, "get_value"),
             MessageType::AddProvider => write!(f, "add_provider"),
@@ -167,11 +165,10 @@ impl FromStr for MessageType {
         match s {
             "subscribe" => Ok(MessageType::Subscribe),
             "unsubscribe" => Ok(MessageType::Unsubscribe),
-            "publish_external_transition" => Ok(MessageType::PublishExternalTransition),
+            "publish_new_state" => Ok(MessageType::PublishNewState),
             "publish_snark_pool_diff" => Ok(MessageType::PublishSnarkPoolDiff),
             "publish_transaction_pool_diff" => Ok(MessageType::PublishTransactionPoolDiff),
             "meshsub_control" => Ok(MessageType::Control),
-            "external_transition_stats" => Ok(MessageType::ExternalTransitionStats),
             "put_value" => Ok(MessageType::PutValue),
             "get_value" => Ok(MessageType::GetValue),
             "add_provider" => Ok(MessageType::AddProvider),

@@ -108,13 +108,10 @@ pub struct PeerInfo {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", content = "message")]
+#[serde(tag = "type", content = "message", rename_all = "snake_case")]
 pub enum GossipNetMessagePreview {
-    #[serde(rename = "external_transition")]
     NewState,
-    #[serde(rename = "snark_pool_diff")]
     SnarkPoolDiff,
-    #[serde(rename = "transaction_pool_diff")]
     TransactionPoolDiff,
 }
 
@@ -137,7 +134,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
         .filter_map(|msg| msg.data)
         .filter_map(|data| data.get(8).cloned())
         .filter_map(|tag| match tag {
-            0 => Some(MessageType::PublishExternalTransition),
+            0 => Some(MessageType::PublishNewState),
             1 => Some(MessageType::PublishSnarkPoolDiff),
             2 => Some(MessageType::PublishTransactionPoolDiff),
             _ => None,

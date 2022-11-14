@@ -2,10 +2,9 @@ use std::{time::SystemTime, fmt, net::SocketAddr};
 
 use libp2p_core::PeerId;
 use mina_p2p_messages::bigint::BigInt;
-use radiation::{Absorb, Emit, AbsorbExt};
+use radiation::{Absorb, Emit};
 use serde::Serialize;
 
-use super::DecodeError;
 use crate::custom_coding;
 
 #[derive(Default, Clone, Absorb, Emit, Serialize)]
@@ -63,10 +62,4 @@ impl From<BigInt> for Hash {
     fn from(v: BigInt) -> Self {
         Hash(*Box::from(v))
     }
-}
-
-pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> {
-    let t = T::absorb_ext(&bytes)?;
-
-    serde_json::to_value(&t).map_err(DecodeError::Serde)
 }
