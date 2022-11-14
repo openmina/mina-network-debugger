@@ -159,7 +159,7 @@ fn stats_last(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("block" / "last").map(move || -> WithStatus<Json> {
-        let v = db.fetch_last_stat().map(|(_, v)| v);
+        let v = db.fetch_last_stat().map(|(_, v)| v.events).unwrap_or(vec![]);
         reply::with_status(reply::json(&v), StatusCode::OK)
     })
 }
@@ -168,7 +168,7 @@ fn stats_latest(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("block" / "latest").map(move || -> WithStatus<Json> {
-        let v = db.fetch_last_stat().map(|(_, v)| v);
+        let v = db.fetch_last_stat().map(|(_, v)| v.events).unwrap_or(vec![]);
         reply::with_status(reply::json(&v), StatusCode::OK)
     })
 }

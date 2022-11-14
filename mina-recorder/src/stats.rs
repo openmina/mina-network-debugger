@@ -29,8 +29,9 @@ pub struct Stats {
 
 #[derive(Default)]
 pub struct StatsState {
-    incoming: BTreeMap<meshsub_stats::Hash, (SystemTime, PeerId, u32)>,
+    incoming: BTreeMap<meshsub_stats::Hash, (PeerId, u32, u32)>,
     stats: meshsub_stats::T,
+    block_height: u32,
 }
 
 impl StatsState {
@@ -42,6 +43,12 @@ impl StatsState {
         db: &DbFacade,
         peer: SocketAddr,
     ) {
+        let (sender_addr, receiver_addr) = if incoming {
+            (peer.to_string(), "local node".to_string())
+        } else {
+            ("local node".to_string(), peer.to_string())
+        };
+        let message_id = db.next_message_id();
         for event in meshsub::parse_it(msg, false, true).unwrap() {
             match event {
                 meshsub::Event::PublishV2 {
@@ -53,29 +60,31 @@ impl StatsState {
                     let hash = meshsub_stats::Hash(hash);
                     match message.as_ref() {
                         GossipNetMessageV2::NewState(block) => {
+                            let block_height = block
+                                .header
+                                .protocol_state
+                                .body
+                                .consensus_state
+                                .blockchain_length
+                                .0
+                                    .0 as u32;
+                            let global_slot = block
+                                .header
+                                .protocol_state
+                                .body
+                                .consensus_state
+                                .global_slot_since_genesis
+                                .0
+                                    .0 as u32;
                             if incoming {
-                                let height = block
-                                    .header
-                                    .protocol_state
-                                    .body
-                                    .consensus_state
-                                    .blockchain_length
-                                    .0
-                                     .0 as u32;
-                                if self.stats.height < height {
-                                    self.stats.height = height;
+                                if self.block_height < block_height {
+                                    self.block_height = block_height;
                                     self.incoming.clear();
                                     self.stats.events.clear();
                                 }
                                 if !self.incoming.contains_key(&hash) {
-                                    log::info!(
-                                        "insert {:?}, {:?}, {:?}, {}",
-                                        hash,
-                                        time,
-                                        producer_id,
-                                        height
-                                    );
-                                    self.incoming.insert(hash, (time, producer_id, height));
+                                    let v = (producer_id, block_height, global_slot);
+                                    self.incoming.insert(hash, v);
                                 }
                             }
                             let kind = if incoming {
@@ -87,50 +96,50 @@ impl StatsState {
                                 kind,
                                 producer_id,
                                 hash,
+                                message_id,
+                                block_height,
+                                global_slot,
                                 time,
-                                peer,
+                                sender_addr: sender_addr.clone(),
+                                receiver_addr: receiver_addr.clone(),
                             });
                         }
                         _ => (),
                     }
                 }
                 meshsub::Event::Control { ihave, iwant, .. } => {
-                    for hash in ihave.iter().map(ControlIHave::hashes).flatten() {
-                        if let Some((_, producer_id, height)) = self.incoming.get(&hash) {
-                            let height = *height;
+                    let h = ihave.iter().map(ControlIHave::hashes).flatten().map(|hash| {
+                        let kind = if incoming {
+                            meshsub_stats::Kind::RecvIHave
+                        } else {
+                            meshsub_stats::Kind::SendIHave
+                        };
+                        (hash, kind)
+                    });
+                    let w = iwant.iter().map(ControlIWant::hashes).flatten().map(|hash| {
+                        let kind = if incoming {
+                            meshsub_stats::Kind::RecvIWant
+                        } else {
+                            meshsub_stats::Kind::SendIWant
+                        };
+                        (hash, kind)
+                    });
+                    for (hash, kind) in h.chain(w) {
+                        if let Some((producer_id, block_height, global_slot)) = self.incoming.get(&hash) {
+                            let block_height = *block_height;
+                            let global_slot = *global_slot;
                             let producer_id = producer_id.clone();
-                            if height == self.stats.height {
-                                let kind = if incoming {
-                                    meshsub_stats::Kind::RecvIHave
-                                } else {
-                                    meshsub_stats::Kind::SendIHave
-                                };
+                            if block_height == self.block_height {
                                 self.stats.events.push(meshsub_stats::Event {
                                     kind,
                                     producer_id,
                                     hash,
+                                    message_id,
+                                    block_height,
+                                    global_slot,
                                     time,
-                                    peer,
-                                });
-                            }
-                        }
-                    }
-                    for hash in iwant.iter().map(ControlIWant::hashes).flatten() {
-                        if let Some((_, producer_id, height)) = self.incoming.get(&hash) {
-                            let height = *height;
-                            let producer_id = producer_id.clone();
-                            if height == self.stats.height {
-                                let kind = if incoming {
-                                    meshsub_stats::Kind::RecvIWant
-                                } else {
-                                    meshsub_stats::Kind::RecvIWant
-                                };
-                                self.stats.events.push(meshsub_stats::Event {
-                                    kind,
-                                    producer_id,
-                                    hash,
-                                    time,
-                                    peer,
+                                    sender_addr: sender_addr.clone(),
+                                    receiver_addr: receiver_addr.clone(),
                                 });
                             }
                         }

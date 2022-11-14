@@ -2,7 +2,7 @@ use std::{
     path::Path,
     time::SystemTime,
     sync::{
-        atomic::{AtomicU64, Ordering::SeqCst},
+        atomic::{AtomicU64, Ordering::{SeqCst, self}},
         Arc,
     },
     net::SocketAddr,
@@ -97,6 +97,12 @@ impl DbFacade {
 
     pub fn core(&self) -> DbCore {
         self.inner.clone()
+    }
+
+    /// Warning, it will work wrong it the application will write messages from multiple threads
+    /// It is ok for now.
+    pub fn next_message_id(&self) -> u64 {
+        self.messages.load(Ordering::SeqCst)
     }
 }
 

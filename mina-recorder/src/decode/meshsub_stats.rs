@@ -1,4 +1,4 @@
-use std::{time::SystemTime, fmt, net::SocketAddr};
+use std::{time::SystemTime, fmt};
 
 use libp2p_core::PeerId;
 use mina_p2p_messages::bigint::BigInt;
@@ -21,12 +21,14 @@ pub struct Event {
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
     pub hash: Hash,
+    pub message_id: u64,
+    pub block_height: u32,
+    pub global_slot: u32,
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
-    #[custom_absorb(custom_coding::addr_absorb)]
-    #[custom_emit(custom_coding::addr_emit)]
-    pub peer: SocketAddr,
+    pub sender_addr: String,
+    pub receiver_addr: String,
 }
 
 #[derive(Clone, Absorb, Emit, Serialize)]
