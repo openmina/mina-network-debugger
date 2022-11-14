@@ -868,10 +868,9 @@ impl DbCore {
     }
 
     pub fn fetch_stats(&self, id: u32) -> Result<Option<(u32, meshsub_stats::T)>, DbError> {
-        let id = id.to_be_bytes();
-        match self.inner.get_cf(self.stats(), id)? {
+        match self.inner.get_cf(self.stats(), id.to_be_bytes())? {
             None => Ok(None),
-            Some(v) => Ok(Some(AbsorbExt::absorb_ext(&v)?)),
+            Some(v) => Ok(Some((id, AbsorbExt::absorb_ext(&v)?))),
         }
     }
 }

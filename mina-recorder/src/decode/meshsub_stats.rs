@@ -18,6 +18,7 @@ pub struct T {
 impl T {
     pub fn clear(&mut self) {
         self.receive_latency.clear();
+        self.send_latency.clear();
         self.events.clear();
     }
 }
