@@ -78,6 +78,14 @@ pub struct ControlIWant {
     message_ids: Vec<String>,
 }
 
+impl ControlIWant {
+    pub fn hashes(&self) -> impl Iterator<Item = Hash> + '_ {
+        self.message_ids
+            .iter()
+            .filter_map(|id| Some(Hash(hex::decode(id).ok()?.try_into().ok()?)))
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ControlGraft {

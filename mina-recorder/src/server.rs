@@ -140,26 +140,37 @@ fn strace(
 fn stats(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    use serde::Deserialize;
+    warp::path!("block" / u32).map(move |id| -> WithStatus<Json> {
+        let v = db.fetch_stats(id);
+        match v {
+            Ok(v) => {
+                let v = v.map(|(_, v)| v);
+                reply::with_status(reply::json(&v), StatusCode::OK)
+            }
+            Err(err) => reply::with_status(
+                reply::json(&err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    })
+}
 
-    #[derive(Deserialize)]
-    pub struct Params {
-        // the start of the list
-        timestamp: Option<u64>,
-        // how many records to read, default is 100
-        limit: Option<usize>,
-    }
+fn stats_last(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("block" / "last").map(move || -> WithStatus<Json> {
+        let v = db.fetch_last_stat().map(|(_, v)| v);
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
 
-    warp::path!("stats")
-        .and(warp::query::query())
-        .map(move |params| -> WithStatus<Json> {
-            let Params { timestamp, limit } = params;
-            let v = db
-                .fetch_stats(timestamp.unwrap_or_default())
-                .unwrap()
-                .take(limit.unwrap_or(100));
-            reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        })
+fn stats_latest(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("block" / "latest").map(move || -> WithStatus<Json> {
+        let v = db.fetch_last_stat().map(|(_, v)| v);
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
 }
 
 fn version(
@@ -201,7 +212,9 @@ fn routes(
                 .or(message_hex(db.clone()))
                 .or(messages(db.clone()))
                 .or(strace(db.clone()))
-                .or(stats(db))
+                .or(stats(db.clone()))
+                .or(stats_last(db.clone()))
+                .or(stats_latest(db))
                 .or(version().or(openapi())),
         )
         .with(with::header("Content-Type", "application/json"))

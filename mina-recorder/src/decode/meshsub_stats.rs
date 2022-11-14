@@ -1,4 +1,4 @@
-use std::{time::Duration, fmt};
+use std::{time::SystemTime, fmt, net::SocketAddr};
 
 use libp2p_core::PeerId;
 use mina_p2p_messages::bigint::BigInt;
@@ -8,17 +8,37 @@ use serde::Serialize;
 use super::DecodeError;
 use crate::custom_coding;
 
-#[derive(Clone, Absorb, Emit, Serialize)]
+#[derive(Default, Clone, Absorb, Emit, Serialize)]
 pub struct T {
+    pub height: u32,
+    pub events: Vec<Event>,
+}
+
+#[derive(Clone, Absorb, Emit, Serialize)]
+pub struct Event {
+    pub kind: Kind,
     #[serde(serialize_with = "custom_coding::serialize_peer_id")]
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
     pub hash: Hash,
-    #[custom_absorb(custom_coding::duration_absorb)]
-    #[custom_emit(custom_coding::duration_emit)]
-    pub time: Duration,
-    pub height: u32,
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub time: SystemTime,
+    #[custom_absorb(custom_coding::addr_absorb)]
+    #[custom_emit(custom_coding::addr_emit)]
+    pub peer: SocketAddr,
+}
+
+#[derive(Clone, Absorb, Emit, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    SendIHave,
+    SendIWant,
+    SendValue,
+    RecvIHave,
+    RecvIWant,
+    RecvValue,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Absorb, Emit)]

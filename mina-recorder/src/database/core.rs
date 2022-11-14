@@ -19,7 +19,7 @@ use thiserror::Error;
 use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-        Timestamp, Time,
+        Timestamp,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
     index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx},
@@ -27,7 +27,7 @@ use super::{
 };
 
 use crate::{
-    decode::{DecodeError, MessageType},
+    decode::{DecodeError, MessageType, meshsub_stats},
     strace::StraceLine,
 };
 
@@ -332,8 +332,9 @@ impl DbCore {
         Ok(())
     }
 
-    pub fn put_stats(&self, time: Vec<u8>, bytes: u32) -> Result<(), DbError> {
-        self.inner.put_cf(self.stats(), time, bytes.to_be_bytes())?;
+    pub fn put_stats(&self, height: u32, bytes: Vec<u8>) -> Result<(), DbError> {
+        self.inner
+            .put_cf(self.stats(), height.to_be_bytes(), bytes)?;
 
         Ok(())
     }
@@ -858,19 +859,21 @@ impl DbCore {
         Ok(it)
     }
 
-    pub fn fetch_stats(
-        &self,
-        timestamp: u64,
-    ) -> Result<impl Iterator<Item = (Time, u32)> + '_, DbError> {
-        use rocksdb::{IteratorMode, Direction};
+    pub fn fetch_last_stat(&self) -> Option<(u32, meshsub_stats::T)> {
+        use rocksdb::IteratorMode;
 
-        let mut id = [0; 12];
-        id[..8].clone_from_slice(&timestamp.to_be_bytes());
-        let it = self
-            .inner
-            .iterator_cf(self.stats(), IteratorMode::From(&id, Direction::Forward))
-            .filter_map(Self::decode);
-        Ok(it)
+        self.inner
+            .iterator_cf(self.stats(), IteratorMode::End)
+            .next()
+            .and_then(Self::decode)
+    }
+
+    pub fn fetch_stats(&self, id: u32) -> Result<Option<(u32, meshsub_stats::T)>, DbError> {
+        let id = id.to_be_bytes();
+        match self.inner.get_cf(self.stats(), id)? {
+            None => Ok(None),
+            Some(v) => Ok(Some(AbsorbExt::absorb_ext(&v)?)),
+        }
     }
 }
 

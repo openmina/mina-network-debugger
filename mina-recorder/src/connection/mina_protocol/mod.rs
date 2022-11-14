@@ -4,7 +4,7 @@ mod meshsub;
 mod rpc;
 
 use crate::{
-    database::{StreamId, StreamKind, ConnectionStats, DbStream},
+    database::{StreamId, StreamKind, ConnectionStats, DbStream, DbFacade},
     stats::StatsState,
 };
 
@@ -69,10 +69,10 @@ impl HandleData for State {
         } else if self.kind == StreamKind::Meshsub {
             let st = self.meshsub_state.as_mut().expect("must exist");
             if !st.extend(bytes) {
-                meshsub_sink(&id, db, &stream, &mut cx.stats_state, bytes);
+                meshsub_sink(&id, &cx.db, db, &stream, &mut cx.stats_state, bytes);
             } else {
                 while let Some(slice) = st.next_msg() {
-                    meshsub_sink(&id, db, &stream, &mut cx.stats_state, slice);
+                    meshsub_sink(&id, &cx.db, db, &stream, &mut cx.stats_state, slice);
                 }
             }
         } else {
@@ -91,16 +91,15 @@ impl HandleData for State {
     }
 }
 
-fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, st: &mut StatsState, msg: &[u8]) {
-    use radiation::Emit;
-
-    for stats in st.observe(msg, id.incoming, id.metadata.time) {
-        let bytes = stats.chain(vec![]);
-        // TODO: don't use stream for that
-        if let Err(err) = stream.add(&id, StreamKind::MeshsubStats, &bytes) {
-            log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
-        }
-    }
+fn meshsub_sink(
+    id: &DirectedId,
+    dbf: &DbFacade,
+    db: &Db,
+    stream: &DbStream,
+    st: &mut StatsState,
+    msg: &[u8],
+) {
+    st.observe(msg, id.incoming, id.metadata.time, dbf, id.metadata.id.addr);
     if let Err(err) = stream.add(&id, StreamKind::Meshsub, msg) {
         log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
     }

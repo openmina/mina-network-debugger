@@ -1,12 +1,14 @@
-use std::{collections::BTreeMap, time::SystemTime};
+use std::{collections::BTreeMap, time::SystemTime, net::SocketAddr};
 
 use mina_p2p_messages::gossip::GossipNetMessageV2;
 use radiation::{Absorb, Emit};
 use libp2p_core::PeerId;
 
+use super::database::DbFacade;
+
 use crate::decode::{
     meshsub_stats,
-    meshsub::{self, ControlIHave},
+    meshsub::{self, ControlIHave, ControlIWant},
 };
 
 #[derive(Default, Absorb, Emit)]
@@ -28,6 +30,7 @@ pub struct Stats {
 #[derive(Default)]
 pub struct StatsState {
     incoming: BTreeMap<meshsub_stats::Hash, (SystemTime, PeerId, u32)>,
+    stats: meshsub_stats::T,
 }
 
 impl StatsState {
@@ -36,18 +39,18 @@ impl StatsState {
         msg: &[u8],
         incoming: bool,
         time: SystemTime,
-    ) -> impl Iterator<Item = meshsub_stats::T> + 'a {
-        meshsub::parse_it(msg, false, true)
-            .unwrap()
-            .filter_map(move |event| match event {
+        db: &DbFacade,
+        peer: SocketAddr,
+    ) {
+        for event in meshsub::parse_it(msg, false, true).unwrap() {
+            match event {
                 meshsub::Event::PublishV2 {
-                    from,
+                    from: Some(producer_id),
                     hash,
                     message,
                     ..
                 } => {
                     let hash = meshsub_stats::Hash(hash);
-                    let producer_id = from?;
                     match message.as_ref() {
                         GossipNetMessageV2::NewState(block) => {
                             if incoming {
@@ -59,6 +62,11 @@ impl StatsState {
                                     .blockchain_length
                                     .0
                                      .0 as u32;
+                                if self.stats.height < height {
+                                    self.stats.height = height;
+                                    self.incoming.clear();
+                                    self.stats.events.clear();
+                                }
                                 if !self.incoming.contains_key(&hash) {
                                     log::info!(
                                         "insert {:?}, {:?}, {:?}, {}",
@@ -70,33 +78,67 @@ impl StatsState {
                                     self.incoming.insert(hash, (time, producer_id, height));
                                 }
                             }
-                            None
-                        }
-                        _ => None,
-                    }
-                }
-                meshsub::Event::Control { ihave, .. } => {
-                    for hash in ihave.iter().map(ControlIHave::hashes).flatten() {
-                        if let Some((prev, producer_id, height)) = self.incoming.remove(&hash) {
-                            let time = time.duration_since(prev).unwrap();
-                            log::info!(
-                                "insert {:?}, {:?}, {:?}, {}",
-                                hash,
-                                time,
-                                producer_id,
-                                height
-                            );
-                            return Some(meshsub_stats::T {
+                            let kind = if incoming {
+                                meshsub_stats::Kind::RecvValue
+                            } else {
+                                meshsub_stats::Kind::SendValue
+                            };
+                            self.stats.events.push(meshsub_stats::Event {
+                                kind,
                                 producer_id,
                                 hash,
                                 time,
-                                height,
+                                peer,
                             });
                         }
+                        _ => (),
                     }
-                    None
                 }
-                _ => None,
-            })
+                meshsub::Event::Control { ihave, iwant, .. } => {
+                    for hash in ihave.iter().map(ControlIHave::hashes).flatten() {
+                        if let Some((_, producer_id, height)) = self.incoming.get(&hash) {
+                            let height = *height;
+                            let producer_id = producer_id.clone();
+                            if height == self.stats.height {
+                                let kind = if incoming {
+                                    meshsub_stats::Kind::RecvIHave
+                                } else {
+                                    meshsub_stats::Kind::SendIHave
+                                };
+                                self.stats.events.push(meshsub_stats::Event {
+                                    kind,
+                                    producer_id,
+                                    hash,
+                                    time,
+                                    peer,
+                                });
+                            }
+                        }
+                    }
+                    for hash in iwant.iter().map(ControlIWant::hashes).flatten() {
+                        if let Some((_, producer_id, height)) = self.incoming.get(&hash) {
+                            let height = *height;
+                            let producer_id = producer_id.clone();
+                            if height == self.stats.height {
+                                let kind = if incoming {
+                                    meshsub_stats::Kind::RecvIWant
+                                } else {
+                                    meshsub_stats::Kind::RecvIWant
+                                };
+                                self.stats.events.push(meshsub_stats::Event {
+                                    kind,
+                                    producer_id,
+                                    hash,
+                                    time,
+                                    peer,
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+        db.stats(self.stats.height, self.stats.clone()).unwrap();
     }
 }

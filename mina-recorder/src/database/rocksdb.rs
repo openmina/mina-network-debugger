@@ -14,9 +14,8 @@ use radiation::Emit;
 use crate::{
     event::{ConnectionInfo, DirectedId},
     chunk::{ChunkHeader, EncryptionStatus},
-    decode::MessageType,
+    decode::{MessageType, meshsub_stats},
     strace::StraceLine,
-    custom_coding,
 };
 
 use super::{
@@ -49,11 +48,8 @@ impl DbFacade {
         })
     }
 
-    pub fn stats(&self, time: SystemTime, remaining: usize) -> Result<(), DbError> {
-        let mut b = Vec::with_capacity(12);
-        custom_coding::time_emit(&time, &mut b);
-
-        self.inner.put_stats(b, remaining as u32)
+    pub fn stats(&self, height: u32, value: meshsub_stats::T) -> Result<(), DbError> {
+        self.inner.put_stats(height, value.chain(vec![]))
     }
 
     pub fn strace(&self) -> Result<DbStrace, DbError> {
