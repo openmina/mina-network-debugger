@@ -232,10 +232,11 @@ impl ValidParamsCoordinate {
         T: Timestamp,
     {
         let limit_timestamp = self.limit_timestamp;
+        let forward = matches!(self.direction, Direction::Forward);
         it.take_while(move |(_, msg)| {
             if let Some(limit_timestamp) = limit_timestamp {
                 let d = msg.timestamp();
-                d.as_secs() < limit_timestamp
+                (d.as_secs() < limit_timestamp) == forward
             } else {
                 true
             }
