@@ -154,6 +154,14 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     serde_json::to_value(&t).map_err(DecodeError::Serde)
 }
 
+pub fn parse_protobuf_publish(
+    bytes: &[u8],
+) -> Result<impl Iterator<Item = Vec<u8>>, prost::DecodeError> {
+    let pb::Rpc { publish, .. } = Message::decode_length_delimited(bytes)?;
+
+    Ok(publish.into_iter().filter_map(|m| m.data))
+}
+
 pub fn parse_it(
     bytes: &[u8],
     preview: bool,
