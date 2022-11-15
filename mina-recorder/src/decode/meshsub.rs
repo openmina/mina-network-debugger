@@ -139,14 +139,23 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
             2 => Some(MessageType::PublishTransactionPoolDiff),
             _ => None,
         });
-    let control = control
-        .into_iter()
-        .filter(|c| {
-            !(c.ihave.is_empty() && c.iwant.is_empty() && c.graft.is_empty() && c.prune.is_empty())
-        })
-        .map(|_| MessageType::Control);
+    let mut control_types = vec![];
+    for c in control {
+        if !c.ihave.is_empty() {
+            control_types.push(MessageType::ControlIHave);
+        }
+        if !c.iwant.is_empty() {
+            control_types.push(MessageType::ControlIWant);
+        }
+        if !c.graft.is_empty() {
+            control_types.push(MessageType::ControlGraft);
+        }
+        if !c.prune.is_empty() {
+            control_types.push(MessageType::ControlPrune);
+        }
+    }
 
-    Ok(subscriptions.chain(publish).chain(control).collect())
+    Ok(subscriptions.chain(publish).chain(control_types).collect())
 }
 
 pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {

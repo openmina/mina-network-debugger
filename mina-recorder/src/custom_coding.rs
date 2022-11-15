@@ -48,6 +48,25 @@ where
     value.subsec_nanos().emit(buffer);
 }
 
+pub fn duration_opt_absorb(
+    input: &[u8],
+) -> nom::IResult<&[u8], Option<Duration>, ParseError<&[u8]>> {
+    let (rest, duration) = duration_absorb(input)?;
+    if duration.is_zero() {
+        Ok((rest, None))
+    } else {
+        Ok((rest, Some(duration)))
+    }
+}
+
+pub fn duration_opt_emit<W>(value: &Option<Duration>, buffer: &mut W)
+where
+    W: for<'a> Extend<&'a u8>,
+{
+    let value = value.unwrap_or(Duration::ZERO);
+    duration_emit(&value, buffer);
+}
+
 pub fn time_absorb(input: &[u8]) -> nom::IResult<&[u8], SystemTime, ParseError<&[u8]>> {
     nom::combinator::map(duration_absorb, |d| SystemTime::UNIX_EPOCH + d)(input)
 }

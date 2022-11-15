@@ -2,7 +2,10 @@ use std::{
     path::Path,
     time::SystemTime,
     sync::{
-        atomic::{AtomicU64, Ordering::{SeqCst, self}},
+        atomic::{
+            AtomicU64,
+            Ordering::{SeqCst, self},
+        },
         Arc,
     },
     net::SocketAddr,

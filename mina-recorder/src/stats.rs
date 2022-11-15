@@ -9,6 +9,7 @@ use super::database::DbFacade;
 use crate::decode::{
     meshsub_stats,
     meshsub::{self, ControlIHave, ControlIWant},
+    MessageType,
 };
 
 #[derive(Default, Absorb, Emit)]
@@ -72,7 +73,7 @@ impl StatsState {
                                 .consensus_state
                                 .blockchain_length
                                 .0
-                                    .0 as u32;
+                                 .0 as u32;
                             let global_slot = block
                                 .header
                                 .protocol_state
@@ -80,41 +81,30 @@ impl StatsState {
                                 .consensus_state
                                 .global_slot_since_genesis
                                 .0
-                                    .0 as u32;
-                            if incoming {
+                                 .0 as u32;
+                            let latency = if incoming {
                                 if self.block_height < block_height {
                                     self.clear();
                                     self.block_height = block_height;
                                     self.stats.height = block_height;
                                 }
                                 if let Some((prev, ..)) = self.incoming.get(&hash) {
-                                    self.stats.receive_latency.push(meshsub_stats::Latency {
-                                        producer_id,
-                                        hash,
-                                        peer_addr: peer,
-                                        latency: time.duration_since(*prev).unwrap_or_default(),
-                                    });
+                                    Some(time.duration_since(*prev).unwrap_or_default())
                                 } else {
                                     let v = (time, producer_id, block_height, global_slot);
                                     self.incoming.insert(hash, v);
+                                    None
                                 }
                             } else {
                                 if let Some((prev, ..)) = self.incoming.get(&hash) {
-                                    self.stats.send_latency.push(meshsub_stats::Latency {
-                                        producer_id,
-                                        hash,
-                                        peer_addr: peer,
-                                        latency: time.duration_since(*prev).unwrap_or_default(),
-                                    });
+                                    Some(time.duration_since(*prev).unwrap_or_default())
+                                } else {
+                                    None
                                 }
-                            }
-                            let kind = if incoming {
-                                meshsub_stats::Kind::RecvValue
-                            } else {
-                                meshsub_stats::Kind::SendValue
                             };
                             self.stats.events.push(meshsub_stats::Event {
-                                kind,
+                                incoming,
+                                message_kind: MessageType::PublishNewState,
                                 producer_id,
                                 hash,
                                 message_id,
@@ -123,36 +113,34 @@ impl StatsState {
                                 time,
                                 sender_addr: sender_addr.clone(),
                                 receiver_addr: receiver_addr.clone(),
+                                latency,
                             });
                         }
                         _ => (),
                     }
                 }
                 meshsub::Event::Control { ihave, iwant, .. } => {
-                    let h = ihave.iter().map(ControlIHave::hashes).flatten().map(|hash| {
-                        let kind = if incoming {
-                            meshsub_stats::Kind::RecvIHave
-                        } else {
-                            meshsub_stats::Kind::SendIHave
-                        };
-                        (hash, kind)
-                    });
-                    let w = iwant.iter().map(ControlIWant::hashes).flatten().map(|hash| {
-                        let kind = if incoming {
-                            meshsub_stats::Kind::RecvIWant
-                        } else {
-                            meshsub_stats::Kind::SendIWant
-                        };
-                        (hash, kind)
-                    });
-                    for (hash, kind) in h.chain(w) {
-                        if let Some((_, producer_id, block_height, global_slot)) = self.incoming.get(&hash) {
+                    let h = ihave
+                        .iter()
+                        .map(ControlIHave::hashes)
+                        .flatten()
+                        .map(|hash| (hash, MessageType::ControlIHave));
+                    let w = iwant
+                        .iter()
+                        .map(ControlIWant::hashes)
+                        .flatten()
+                        .map(|hash| (hash, MessageType::ControlIWant));
+                    for (hash, message_kind) in h.chain(w) {
+                        if let Some((prev, producer_id, block_height, global_slot)) =
+                            self.incoming.get(&hash)
+                        {
                             let block_height = *block_height;
                             let global_slot = *global_slot;
                             let producer_id = producer_id.clone();
                             if block_height == self.block_height {
                                 self.stats.events.push(meshsub_stats::Event {
-                                    kind,
+                                    incoming,
+                                    message_kind,
                                     producer_id,
                                     hash,
                                     message_id,
@@ -161,6 +149,7 @@ impl StatsState {
                                     time,
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
+                                    latency: Some(time.duration_since(*prev).unwrap_or_default()),
                                 });
                             }
                         }

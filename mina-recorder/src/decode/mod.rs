@@ -59,7 +59,7 @@ impl From<JSONinifyError> for DecodeError {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Absorb, Emit, PartialEq, Eq)]
+#[derive(Clone, Absorb, Emit, PartialEq, Eq, PartialOrd, Ord)]
 #[tag(u16)]
 pub enum MessageType {
     // meshsub
@@ -69,7 +69,10 @@ pub enum MessageType {
     PublishNewState,
     PublishSnarkPoolDiff,
     PublishTransactionPoolDiff,
-    Control,
+    ControlIHave,
+    ControlIWant,
+    ControlGraft,
+    ControlPrune,
     // kademlia
     #[tag(0x0200)]
     PutValue,
@@ -123,7 +126,10 @@ impl fmt::Display for MessageType {
             MessageType::PublishNewState => write!(f, "publish_new_state"),
             MessageType::PublishSnarkPoolDiff => write!(f, "publish_snark_pool_diff"),
             MessageType::PublishTransactionPoolDiff => write!(f, "publish_transaction_pool_diff"),
-            MessageType::Control => write!(f, "meshsub_control"),
+            MessageType::ControlIHave => write!(f, "meshsub_ihave"),
+            MessageType::ControlIWant => write!(f, "meshsub_iwant"),
+            MessageType::ControlGraft => write!(f, "meshsub_graft"),
+            MessageType::ControlPrune => write!(f, "meshsub_prune"),
             MessageType::PutValue => write!(f, "put_value"),
             MessageType::GetValue => write!(f, "get_value"),
             MessageType::AddProvider => write!(f, "add_provider"),
@@ -158,6 +164,26 @@ impl fmt::Display for MessageType {
     }
 }
 
+impl<'de> Deserialize<'de> for MessageType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(|()| serde::de::Error::custom("no such message kind"))
+    }
+}
+
+impl Serialize for MessageType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
 impl FromStr for MessageType {
     type Err = ();
 
@@ -168,7 +194,10 @@ impl FromStr for MessageType {
             "publish_new_state" => Ok(MessageType::PublishNewState),
             "publish_snark_pool_diff" => Ok(MessageType::PublishSnarkPoolDiff),
             "publish_transaction_pool_diff" => Ok(MessageType::PublishTransactionPoolDiff),
-            "meshsub_control" => Ok(MessageType::Control),
+            "meshsub_ihave" => Ok(MessageType::ControlIHave),
+            "meshsub_iwant" => Ok(MessageType::ControlIWant),
+            "meshsub_graft" => Ok(MessageType::ControlGraft),
+            "meshsub_prune" => Ok(MessageType::ControlPrune),
             "put_value" => Ok(MessageType::PutValue),
             "get_value" => Ok(MessageType::GetValue),
             "add_provider" => Ok(MessageType::AddProvider),

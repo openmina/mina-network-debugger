@@ -1,4 +1,7 @@
-use std::{time::{SystemTime, Duration}, fmt, net::SocketAddr};
+use std::{
+    time::{SystemTime, Duration},
+    fmt,
+};
 
 use libp2p_core::PeerId;
 use mina_p2p_messages::bigint::BigInt;
@@ -7,41 +10,24 @@ use serde::Serialize;
 
 use crate::custom_coding;
 
+use super::MessageType;
+
 #[derive(Default, Clone, Absorb, Emit, Serialize)]
 pub struct T {
     pub height: u32,
-    pub receive_latency: Vec<Latency>,
-    pub send_latency: Vec<Latency>,
     pub events: Vec<Event>,
 }
 
 impl T {
     pub fn clear(&mut self) {
-        self.receive_latency.clear();
-        self.send_latency.clear();
         self.events.clear();
     }
 }
 
 #[derive(Clone, Absorb, Emit, Serialize)]
-pub struct Latency {
-    #[serde(serialize_with = "custom_coding::serialize_peer_id")]
-    #[custom_absorb(custom_coding::peer_id_absorb)]
-    #[custom_emit(custom_coding::peer_id_emit)]
-    pub producer_id: PeerId,
-    pub hash: Hash,
-    #[custom_absorb(custom_coding::addr_absorb)]
-    #[custom_emit(custom_coding::addr_emit)]
-    pub peer_addr: SocketAddr,
-    #[custom_absorb(custom_coding::duration_absorb)]
-    #[custom_emit(custom_coding::duration_emit)]
-    pub latency: Duration,
-    // pub is_control_message: bool,
-}
-
-#[derive(Clone, Absorb, Emit, Serialize)]
 pub struct Event {
-    pub kind: Kind,
+    pub incoming: bool,
+    pub message_kind: MessageType,
     #[serde(serialize_with = "custom_coding::serialize_peer_id")]
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
@@ -55,6 +41,9 @@ pub struct Event {
     pub time: SystemTime,
     pub sender_addr: String,
     pub receiver_addr: String,
+    #[custom_absorb(custom_coding::duration_opt_absorb)]
+    #[custom_emit(custom_coding::duration_opt_emit)]
+    pub latency: Option<Duration>,
 }
 
 #[derive(Clone, Absorb, Emit, Serialize)]
