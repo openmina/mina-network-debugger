@@ -231,6 +231,7 @@ pub fn parse_it(
                 }
                 Err(_) => {
                     let mut c = Cursor::new(&data[8..]);
+                    log::warn!("trying to parse `GossipNetMessageV2` from: {}", hex::encode(&data));
                     let msg = GossipNetMessageV2::binprot_read(&mut c).unwrap();
                     let message = Box::new(msg);
                     if preview {
@@ -350,5 +351,32 @@ fn tag0_msg() {
         })
     {
         println!("{a:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parse_new_berkeley_2() {
+        use std::io::Cursor;
+        use binprot::BinProtRead;
+        use mina_p2p_messages::gossip::GossipNetMessageV2;
+
+        let hex_str = include_str!("test_data_2.hex");
+        let data = hex::decode(hex_str).unwrap();
+        let mut c = Cursor::new(data);
+        GossipNetMessageV2::binprot_read(&mut c).unwrap();
+    }
+
+    #[test]
+    fn parse_new_berkeley_3() {
+        use std::io::Cursor;
+        use binprot::BinProtRead;
+        use mina_p2p_messages::gossip::GossipNetMessageV2;
+
+        let hex_str = include_str!("test_data_3.hex");
+        let data = hex::decode(hex_str).unwrap();
+        let mut c = Cursor::new(data);
+        GossipNetMessageV2::binprot_read(&mut c).unwrap();
     }
 }
