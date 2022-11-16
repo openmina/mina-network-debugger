@@ -449,10 +449,8 @@ where
                     if let HeaderType::Data { .. } = &header.ty {
                         if let Some(s) = self.inners.get_mut(&stream_id) {
                             s.as_mut().on_data(id.clone(), bytes.to_mut(), cx, db)?;
-                        } else {
-                            if !self.recent_reset.contains(&stream_id) {
-                                log::warn!("{id} {} doesn't exist {stream_id}", db.id());
-                            }
+                        } else if !self.recent_reset.contains(&stream_id) {
+                            log::warn!("{id} {} doesn't exist {stream_id}", db.id());
                         }
                     } else {
                         let header_bytes = <[u8; 12]>::from(&header);

@@ -100,7 +100,7 @@ fn meshsub_sink(
     msg: &[u8],
 ) {
     st.observe(msg, id.incoming, id.metadata.time, dbf, id.metadata.id.addr);
-    if let Err(err) = stream.add(&id, StreamKind::Meshsub, msg) {
+    if let Err(err) = stream.add(id, StreamKind::Meshsub, msg) {
         log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
     }
 }

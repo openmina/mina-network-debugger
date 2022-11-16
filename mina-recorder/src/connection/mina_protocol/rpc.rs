@@ -81,12 +81,10 @@ impl State {
                     b[0..8].clone_from_slice(&(new_len as u64).to_le_bytes());
 
                     Ok(Some(Cow::Owned(b)))
+                } else if id != 4411474 {
+                    Err(Error::ResponseWithoutRequest { id })
                 } else {
-                    if id != 4411474 {
-                        Err(Error::ResponseWithoutRequest { id })
-                    } else {
-                        Ok(None)
-                    }
+                    Ok(None)
                 }
             }
         }

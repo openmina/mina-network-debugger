@@ -46,17 +46,6 @@ pub struct Event {
     pub latency: Option<Duration>,
 }
 
-#[derive(Clone, Absorb, Emit, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Kind {
-    SendIHave,
-    SendIWant,
-    SendValue,
-    RecvIHave,
-    RecvIWant,
-    RecvValue,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Absorb, Emit)]
 pub struct Hash(pub [u8; 32]);
 

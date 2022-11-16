@@ -95,12 +95,10 @@ impl StatsState {
                                     self.incoming.insert(hash, v);
                                     None
                                 }
+                            } else if let Some((prev, ..)) = self.incoming.get(&hash) {
+                                Some(time.duration_since(*prev).unwrap_or_default())
                             } else {
-                                if let Some((prev, ..)) = self.incoming.get(&hash) {
-                                    Some(time.duration_since(*prev).unwrap_or_default())
-                                } else {
-                                    None
-                                }
+                                None
                             };
                             self.stats.events.push(meshsub_stats::Event {
                                 incoming,
@@ -116,19 +114,24 @@ impl StatsState {
                                 latency,
                             });
                         }
-                        _ => (),
+                        GossipNetMessageV2::SnarkPoolDiff(snark) => {
+                            let _ = snark;
+                            // TODO:
+                        }
+                        GossipNetMessageV2::TransactionPoolDiff(transaction) => {
+                            let _ = transaction;
+                            // TODO:
+                        }
                     }
                 }
                 meshsub::Event::Control { ihave, iwant, .. } => {
                     let h = ihave
                         .iter()
-                        .map(ControlIHave::hashes)
-                        .flatten()
+                        .flat_map(ControlIHave::hashes)
                         .map(|hash| (hash, MessageType::ControlIHave));
                     let w = iwant
                         .iter()
-                        .map(ControlIWant::hashes)
-                        .flatten()
+                        .flat_map(ControlIWant::hashes)
                         .map(|hash| (hash, MessageType::ControlIWant));
                     for (hash, message_kind) in h.chain(w) {
                         if let Some((prev, producer_id, block_height, global_slot)) =
@@ -136,7 +139,7 @@ impl StatsState {
                         {
                             let block_height = *block_height;
                             let global_slot = *global_slot;
-                            let producer_id = producer_id.clone();
+                            let producer_id = *producer_id;
                             if block_height == self.block_height {
                                 self.stats.events.push(meshsub_stats::Event {
                                     incoming,

@@ -45,7 +45,7 @@ pub struct Connection {
 impl Connection {
     pub fn post_process(&self, now: Option<SystemTime>) -> serde_json::Value {
         let end = if self.timestamp_close == UNIX_EPOCH {
-            now.unwrap_or(SystemTime::now())
+            now.unwrap_or_else(SystemTime::now)
         } else {
             self.timestamp_close
         };

@@ -140,7 +140,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
             _ => None,
         });
     let mut control_types = vec![];
-    for c in control {
+    if let Some(c) = control {
         if !c.ihave.is_empty() {
             control_types.push(MessageType::ControlIHave);
         }
