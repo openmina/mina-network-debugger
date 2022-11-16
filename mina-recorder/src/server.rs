@@ -199,10 +199,16 @@ fn routes(
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
 
+    let cors_filter = warp::cors()
+        .allow_any_origin()
+        .allow_methods(["OPTIONS", "GET", "POST", "DELETE", "PUT"])
+        .build();
+
     let binary = warp::get()
         .and(message_bin(db.clone()))
         .with(with::header("Content-Type", "application/octet-stream"))
-        .with(with::header("Access-Control-Allow-Origin", "*"));
+        .with(with::header("Access-Control-Allow-Origin", "*"))
+        .with(cors_filter.clone());
 
     warp::get()
         .and(
@@ -219,6 +225,7 @@ fn routes(
         )
         .with(with::header("Content-Type", "application/json"))
         .with(with::header("Access-Control-Allow-Origin", "*"))
+        .with(cors_filter)
         .or(binary)
 }
 
