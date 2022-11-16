@@ -33,7 +33,7 @@ const CHAINS: [(&str, &str); 3] = [
     ),
     (
         "berkeley",
-        "/coda/0.0.1/2b646a149605bebef6d1fca27a4d8f4c174d4842af05907101166cc6ff44b71d",
+        "/coda/0.0.1/fb30d090bb37e8aa354114d8c794b0f7072648a67bd1a08613684ac6f7c86028",
     ),
 ];
 
