@@ -231,7 +231,6 @@ pub fn parse_it(
                 }
                 Err(_) => {
                     let mut c = Cursor::new(&data[8..]);
-                    log::warn!("trying to parse `GossipNetMessageV2` from: {}", hex::encode(&data));
                     let msg = GossipNetMessageV2::binprot_read(&mut c).unwrap();
                     let message = Box::new(msg);
                     if preview {
