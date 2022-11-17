@@ -1744,8 +1744,7 @@ dependencies = [
 [[package]]
 name = "radiation"
 version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74ffc533cd7dd1265d099feee1d7cb075d30818d1e97c186d2d9ddf866f770cd"
+source = "git+https://github.com/vlad9486/radiation#13b0cc0ecaeac3bb2c69dcd4c2fa14d1bd990122"
 dependencies = [
  "hex",
  "nom 7.1.1",
@@ -1755,8 +1754,7 @@ dependencies = [
 [[package]]
 name = "radiation-macros"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29258e5a53c9d77df6eadeff736a4f88563be92e7846fc086bd1dd8f4707eca7"
+source = "git+https://github.com/vlad9486/radiation#13b0cc0ecaeac3bb2c69dcd4c2fa14d1bd990122"
 dependencies = [
  "proc-macro2",
  "quote",
