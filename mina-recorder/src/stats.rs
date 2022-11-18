@@ -7,7 +7,7 @@ use libp2p_core::PeerId;
 use super::database::DbFacade;
 
 use crate::decode::{
-    meshsub_stats,
+    meshsub_stats::{BlockStat, Hash, Event},
     meshsub::{self, ControlIHave, ControlIWant},
     MessageType,
 };
@@ -30,16 +30,11 @@ pub struct Stats {
 
 #[derive(Default)]
 pub struct StatsState {
-    first: BTreeMap<meshsub_stats::Hash, (SystemTime, PeerId, u32, u32)>,
-    stats: meshsub_stats::T,
+    first: BTreeMap<Hash, (SystemTime, PeerId, u32, u32)>,
+    block_stat: BlockStat,
 }
 
 impl StatsState {
-    fn clear(&mut self) {
-        self.first.clear();
-        self.stats.clear();
-    }
-
     pub fn observe<'a>(
         &'a mut self,
         msg: &[u8],
@@ -62,7 +57,7 @@ impl StatsState {
                     message,
                     ..
                 } => {
-                    let hash = meshsub_stats::Hash(hash);
+                    let hash = Hash(hash);
                     match message.as_ref() {
                         GossipNetMessageV2::NewState(block) => {
                             let block_height = block
@@ -81,11 +76,12 @@ impl StatsState {
                                 .global_slot_since_genesis
                                 .0
                                  .0 as u32;
-                            if self.stats.height < block_height {
-                                self.clear();
-                                self.stats.height = block_height;
+                            if self.block_stat.height < block_height {
+                                self.first.clear();
+                                self.block_stat.clear();
+                                self.block_stat.height = block_height;
                             }
-                            if self.stats.height > block_height {
+                            if self.block_stat.height > block_height {
                                 // skip obsolete
                                 continue;
                             }
@@ -96,18 +92,18 @@ impl StatsState {
                                 self.first.insert(hash, v);
                                 None
                             };
-                            self.stats.events.push(meshsub_stats::Event {
-                                incoming,
-                                message_kind: MessageType::PublishNewState,
+                            self.block_stat.events.push(Event {
                                 producer_id,
                                 hash,
-                                message_id,
                                 block_height,
                                 global_slot,
+                                incoming,
+                                message_kind: MessageType::PublishNewState,
+                                message_id,
                                 time,
+                                latency,
                                 sender_addr: sender_addr.clone(),
                                 receiver_addr: receiver_addr.clone(),
-                                latency,
                             });
                         }
                         GossipNetMessageV2::SnarkPoolDiff(snark) => {
@@ -136,19 +132,19 @@ impl StatsState {
                             let block_height = *block_height;
                             let global_slot = *global_slot;
                             let producer_id = *producer_id;
-                            if block_height == self.stats.height {
-                                self.stats.events.push(meshsub_stats::Event {
-                                    incoming,
-                                    message_kind,
+                            if block_height == self.block_stat.height {
+                                self.block_stat.events.push(Event {
                                     producer_id,
                                     hash,
-                                    message_id,
                                     block_height,
                                     global_slot,
+                                    incoming,
+                                    message_kind,
+                                    message_id,
                                     time,
+                                    latency: Some(time.duration_since(*prev).unwrap_or_default()),
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
-                                    latency: Some(time.duration_since(*prev).unwrap_or_default()),
                                 });
                             }
                         }
@@ -157,6 +153,6 @@ impl StatsState {
                 _ => (),
             }
         }
-        db.stats(self.stats.height, &self.stats).unwrap();
+        db.stats(self.block_stat.height, &self.block_stat).unwrap();
     }
 }

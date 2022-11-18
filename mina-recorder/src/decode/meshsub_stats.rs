@@ -13,12 +13,12 @@ use crate::custom_coding;
 use super::MessageType;
 
 #[derive(Default, Clone, Absorb, Emit, Serialize)]
-pub struct T {
+pub struct BlockStat {
     pub height: u32,
     pub events: Vec<Event>,
 }
 
-impl T {
+impl BlockStat {
     pub fn clear(&mut self) {
         self.events.clear();
     }
@@ -26,24 +26,25 @@ impl T {
 
 #[derive(Clone, Absorb, Emit, Serialize)]
 pub struct Event {
-    pub incoming: bool,
-    pub message_kind: MessageType,
     #[serde(serialize_with = "custom_coding::serialize_peer_id")]
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
     pub hash: Hash,
-    pub message_id: u64,
     pub block_height: u32,
     pub global_slot: u32,
+    // TODO: group
+    pub incoming: bool,
+    pub message_kind: MessageType,
+    pub message_id: u64,
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
-    pub sender_addr: String,
-    pub receiver_addr: String,
     #[custom_absorb(custom_coding::duration_opt_absorb)]
     #[custom_emit(custom_coding::duration_opt_emit)]
     pub latency: Option<Duration>,
+    pub sender_addr: String,
+    pub receiver_addr: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Absorb, Emit)]

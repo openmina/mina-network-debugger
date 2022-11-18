@@ -27,7 +27,7 @@ use super::{
 };
 
 use crate::{
-    decode::{DecodeError, MessageType, meshsub_stats},
+    decode::{DecodeError, MessageType, meshsub_stats::BlockStat},
     strace::StraceLine,
 };
 
@@ -858,7 +858,7 @@ impl DbCore {
         Ok(it)
     }
 
-    pub fn fetch_last_stat(&self) -> Option<(u32, meshsub_stats::T)> {
+    pub fn fetch_last_stat(&self) -> Option<(u32, BlockStat)> {
         use rocksdb::IteratorMode;
 
         self.inner
@@ -867,7 +867,7 @@ impl DbCore {
             .and_then(Self::decode)
     }
 
-    pub fn fetch_stats(&self, id: u32) -> Result<Option<(u32, meshsub_stats::T)>, DbError> {
+    pub fn fetch_stats(&self, id: u32) -> Result<Option<(u32, BlockStat)>, DbError> {
         match self.inner.get_cf(self.stats(), id.to_be_bytes())? {
             None => Ok(None),
             Some(v) => Ok(Some((id, AbsorbExt::absorb_ext(&v)?))),
