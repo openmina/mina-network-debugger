@@ -202,36 +202,10 @@ pub fn parse_it(
                 msg.key,
             ))
         })
-        .map(move |(data, topic, from, seqno, signature, key)| {
+        .filter_map(move |(data, topic, from, seqno, signature, key)| {
             let mut c = Cursor::new(&data[8..]);
-            match GossipNetMessageV1::binprot_read(&mut c) {
+            match GossipNetMessageV2::binprot_read(&mut c) {
                 Ok(msg) => {
-                    let message = Box::new(msg);
-                    if preview {
-                        let message = match &*message {
-                            GossipNetMessageV1::NewState(_) => GossipNetMessagePreview::NewState,
-                            GossipNetMessageV1::SnarkPoolDiff(_) => {
-                                GossipNetMessagePreview::SnarkPoolDiff
-                            }
-                            GossipNetMessageV1::TransactionPoolDiff(_) => {
-                                GossipNetMessagePreview::TransactionPoolDiff
-                            }
-                        };
-                        Event::PublishPreview { topic, message }
-                    } else {
-                        Event::Publish {
-                            from: from.map(hex::encode),
-                            seqno: seqno.map(hex::encode),
-                            signature: signature.map(hex::encode),
-                            key: key.map(hex::encode),
-                            topic,
-                            message,
-                        }
-                    }
-                }
-                Err(_) => {
-                    let mut c = Cursor::new(&data[8..]);
-                    let msg = GossipNetMessageV2::binprot_read(&mut c).unwrap();
                     let message = Box::new(msg);
                     if preview {
                         let message = match &*message {
@@ -243,11 +217,11 @@ pub fn parse_it(
                                 GossipNetMessagePreview::TransactionPoolDiff
                             }
                         };
-                        Event::PublishPreview { topic, message }
+                        return Some(Event::PublishPreview { topic, message });
                     } else {
                         let hash = if calc_hash {
                             use blake2::digest::{Mac, Update, FixedOutput, typenum};
-
+        
                             let key;
                             let key = if topic.as_bytes().len() <= 64 {
                                 topic.as_bytes()
@@ -265,7 +239,7 @@ pub fn parse_it(
                         } else {
                             [0; 32]
                         };
-                        Event::PublishV2 {
+                        return Some(Event::PublishV2 {
                             from: from.and_then(|b| PeerId::from_bytes(&b).ok()),
                             seqno: seqno.map(hex::encode),
                             signature: signature.map(hex::encode),
@@ -273,10 +247,42 @@ pub fn parse_it(
                             topic,
                             message,
                             hash,
-                        }
+                        });
                     }
                 }
+                Err(err) => log::error!("decode {err}"),
             }
+
+            let mut c = Cursor::new(&data[8..]);
+            match GossipNetMessageV1::binprot_read(&mut c) {
+                Ok(msg) => {
+                    let message = Box::new(msg);
+                    if preview {
+                        let message = match &*message {
+                            GossipNetMessageV1::NewState(_) => GossipNetMessagePreview::NewState,
+                            GossipNetMessageV1::SnarkPoolDiff(_) => {
+                                GossipNetMessagePreview::SnarkPoolDiff
+                            }
+                            GossipNetMessageV1::TransactionPoolDiff(_) => {
+                                GossipNetMessagePreview::TransactionPoolDiff
+                            }
+                        };
+                        return Some(Event::PublishPreview { topic, message })
+                    } else {
+                        return Some(Event::Publish {
+                            from: from.map(hex::encode),
+                            seqno: seqno.map(hex::encode),
+                            signature: signature.map(hex::encode),
+                            key: key.map(hex::encode),
+                            topic,
+                            message,
+                        });
+                    }
+                }
+                Err(err) => log::error!("decode {err}"),
+            }
+
+            None
         });
     let control = control.into_iter().map(
         |pb::ControlMessage {
