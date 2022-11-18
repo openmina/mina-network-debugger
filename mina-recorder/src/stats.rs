@@ -85,6 +85,10 @@ impl StatsState {
                                 self.clear();
                                 self.stats.height = block_height;
                             }
+                            if self.stats.height > block_height {
+                                // skip obsolete
+                                continue;
+                            }
                             let latency = if let Some((prev, ..)) = self.first.get(&hash) {
                                 Some(time.duration_since(*prev).unwrap_or_default())
                             } else {

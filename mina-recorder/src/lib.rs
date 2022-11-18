@@ -26,3 +26,6 @@ pub mod strace;
 pub mod ptrace;
 
 mod stats;
+
+#[cfg(test)]
+mod stats_test;
