@@ -30,14 +30,13 @@ pub struct Stats {
 
 #[derive(Default)]
 pub struct StatsState {
-    incoming: BTreeMap<meshsub_stats::Hash, (SystemTime, PeerId, u32, u32)>,
+    first: BTreeMap<meshsub_stats::Hash, (SystemTime, PeerId, u32, u32)>,
     stats: meshsub_stats::T,
-    block_height: u32,
 }
 
 impl StatsState {
     fn clear(&mut self) {
-        self.incoming.clear();
+        self.first.clear();
         self.stats.clear();
     }
 
@@ -82,22 +81,15 @@ impl StatsState {
                                 .global_slot_since_genesis
                                 .0
                                  .0 as u32;
-                            let latency = if incoming {
-                                if self.block_height < block_height {
-                                    self.clear();
-                                    self.block_height = block_height;
-                                    self.stats.height = block_height;
-                                }
-                                if let Some((prev, ..)) = self.incoming.get(&hash) {
-                                    Some(time.duration_since(*prev).unwrap_or_default())
-                                } else {
-                                    let v = (time, producer_id, block_height, global_slot);
-                                    self.incoming.insert(hash, v);
-                                    None
-                                }
-                            } else if let Some((prev, ..)) = self.incoming.get(&hash) {
+                            if self.stats.height < block_height {
+                                self.clear();
+                                self.stats.height = block_height;
+                            }
+                            let latency = if let Some((prev, ..)) = self.first.get(&hash) {
                                 Some(time.duration_since(*prev).unwrap_or_default())
                             } else {
+                                let v = (time, producer_id, block_height, global_slot);
+                                self.first.insert(hash, v);
                                 None
                             };
                             self.stats.events.push(meshsub_stats::Event {
@@ -135,12 +127,12 @@ impl StatsState {
                         .map(|hash| (hash, MessageType::ControlIWant));
                     for (hash, message_kind) in h.chain(w) {
                         if let Some((prev, producer_id, block_height, global_slot)) =
-                            self.incoming.get(&hash)
+                            self.first.get(&hash)
                         {
                             let block_height = *block_height;
                             let global_slot = *global_slot;
                             let producer_id = *producer_id;
-                            if block_height == self.block_height {
+                            if block_height == self.stats.height {
                                 self.stats.events.push(meshsub_stats::Event {
                                     incoming,
                                     message_kind,
@@ -161,6 +153,6 @@ impl StatsState {
                 _ => (),
             }
         }
-        db.stats(self.stats.height, self.stats.clone()).unwrap();
+        db.stats(self.stats.height, &self.stats).unwrap();
     }
 }

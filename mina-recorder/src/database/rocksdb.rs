@@ -51,7 +51,7 @@ impl DbFacade {
         })
     }
 
-    pub fn stats(&self, height: u32, value: meshsub_stats::T) -> Result<(), DbError> {
+    pub fn stats(&self, height: u32, value: &meshsub_stats::T) -> Result<(), DbError> {
         self.inner.put_stats(height, value.chain(vec![]))
     }
 
