@@ -30,8 +30,15 @@ pub struct Stats {
 
 #[derive(Default)]
 pub struct StatsState {
-    first: BTreeMap<Hash, (SystemTime, PeerId, u32, u32)>,
+    first: BTreeMap<Hash, Description>,
     block_stat: BlockStat,
+}
+
+struct Description {
+    time: SystemTime,
+    producer_id: PeerId,
+    block_height: u32,
+    global_slot: u32,
 }
 
 impl StatsState {
@@ -85,11 +92,17 @@ impl StatsState {
                                 // skip obsolete
                                 continue;
                             }
-                            let latency = if let Some((prev, ..)) = self.first.get(&hash) {
-                                Some(time.duration_since(*prev).unwrap_or_default())
+                            let latency = if let Some(first) = self.first.get(&hash) {
+                                Some(time.duration_since(first.time).unwrap_or_default())
                             } else {
-                                let v = (time, producer_id, block_height, global_slot);
-                                self.first.insert(hash, v);
+                                // TODO: investigate
+                                if !incoming {
+                                    log::warn!("sending block, did not received it before {}", message_id);
+                                } else {
+                                    let v = Description { time, producer_id, block_height, global_slot };
+                                    self.first.insert(hash, v);
+                                }
+
                                 None
                             };
                             self.block_stat.events.push(Event {
@@ -126,12 +139,10 @@ impl StatsState {
                         .flat_map(ControlIWant::hashes)
                         .map(|hash| (hash, MessageType::ControlIWant));
                     for (hash, message_kind) in h.chain(w) {
-                        if let Some((prev, producer_id, block_height, global_slot)) =
-                            self.first.get(&hash)
-                        {
-                            let block_height = *block_height;
-                            let global_slot = *global_slot;
-                            let producer_id = *producer_id;
+                        if let Some(first) = self.first.get(&hash) {
+                            let block_height = first.block_height;
+                            let global_slot = first.global_slot;
+                            let producer_id = first.producer_id;
                             if block_height == self.block_stat.height {
                                 self.block_stat.events.push(Event {
                                     producer_id,
@@ -142,7 +153,7 @@ impl StatsState {
                                     message_kind,
                                     message_id,
                                     time,
-                                    latency: Some(time.duration_since(*prev).unwrap_or_default()),
+                                    latency: Some(time.duration_since(first.time).unwrap_or_default()),
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
                                 });
