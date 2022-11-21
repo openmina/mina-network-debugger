@@ -90,6 +90,7 @@ impl StatsState {
                             }
                             if self.block_stat.height > block_height {
                                 // skip obsolete
+                                log::warn!("skip obsolete block {block_height}, {hash:?}");
                                 continue;
                             }
                             let latency = if let Some(first) = self.first.get(&hash) {
