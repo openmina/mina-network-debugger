@@ -63,7 +63,15 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     let Nat0(d) = BinProtRead::binprot_read(&mut stream)?;
     let msg = QueryHeader::binprot_read(&mut stream)?;
     let tag = msg.tag.to_string_lossy();
-    let r = JSONifyPayloadRegistry::v1();
+    
+    let r = match msg.version {
+        1 => JSONifyPayloadRegistry::v1(),
+        2 => JSONifyPayloadRegistry::v2(),
+        v => {
+            log::error!("unknown rpc version {v}");
+            return Ok(serde_json::Value::Null);
+        }
+    };
     let reader = r.get(&tag, msg.version).unwrap_or(&DefaultReader);
     match d {
         1 => {
@@ -122,4 +130,13 @@ fn decode_get_transition_chain_proof_request() {
     let reader = r.get("get_transition_chain_proof", 1).unwrap();
     let value = reader.read_query(&mut stream).unwrap();
     assert_ne!(dbg!(value), serde_json::Value::Null);
+}
+
+#[cfg(test)]
+#[test]
+fn decode_v2() {
+    let bytes = include_bytes!("../test_data/rpc_7843");
+    let msg = parse(bytes.to_vec(), false).unwrap();
+    let value = msg.as_object().unwrap().get("value").unwrap();
+    assert!(value.is_object());
 }
