@@ -17,7 +17,7 @@ use radiation::Emit;
 use crate::{
     event::{ConnectionInfo, DirectedId},
     chunk::{ChunkHeader, EncryptionStatus},
-    decode::{MessageType, meshsub_stats::BlockStat},
+    decode::{MessageType, meshsub_stats::{BlockStat, TxStat}},
     strace::StraceLine,
 };
 
@@ -53,6 +53,10 @@ impl DbFacade {
 
     pub fn stats(&self, height: u32, value: &BlockStat) -> Result<(), DbError> {
         self.inner.put_stats(height, value.chain(vec![]))
+    }
+
+    pub fn stats_tx(&self, height: u32, value: &TxStat) -> Result<(), DbError> {
+        self.inner.put_stats_tx(height, value.chain(vec![]))
     }
 
     pub fn strace(&self) -> Result<DbStrace, DbError> {

@@ -4,7 +4,7 @@ use std::{
 };
 
 use libp2p_core::PeerId;
-use mina_p2p_messages::bigint::BigInt;
+use mina_p2p_messages::{bigint::BigInt, v2};
 use radiation::{Absorb, Emit};
 use serde::Serialize;
 
@@ -47,8 +47,42 @@ pub struct Event {
     pub receiver_addr: String,
 }
 
+#[derive(Clone, Absorb, Emit, Serialize)]
+pub struct TxStat {
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub block_time: SystemTime,
+    pub block_height: u32,
+
+    pub transactions: Vec<Tx>,
+}
+
+#[derive(Clone, Absorb, Emit, Serialize)]
+pub struct Tx {
+    #[serde(serialize_with = "custom_coding::serialize_peer_id")]
+    #[custom_absorb(custom_coding::peer_id_absorb)]
+    #[custom_emit(custom_coding::peer_id_emit)]
+    pub producer_id: PeerId,
+    // pub hash: Hash,
+
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub time: SystemTime,
+
+    #[custom_absorb(custom_coding::tx_absorb)]
+    #[custom_emit(custom_coding::tx_emit)]
+    pub command: v2::StagedLedgerDiffDiffPreDiffWithAtMostTwoCoinbaseStableV2B,
+
+    #[custom_absorb(custom_coding::duration_absorb)]
+    #[custom_emit(custom_coding::duration_emit)]
+    pub latency: Duration,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Absorb, Emit)]
 pub struct Hash(pub [u8; 32]);
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Absorb, Emit)]
+pub struct Signature(pub [u8; 32], pub [u8; 32]);
 
 impl Serialize for Hash {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

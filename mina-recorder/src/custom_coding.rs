@@ -1,8 +1,10 @@
 use std::{
     net::{SocketAddr, IpAddr, Ipv6Addr, Ipv4Addr},
-    time::{SystemTime, Duration},
+    time::{SystemTime, Duration}, io,
 };
 
+use mina_p2p_messages::v2;
+use binprot::{BinProtRead, BinProtWrite};
 use radiation::{Absorb, Emit, nom, ParseError, RadiationBuffer};
 use libp2p_core::PeerId;
 
@@ -116,4 +118,22 @@ where
         Some(v) => serialize_peer_id(v, serializer),
         None => serializer.serialize_none(),
     }
+}
+
+type Tx = v2::StagedLedgerDiffDiffPreDiffWithAtMostTwoCoinbaseStableV2B;
+
+pub fn tx_absorb(input: &[u8]) -> nom::IResult<&[u8], Tx, ParseError<&[u8]>> {
+    nom::combinator::map_res(Vec::<u8>::absorb::<()>, |v| {
+        let mut c = io::Cursor::new(v);
+        BinProtRead::binprot_read(&mut c)
+    })(input)
+}
+
+pub fn tx_emit<W>(value: &Tx, buffer: &mut W)
+where
+    W: for<'a> Extend<&'a u8> + RadiationBuffer,
+{
+    let mut v = vec![];
+    BinProtWrite::binprot_write(value, &mut v).unwrap();
+    v.emit(buffer);
 }

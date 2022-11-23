@@ -27,7 +27,7 @@ use super::{
 };
 
 use crate::{
-    decode::{DecodeError, MessageType, meshsub_stats::BlockStat},
+    decode::{DecodeError, MessageType, meshsub_stats::{BlockStat, TxStat}},
     strace::StraceLine,
 };
 
@@ -127,12 +127,13 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 10] = [
+    const CFS: [&'static str; 11] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::RANDOMNESS,
         Self::STRACE,
         Self::STATS,
+        Self::STATS_TX,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
@@ -159,6 +160,8 @@ impl DbCore {
     pub const STRACE_CNT: u8 = 3;
 
     const STATS: &'static str = "stats";
+
+    const STATS_TX: &'static str = "stats_tx";
 
     // indexes
 
@@ -193,11 +196,12 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[2], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], Default::default()),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], opts_with_prefix_extractor(8)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(16)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], Default::default()),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(8)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(2)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(18)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(18)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -237,6 +241,10 @@ impl DbCore {
 
     fn stats(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::STATS).expect("must exist")
+    }
+
+    fn stats_tx(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::STATS_TX).expect("must exist")
     }
 
     fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
@@ -335,6 +343,13 @@ impl DbCore {
     pub fn put_stats(&self, height: u32, bytes: Vec<u8>) -> Result<(), DbError> {
         self.inner
             .put_cf(self.stats(), height.to_be_bytes(), bytes)?;
+
+        Ok(())
+    }
+
+    pub fn put_stats_tx(&self, height: u32, bytes: Vec<u8>) -> Result<(), DbError> {
+        self.inner
+            .put_cf(self.stats_tx(), height.to_be_bytes(), bytes)?;
 
         Ok(())
     }
@@ -869,6 +884,22 @@ impl DbCore {
 
     pub fn fetch_stats(&self, id: u32) -> Result<Option<(u32, BlockStat)>, DbError> {
         match self.inner.get_cf(self.stats(), id.to_be_bytes())? {
+            None => Ok(None),
+            Some(v) => Ok(Some((id, AbsorbExt::absorb_ext(&v)?))),
+        }
+    }
+
+    pub fn fetch_last_stat_tx(&self) -> Option<(u32, TxStat)> {
+        use rocksdb::IteratorMode;
+
+        self.inner
+            .iterator_cf(self.stats_tx(), IteratorMode::End)
+            .next()
+            .and_then(Self::decode)
+    }
+
+    pub fn fetch_stats_tx(&self, id: u32) -> Result<Option<(u32, TxStat)>, DbError> {
+        match self.inner.get_cf(self.stats_tx(), id.to_be_bytes())? {
             None => Ok(None),
             Some(v) => Ok(Some((id, AbsorbExt::absorb_ext(&v)?))),
         }

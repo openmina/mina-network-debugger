@@ -173,6 +173,33 @@ fn stats_latest(
     })
 }
 
+fn stats_tx(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("tx" / u32).map(move |id| -> WithStatus<Json> {
+        let v = db.fetch_stats_tx(id);
+        match v {
+            Ok(v) => {
+                let v = v.map(|(_, v)| v);
+                reply::with_status(reply::json(&v), StatusCode::OK)
+            }
+            Err(err) => reply::with_status(
+                reply::json(&err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    })
+}
+
+fn stats_tx_latest(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("tx" / "latest").map(move || -> WithStatus<Json> {
+        let v = db.fetch_last_stat_tx().map(|(_, v)| v);
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
+
 fn version(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("version")
@@ -220,7 +247,9 @@ fn routes(
                 .or(strace(db.clone()))
                 .or(stats(db.clone()))
                 .or(stats_last(db.clone()))
-                .or(stats_latest(db))
+                .or(stats_latest(db.clone()))
+                .or(stats_tx(db.clone()))
+                .or(stats_tx_latest(db))
                 .or(version().or(openapi())),
         )
         .with(with::header("Content-Type", "application/json"))

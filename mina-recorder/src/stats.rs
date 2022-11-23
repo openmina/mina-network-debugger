@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, time::SystemTime, net::SocketAddr};
 
-use mina_p2p_messages::gossip::GossipNetMessageV2;
+use mina_p2p_messages::{gossip::GossipNetMessageV2, v2};
 use radiation::{Absorb, Emit};
 use libp2p_core::PeerId;
 
 use super::database::DbFacade;
 
 use crate::decode::{
-    meshsub_stats::{BlockStat, Hash, Event},
+    meshsub_stats::{BlockStat, TxStat, Hash, Event, Signature, Tx},
     meshsub::{self, ControlIHave, ControlIWant},
     MessageType,
 };
@@ -30,8 +30,12 @@ pub struct Stats {
 
 #[derive(Default)]
 pub struct StatsState {
+    // block
     first: BTreeMap<Hash, Description>,
     block_stat: BlockStat,
+    // tx
+    txs: BTreeMap<Signature, TxDesc>,
+    tx_stat: Option<TxStat>,
 }
 
 struct Description {
@@ -39,6 +43,11 @@ struct Description {
     producer_id: PeerId,
     block_height: u32,
     global_slot: u32,
+}
+
+struct TxDesc {
+    time: SystemTime,
+    producer_id: PeerId,
 }
 
 impl StatsState {
@@ -56,6 +65,8 @@ impl StatsState {
             ("local node".to_string(), peer.to_string())
         };
         let message_id = db.next_message_id();
+        let mut block_stat_updated = false;
+        let mut tx_stat_updated = true;
         for event in meshsub::parse_it(msg, false, true).unwrap() {
             match event {
                 meshsub::Event::PublishV2 {
@@ -87,6 +98,8 @@ impl StatsState {
                                 self.first.clear();
                                 self.block_stat.clear();
                                 self.block_stat.height = block_height;
+                                self.tx_stat = None;
+                                block_stat_updated = true;
                             }
                             if self.block_stat.height > block_height {
                                 // skip obsolete
@@ -104,6 +117,33 @@ impl StatsState {
                                     self.first.insert(hash, v);
                                 }
 
+                                let it0 = block.body.staged_ledger_diff.diff.0.commands.iter();
+                                let it1 = block.body.staged_ledger_diff.diff.1.iter().flat_map(|x| x.commands.iter());
+                                for tx in it0.chain(it1) {
+                                    match &tx.data {
+                                        v2::MinaBaseUserCommandStableV2::SignedCommand(c) => {
+                                            let mut signature = Signature([0; 32], [0; 32]);
+                                            signature.0.clone_from_slice(c.signature.0.as_ref());
+                                            signature.1.clone_from_slice(c.signature.1.as_ref());
+                                            if let Some(tx_desc) = self.txs.remove(&signature) {
+                                                let tx_stat = self.tx_stat.get_or_insert(TxStat {
+                                                    block_time: time,
+                                                    block_height,
+                                                    transactions: vec![],
+                                                });
+                                                tx_stat.transactions.push(Tx {
+                                                    producer_id: tx_desc.producer_id,
+                                                    time: tx_desc.time,
+                                                    latency: time.duration_since(tx_desc.time).unwrap(),
+                                                    command: tx.clone(),
+                                                });
+                                                tx_stat_updated = true;
+                                            }
+                                        }
+                                        _ => (),
+                                    }
+                                }
+
                                 None
                             };
                             self.block_stat.events.push(Event {
@@ -119,14 +159,39 @@ impl StatsState {
                                 sender_addr: sender_addr.clone(),
                                 receiver_addr: receiver_addr.clone(),
                             });
-                        }
-                        GossipNetMessageV2::SnarkPoolDiff(snark) => {
-                            let _ = snark;
-                            // TODO:
+                            block_stat_updated = true;
                         }
                         GossipNetMessageV2::TransactionPoolDiff(transaction) => {
-                            let _ = transaction;
-                            // TODO:
+                            for tx in &transaction.0 {
+                                match tx {
+                                    v2::MinaBaseUserCommandStableV2::SignedCommand(c) => {
+                                        // TODO:
+                                        let _ = &c.payload.common.nonce;
+
+                                        let mut signature = Signature([0; 32], [0; 32]);
+                                        signature.0.clone_from_slice(c.signature.0.as_ref());
+                                        signature.1.clone_from_slice(c.signature.1.as_ref());
+                                        self.txs.entry(signature).or_insert_with(|| TxDesc {
+                                            time,
+                                            producer_id,
+                                        });
+                                    }
+                                    _ => (),
+                                }
+                            }
+                        }
+                        GossipNetMessageV2::SnarkPoolDiff(snark) => {
+                            match snark {
+                                v2::NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(s) => {
+                                    match &s.1.proof {
+                                        v2::TransactionSnarkWorkTStableV2Proofs::Two((one, _)) => {
+                                            let _ = &one.0.statement.sok_digest;
+                                        }
+                                        _ => (),
+                                    }
+                                }
+                                v2::NetworkPoolSnarkPoolDiffVersionedStableV2::Empty => (),
+                            }
                         }
                     }
                 }
@@ -158,6 +223,7 @@ impl StatsState {
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
                                 });
+                                block_stat_updated = true;
                             }
                         }
                     }
@@ -165,6 +231,14 @@ impl StatsState {
                 _ => (),
             }
         }
+        // if block_stat_updated {
+        let _ = block_stat_updated;
         db.stats(self.block_stat.height, &self.block_stat).unwrap();
+        // }
+        if tx_stat_updated {
+            if let Some(stat) = &self.tx_stat {
+                db.stats_tx(self.block_stat.height, stat).unwrap();
+            }
+        }
     }
 }
