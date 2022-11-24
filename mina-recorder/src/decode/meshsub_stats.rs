@@ -55,6 +55,10 @@ pub struct TxStat {
     pub block_height: u32,
 
     pub transactions: Vec<Tx>,
+    pub snarks: Vec<Snark>,
+
+    pub pending_txs: Vec<u64>,
+    pub pending_snarks: Vec<u64>,
 }
 
 #[derive(Clone, Absorb, Emit, Serialize)]
@@ -69,8 +73,8 @@ pub struct Tx {
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
 
-    #[custom_absorb(custom_coding::tx_absorb)]
-    #[custom_emit(custom_coding::tx_emit)]
+    #[custom_absorb(custom_coding::binprot_absorb)]
+    #[custom_emit(custom_coding::binprot_emit)]
     pub command: v2::StagedLedgerDiffDiffPreDiffWithAtMostTwoCoinbaseStableV2B,
 
     #[custom_absorb(custom_coding::duration_absorb)]
@@ -78,6 +82,26 @@ pub struct Tx {
     pub latency: Duration,
 }
 
+#[derive(Clone, Absorb, Emit, Serialize)]
+pub struct Snark {
+    #[serde(serialize_with = "custom_coding::serialize_peer_id")]
+    #[custom_absorb(custom_coding::peer_id_absorb)]
+    #[custom_emit(custom_coding::peer_id_emit)]
+    pub producer_id: PeerId,
+    // pub hash: Hash,
+
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub time: SystemTime,
+
+    #[custom_absorb(custom_coding::binprot_absorb)]
+    #[custom_emit(custom_coding::binprot_emit)]
+    pub work: v2::TransactionSnarkWorkTStableV2,
+
+    #[custom_absorb(custom_coding::duration_absorb)]
+    #[custom_emit(custom_coding::duration_emit)]
+    pub latency: Duration,
+}
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Absorb, Emit)]
 pub struct Hash(pub [u8; 32]);
 

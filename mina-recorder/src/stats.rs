@@ -7,7 +7,7 @@ use libp2p_core::PeerId;
 use super::database::DbFacade;
 
 use crate::decode::{
-    meshsub_stats::{BlockStat, TxStat, Hash, Event, Signature, Tx},
+    meshsub_stats::{BlockStat, TxStat, Hash, Event, Signature, Tx, Snark},
     meshsub::{self, ControlIHave, ControlIWant},
     MessageType,
 };
@@ -35,6 +35,7 @@ pub struct StatsState {
     block_stat: BlockStat,
     // tx
     txs: BTreeMap<Signature, TxDesc>,
+    snarks: BTreeMap<Hash, TxDesc>,
     tx_stat: Option<TxStat>,
 }
 
@@ -48,6 +49,7 @@ struct Description {
 struct TxDesc {
     time: SystemTime,
     producer_id: PeerId,
+    message_id: u64,
 }
 
 impl StatsState {
@@ -117,6 +119,15 @@ impl StatsState {
                                     self.first.insert(hash, v);
                                 }
 
+                                let tx_stat = self.tx_stat.get_or_insert_with(|| TxStat {
+                                    block_time: time,
+                                    block_height,
+                                    transactions: vec![],
+                                    snarks: vec![],
+                                    pending_txs: vec![],
+                                    pending_snarks: vec![],
+                                });
+
                                 let it0 = block.body.staged_ledger_diff.diff.0.commands.iter();
                                 let it1 = block.body.staged_ledger_diff.diff.1.iter().flat_map(|x| x.commands.iter());
                                 for tx in it0.chain(it1) {
@@ -126,16 +137,11 @@ impl StatsState {
                                             signature.0.clone_from_slice(c.signature.0.as_ref());
                                             signature.1.clone_from_slice(c.signature.1.as_ref());
                                             if let Some(tx_desc) = self.txs.remove(&signature) {
-                                                let tx_stat = self.tx_stat.get_or_insert(TxStat {
-                                                    block_time: time,
-                                                    block_height,
-                                                    transactions: vec![],
-                                                });
                                                 tx_stat.transactions.push(Tx {
                                                     producer_id: tx_desc.producer_id,
                                                     time: tx_desc.time,
-                                                    latency: time.duration_since(tx_desc.time).unwrap(),
                                                     command: tx.clone(),
+                                                    latency: time.duration_since(tx_desc.time).unwrap(),
                                                 });
                                                 tx_stat_updated = true;
                                             }
@@ -143,6 +149,27 @@ impl StatsState {
                                         _ => (),
                                     }
                                 }
+                                tx_stat.pending_txs = self.txs.values().map(|v| v.message_id).collect();
+
+                                let it0 = block.body.staged_ledger_diff.diff.0.completed_works.iter();
+                                let it1 = block.body.staged_ledger_diff.diff.1.iter().flat_map(|x| x.completed_works.iter());
+                                for snark in it0.chain(it1) {
+                                    let hash = match &snark.proofs {
+                                        v2::TransactionSnarkWorkTStableV2Proofs::One(p) => p.0.statement.target.ledger.clone(),
+                                        v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => p.0.statement.target.ledger.clone(),
+                                    };
+                                    let hash = hash.into_inner().0.into();
+                                    if let Some(desc) = self.snarks.remove(&hash) {
+                                        tx_stat.snarks.push(Snark {
+                                            producer_id: desc.producer_id,
+                                            time: desc.time,
+                                            work: snark.clone(),
+                                            latency: time.duration_since(desc.time).unwrap(),
+                                        });
+                                        tx_stat_updated = true;
+                                    }
+                                }
+                                tx_stat.pending_snarks = self.snarks.values().map(|v| v.message_id).collect();
 
                                 None
                             };
@@ -165,15 +192,13 @@ impl StatsState {
                             for tx in &transaction.0 {
                                 match tx {
                                     v2::MinaBaseUserCommandStableV2::SignedCommand(c) => {
-                                        // TODO:
-                                        let _ = &c.payload.common.nonce;
-
                                         let mut signature = Signature([0; 32], [0; 32]);
                                         signature.0.clone_from_slice(c.signature.0.as_ref());
                                         signature.1.clone_from_slice(c.signature.1.as_ref());
                                         self.txs.entry(signature).or_insert_with(|| TxDesc {
                                             time,
                                             producer_id,
+                                            message_id,
                                         });
                                     }
                                     _ => (),
@@ -183,12 +208,20 @@ impl StatsState {
                         GossipNetMessageV2::SnarkPoolDiff(snark) => {
                             match snark {
                                 v2::NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(s) => {
-                                    match &s.1.proof {
-                                        v2::TransactionSnarkWorkTStableV2Proofs::Two((one, _)) => {
-                                            let _ = &one.0.statement.sok_digest;
+                                    let hash = match &s.1.proof {
+                                        v2::TransactionSnarkWorkTStableV2Proofs::One(p) => {
+                                            p.0.statement.target.ledger.clone()
                                         }
-                                        _ => (),
-                                    }
+                                        v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => {
+                                            p.0.statement.target.ledger.clone()
+                                        }
+                                    };
+                                    let hash = hash.into_inner().0.into();
+                                    self.snarks.entry(hash).or_insert_with(|| TxDesc {
+                                        time,
+                                        producer_id,
+                                        message_id,
+                                    });
                                 }
                                 v2::NetworkPoolSnarkPoolDiffVersionedStableV2::Empty => (),
                             }

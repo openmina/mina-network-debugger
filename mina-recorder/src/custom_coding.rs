@@ -3,7 +3,6 @@ use std::{
     time::{SystemTime, Duration}, io,
 };
 
-use mina_p2p_messages::v2;
 use binprot::{BinProtRead, BinProtWrite};
 use radiation::{Absorb, Emit, nom, ParseError, RadiationBuffer};
 use libp2p_core::PeerId;
@@ -120,20 +119,18 @@ where
     }
 }
 
-type Tx = v2::StagedLedgerDiffDiffPreDiffWithAtMostTwoCoinbaseStableV2B;
-
-pub fn tx_absorb(input: &[u8]) -> nom::IResult<&[u8], Tx, ParseError<&[u8]>> {
+pub fn binprot_absorb<T: BinProtRead>(input: &[u8]) -> nom::IResult<&[u8], T, ParseError<&[u8]>> {
     nom::combinator::map_res(Vec::<u8>::absorb::<()>, |v| {
         let mut c = io::Cursor::new(v);
-        BinProtRead::binprot_read(&mut c)
+        T::binprot_read(&mut c)
     })(input)
 }
 
-pub fn tx_emit<W>(value: &Tx, buffer: &mut W)
+pub fn binprot_emit<T: BinProtWrite, W>(value: &T, buffer: &mut W)
 where
     W: for<'a> Extend<&'a u8> + RadiationBuffer,
 {
     let mut v = vec![];
-    BinProtWrite::binprot_write(value, &mut v).unwrap();
+    T::binprot_write(value, &mut v).unwrap();
     v.emit(buffer);
 }
