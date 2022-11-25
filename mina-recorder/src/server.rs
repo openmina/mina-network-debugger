@@ -200,6 +200,20 @@ fn stats_tx_latest(
     })
 }
 
+fn snark(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("snark" / String).map(move |hash| -> WithStatus<Json> {
+        match db.fetch_snark_by_hash(hash) {
+            Ok(v) => reply::with_status(reply::json(&v), StatusCode::OK),
+            Err(err) => reply::with_status(
+                reply::json(&err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    })
+}
+
 fn version(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("version")
@@ -249,7 +263,8 @@ fn routes(
                 .or(stats_last(db.clone()))
                 .or(stats_latest(db.clone()))
                 .or(stats_tx(db.clone()))
-                .or(stats_tx_latest(db))
+                .or(stats_tx_latest(db.clone()))
+                .or(snark(db))
                 .or(version().or(openapi())),
         )
         .with(with::header("Content-Type", "application/json"))

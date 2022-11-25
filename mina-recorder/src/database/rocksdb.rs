@@ -228,9 +228,14 @@ impl DbStream {
         let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
         drop(file);
 
+        let mut ledger_hashes = vec![];
         let tys = match stream_kind {
             StreamKind::Unknown => vec![],
-            StreamKind::Meshsub => crate::decode::meshsub::parse_types(bytes)?,
+            StreamKind::Meshsub => {
+                let (tys, hashes) = crate::decode::meshsub::parse_types(bytes)?;
+                ledger_hashes = hashes;
+                tys
+            }
             StreamKind::Kad => crate::decode::kademlia::parse_types(bytes)?,
             StreamKind::Handshake => crate::decode::noise::parse_types(bytes)?,
             StreamKind::Rpc => crate::decode::rpc::parse_types(bytes)?,
@@ -257,7 +262,8 @@ impl DbStream {
             size: bytes.len() as u32,
             brief: tys.iter().map(|ty| ty.to_string()).join(","),
         };
-        self.inner.put_message(&self.addr, id, v, tys)?;
+        self.inner
+            .put_message(&self.addr, id, v, tys, ledger_hashes)?;
         self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(())

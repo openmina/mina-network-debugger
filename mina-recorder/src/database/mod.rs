@@ -8,6 +8,7 @@ mod params;
 pub use self::params::Params;
 
 mod index;
+pub use self::index::LedgerHash;
 
 mod sorted_intersect;
 

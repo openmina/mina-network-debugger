@@ -18,7 +18,7 @@ use thiserror::Error;
 
 use mina_p2p_messages::rpc_kernel::JSONinifyError;
 
-use super::connection::yamux as yamux_parser;
+use super::{connection::yamux as yamux_parser, database::LedgerHash};
 
 #[derive(Debug, Error)]
 pub enum DecodeError {

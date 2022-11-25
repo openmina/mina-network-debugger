@@ -3,7 +3,7 @@ use std::{
     time::{Duration, SystemTime},
     cmp::Ordering,
     sync::{Mutex, Arc},
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fs::{self, File},
     io::{self, Write},
     os::unix::prelude::FileExt,
@@ -11,6 +11,7 @@ use std::{
     net::SocketAddr,
 };
 
+use mina_p2p_messages::{gossip::GossipNetMessageV2, v2::NetworkPoolSnarkPoolDiffVersionedStableV2};
 use radiation::{AbsorbExt, nom, ParseError, Emit};
 
 use serde::Serialize;
@@ -22,7 +23,10 @@ use super::{
         Timestamp,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
-    index::{ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx},
+    index::{
+        ConnectionIdx, StreamIdx, StreamByKindIdx, MessageKindIdx, AddressIdx, LedgerHash,
+        LedgerHashIdx,
+    },
     sorted_intersect::sorted_intersect,
 };
 
@@ -32,6 +36,7 @@ use crate::{
         meshsub_stats::{BlockStat, TxStat},
     },
     strace::StraceLine,
+    meshsub::{SnarkByHash, Event},
 };
 
 #[derive(Debug, Error)]
@@ -60,6 +65,8 @@ pub enum DbError {
     NoItemAtCursor(String),
     #[error("decode {_0}")]
     Decode(DecodeError),
+    #[error("param deserialize error {_0}")]
+    ParamDeserialize(#[from] serde_json::Error),
 }
 
 impl From<DecodeError> for DbError {
@@ -130,7 +137,7 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 11] = [
+    const CFS: [&'static str; 12] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::RANDOMNESS,
@@ -142,6 +149,7 @@ impl DbCore {
         Self::STREAM_KIND_INDEX,
         Self::MESSAGE_KIND_INDEX,
         Self::ADDR_INDEX,
+        Self::LEDGER_HASH_INDEX,
     ];
 
     const TTL: Duration = Duration::from_secs(120);
@@ -178,6 +186,8 @@ impl DbCore {
 
     const ADDR_INDEX: &'static str = "addr_index";
 
+    const LEDGER_HASH_INDEX: &'static str = "ledger_hash_index";
+
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
         P: AsRef<Path>,
@@ -205,6 +215,7 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(2)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(2)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(18)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[11], opts_with_prefix_extractor(32)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -278,6 +289,12 @@ impl DbCore {
         self.inner.cf_handle(Self::ADDR_INDEX).expect("must exist")
     }
 
+    fn ledger_hash_index(&self) -> &rocksdb::ColumnFamily {
+        self.inner
+            .cf_handle(Self::LEDGER_HASH_INDEX)
+            .expect("must exist")
+    }
+
     pub fn put_cn(&self, id: ConnectionId, v: Connection) -> Result<(), DbError> {
         self.inner
             .put_cf(self.connections(), id.chain(vec![]), v.chain(vec![]))?;
@@ -291,6 +308,7 @@ impl DbCore {
         id: MessageId,
         v: Message,
         tys: Vec<MessageType>,
+        ledger_hashes: Vec<LedgerHash>,
     ) -> Result<(), DbError> {
         self.inner
             .put_cf(self.messages(), id.0.to_be_bytes(), v.chain(vec![]))?;
@@ -326,6 +344,20 @@ impl DbCore {
             let index = MessageKindIdx { ty, id };
             self.inner
                 .put_cf(self.message_kind_index(), index.chain(vec![]), vec![])?;
+        }
+        for hash in ledger_hashes {
+            let id = StreamFullId {
+                cn: v.connection_id,
+                id: v.stream_id,
+            };
+            let index = LedgerHashIdx {
+                hash,
+                offset: v.offset,
+                size: v.size as u64,
+                id,
+            };
+            self.inner
+                .put_cf(self.ledger_hash_index(), index.chain(vec![]), vec![])?;
         }
         Ok(())
     }
@@ -906,6 +938,48 @@ impl DbCore {
             None => Ok(None),
             Some(v) => Ok(Some((id, AbsorbExt::absorb_ext(&v)?))),
         }
+    }
+
+    pub fn fetch_snark_by_hash(&self, hash: String) -> Result<SnarkByHash, DbError> {
+        let hash = serde_json::Value::String(hash);
+        let h = serde_json::from_value::<mina_p2p_messages::v2::LedgerHash>(hash)?;
+        let o =
+            |key_b: Vec<u8>| -> Result<Vec<NetworkPoolSnarkPoolDiffVersionedStableV2>, DbError> {
+                let mut v = vec![];
+                let mut deduplicate = HashSet::new();
+                let key = rocksdb::IteratorMode::From(&key_b, rocksdb::Direction::Forward);
+                let indexes = self
+                    .inner
+                    .iterator_cf(self.ledger_hash_index(), key)
+                    .filter_map(Self::decode_index::<LedgerHashIdx>)
+                    .take_while(|idx| idx.get_31().eq(&key_b[1..32]));
+                for id in indexes {
+                    let mut buf = vec![0; id.size as usize];
+                    let sb = self.get_stream(id.id)?;
+                    let mut file = sb.lock().expect("poisoned");
+                    file.read(id.offset, &mut buf)
+                        .map_err(|err| DbError::Io(id.id, err))?;
+                    drop(file);
+                    self.remove_stream(id.id);
+                    for event in crate::decode::meshsub::parse_it(&buf, false, true)? {
+                        if let Event::PublishV2 { message, hash, .. } = event {
+                            if let GossipNetMessageV2::SnarkPoolDiff(snark) = &*message {
+                                if deduplicate.insert(hash) {
+                                    v.push(snark.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(v)
+            };
+        Ok(SnarkByHash {
+            source: o(LedgerHashIdx::source(h.clone()).chain(vec![]))?,
+            target: o(LedgerHashIdx::target(h.clone()).chain(vec![]))?,
+            first_source: o(LedgerHashIdx::first_source(h.clone()).chain(vec![]))?,
+            middle: o(LedgerHashIdx::middle(h.clone()).chain(vec![]))?,
+            second_target: o(LedgerHashIdx::second_target(h).chain(vec![]))?,
+        })
     }
 }
 

@@ -1,12 +1,16 @@
 use std::io::Cursor;
 
 use libp2p_core::PeerId;
-use mina_p2p_messages::{GossipNetMessageV1, gossip::GossipNetMessageV2};
+use mina_p2p_messages::{
+    GossipNetMessageV1,
+    gossip::GossipNetMessageV2,
+    v2::{NetworkPoolSnarkPoolDiffVersionedStableV2, TransactionSnarkWorkStatementStableV2},
+};
 use binprot::BinProtRead;
 use serde::Serialize;
 use prost::{bytes::Bytes, Message};
 
-use super::{DecodeError, MessageType, meshsub_stats::Hash};
+use super::{DecodeError, MessageType, meshsub_stats::Hash, LedgerHash};
 use crate::custom_coding;
 
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -115,7 +119,16 @@ pub enum GossipNetMessagePreview {
     TransactionPoolDiff,
 }
 
-pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
+#[derive(Serialize)]
+pub struct SnarkByHash {
+    pub source: Vec<NetworkPoolSnarkPoolDiffVersionedStableV2>,
+    pub target: Vec<NetworkPoolSnarkPoolDiffVersionedStableV2>,
+    pub first_source: Vec<NetworkPoolSnarkPoolDiffVersionedStableV2>,
+    pub middle: Vec<NetworkPoolSnarkPoolDiffVersionedStableV2>,
+    pub second_target: Vec<NetworkPoolSnarkPoolDiffVersionedStableV2>,
+}
+
+pub fn parse_types(bytes: &[u8]) -> Result<(Vec<MessageType>, Vec<LedgerHash>), DecodeError> {
     let buf = Bytes::from(bytes.to_vec());
     let pb::Rpc {
         subscriptions,
@@ -129,13 +142,48 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
             MessageType::Unsubscribe
         }
     });
+    let mut ledger_hashes = vec![];
     let publish = publish
         .into_iter()
         .filter_map(|msg| msg.data)
-        .filter_map(|data| data.get(8).cloned())
-        .filter_map(|tag| match tag {
+        .filter_map(|data| Some((data.get(8).cloned()?, data)))
+        .filter_map(|(tag, data)| match tag {
             0 => Some(MessageType::PublishNewState),
-            1 => Some(MessageType::PublishSnarkPoolDiff),
+            1 => {
+                let mut c = Cursor::new(&data[8..]);
+                match GossipNetMessageV2::binprot_read(&mut c) {
+                    Ok(GossipNetMessageV2::SnarkPoolDiff(
+                        NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(w),
+                    )) => match &w.0 {
+                        TransactionSnarkWorkStatementStableV2::One(w) => {
+                            let source = w.source.ledger.clone().into_inner();
+                            let mut h = [0; 31];
+                            h.clone_from_slice(&source.0.as_ref()[1..]);
+                            ledger_hashes.push(LedgerHash::Source(h));
+                            let target = w.source.ledger.clone().into_inner();
+                            let mut h = [0; 31];
+                            h.clone_from_slice(&target.0.as_ref()[1..]);
+                            ledger_hashes.push(LedgerHash::Target(h));
+                        }
+                        TransactionSnarkWorkStatementStableV2::Two((f, s)) => {
+                            let l = f.source.ledger.clone().into_inner();
+                            let mut h = [0; 31];
+                            h.clone_from_slice(&l.0.as_ref()[1..]);
+                            ledger_hashes.push(LedgerHash::FirstSource(h));
+                            let l = f.target.ledger.clone().into_inner();
+                            let mut h = [0; 31];
+                            h.clone_from_slice(&l.0.as_ref()[1..]);
+                            ledger_hashes.push(LedgerHash::FirstTargetSecondSource(h));
+                            let l = s.target.ledger.clone().into_inner();
+                            let mut h = [0; 31];
+                            h.clone_from_slice(&l.0.as_ref()[1..]);
+                            ledger_hashes.push(LedgerHash::SecondTarget(h));
+                        }
+                    },
+                    _ => (),
+                }
+                Some(MessageType::PublishSnarkPoolDiff)
+            }
             2 => Some(MessageType::PublishTransactionPoolDiff),
             _ => None,
         });
@@ -155,7 +203,9 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
         }
     }
 
-    Ok(subscriptions.chain(publish).chain(control_types).collect())
+    let tys = subscriptions.chain(control_types).chain(publish).collect();
+
+    Ok((tys, ledger_hashes))
 }
 
 pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeError> {
