@@ -27,7 +27,10 @@ use super::{
 };
 
 use crate::{
-    decode::{DecodeError, MessageType, meshsub_stats::{BlockStat, TxStat}},
+    decode::{
+        DecodeError, MessageType,
+        meshsub_stats::{BlockStat, TxStat},
+    },
     strace::StraceLine,
 };
 

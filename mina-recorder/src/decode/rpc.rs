@@ -63,7 +63,7 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     let Nat0(d) = BinProtRead::binprot_read(&mut stream)?;
     let msg = QueryHeader::binprot_read(&mut stream)?;
     let tag = msg.tag.to_string_lossy();
-    
+
     let r = match msg.version {
         1 => JSONifyPayloadRegistry::v1(),
         2 => JSONifyPayloadRegistry::v2(),

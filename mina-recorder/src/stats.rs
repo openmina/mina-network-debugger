@@ -113,9 +113,17 @@ impl StatsState {
                             } else {
                                 // TODO: investigate
                                 if !incoming {
-                                    log::warn!("sending block, did not received it before {}", message_id);
+                                    log::warn!(
+                                        "sending block, did not received it before {}",
+                                        message_id
+                                    );
                                 } else {
-                                    let v = Description { time, producer_id, block_height, global_slot };
+                                    let v = Description {
+                                        time,
+                                        producer_id,
+                                        block_height,
+                                        global_slot,
+                                    };
                                     self.first.insert(hash, v);
                                 }
 
@@ -129,7 +137,13 @@ impl StatsState {
                                 });
 
                                 let it0 = block.body.staged_ledger_diff.diff.0.commands.iter();
-                                let it1 = block.body.staged_ledger_diff.diff.1.iter().flat_map(|x| x.commands.iter());
+                                let it1 = block
+                                    .body
+                                    .staged_ledger_diff
+                                    .diff
+                                    .1
+                                    .iter()
+                                    .flat_map(|x| x.commands.iter());
                                 for tx in it0.chain(it1) {
                                     match &tx.data {
                                         v2::MinaBaseUserCommandStableV2::SignedCommand(c) => {
@@ -141,7 +155,9 @@ impl StatsState {
                                                     producer_id: tx_desc.producer_id,
                                                     time: tx_desc.time,
                                                     command: tx.clone(),
-                                                    latency: time.duration_since(tx_desc.time).unwrap(),
+                                                    latency: time
+                                                        .duration_since(tx_desc.time)
+                                                        .unwrap(),
                                                 });
                                                 tx_stat_updated = true;
                                             }
@@ -149,14 +165,26 @@ impl StatsState {
                                         _ => (),
                                     }
                                 }
-                                tx_stat.pending_txs = self.txs.values().map(|v| v.message_id).collect();
+                                tx_stat.pending_txs =
+                                    self.txs.values().map(|v| v.message_id).collect();
 
-                                let it0 = block.body.staged_ledger_diff.diff.0.completed_works.iter();
-                                let it1 = block.body.staged_ledger_diff.diff.1.iter().flat_map(|x| x.completed_works.iter());
+                                let it0 =
+                                    block.body.staged_ledger_diff.diff.0.completed_works.iter();
+                                let it1 = block
+                                    .body
+                                    .staged_ledger_diff
+                                    .diff
+                                    .1
+                                    .iter()
+                                    .flat_map(|x| x.completed_works.iter());
                                 for snark in it0.chain(it1) {
                                     let hash = match &snark.proofs {
-                                        v2::TransactionSnarkWorkTStableV2Proofs::One(p) => p.0.statement.target.ledger.clone(),
-                                        v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => p.0.statement.target.ledger.clone(),
+                                        v2::TransactionSnarkWorkTStableV2Proofs::One(p) => {
+                                            p.0.statement.target.ledger.clone()
+                                        }
+                                        v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => {
+                                            p.0.statement.target.ledger.clone()
+                                        }
                                     };
                                     let hash = hash.into_inner().0.into();
                                     if let Some(desc) = self.snarks.remove(&hash) {
@@ -169,7 +197,8 @@ impl StatsState {
                                         tx_stat_updated = true;
                                     }
                                 }
-                                tx_stat.pending_snarks = self.snarks.values().map(|v| v.message_id).collect();
+                                tx_stat.pending_snarks =
+                                    self.snarks.values().map(|v| v.message_id).collect();
 
                                 None
                             };
@@ -205,27 +234,25 @@ impl StatsState {
                                 }
                             }
                         }
-                        GossipNetMessageV2::SnarkPoolDiff(snark) => {
-                            match snark {
-                                v2::NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(s) => {
-                                    let hash = match &s.1.proof {
-                                        v2::TransactionSnarkWorkTStableV2Proofs::One(p) => {
-                                            p.0.statement.target.ledger.clone()
-                                        }
-                                        v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => {
-                                            p.0.statement.target.ledger.clone()
-                                        }
-                                    };
-                                    let hash = hash.into_inner().0.into();
-                                    self.snarks.entry(hash).or_insert_with(|| TxDesc {
-                                        time,
-                                        producer_id,
-                                        message_id,
-                                    });
-                                }
-                                v2::NetworkPoolSnarkPoolDiffVersionedStableV2::Empty => (),
+                        GossipNetMessageV2::SnarkPoolDiff(snark) => match snark {
+                            v2::NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(s) => {
+                                let hash = match &s.1.proof {
+                                    v2::TransactionSnarkWorkTStableV2Proofs::One(p) => {
+                                        p.0.statement.target.ledger.clone()
+                                    }
+                                    v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => {
+                                        p.0.statement.target.ledger.clone()
+                                    }
+                                };
+                                let hash = hash.into_inner().0.into();
+                                self.snarks.entry(hash).or_insert_with(|| TxDesc {
+                                    time,
+                                    producer_id,
+                                    message_id,
+                                });
                             }
-                        }
+                            v2::NetworkPoolSnarkPoolDiffVersionedStableV2::Empty => (),
+                        },
                     }
                 }
                 meshsub::Event::Control { ihave, iwant, .. } => {
@@ -252,7 +279,7 @@ impl StatsState {
                                     message_kind,
                                     message_id,
                                     time,
-                                    latency: Some(time.duration_since(first.time).unwrap_or_default()),
+                                    latency: time.duration_since(first.time).ok(),
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
                                 });

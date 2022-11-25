@@ -68,7 +68,6 @@ pub struct Tx {
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
     // pub hash: Hash,
-
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
@@ -89,7 +88,6 @@ pub struct Snark {
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
     // pub hash: Hash,
-
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,

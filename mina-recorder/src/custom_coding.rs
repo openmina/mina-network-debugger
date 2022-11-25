@@ -1,6 +1,7 @@
 use std::{
     net::{SocketAddr, IpAddr, Ipv6Addr, Ipv4Addr},
-    time::{SystemTime, Duration}, io,
+    time::{SystemTime, Duration},
+    io,
 };
 
 use binprot::{BinProtRead, BinProtWrite};

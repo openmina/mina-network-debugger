@@ -17,7 +17,10 @@ use radiation::Emit;
 use crate::{
     event::{ConnectionInfo, DirectedId},
     chunk::{ChunkHeader, EncryptionStatus},
-    decode::{MessageType, meshsub_stats::{BlockStat, TxStat}},
+    decode::{
+        MessageType,
+        meshsub_stats::{BlockStat, TxStat},
+    },
     strace::StraceLine,
 };
 

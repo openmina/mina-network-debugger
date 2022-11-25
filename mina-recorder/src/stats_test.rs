@@ -1,4 +1,9 @@
-use std::{time::{SystemTime, Duration}, thread, fs, net::SocketAddr, path::PathBuf};
+use std::{
+    time::{SystemTime, Duration},
+    thread, fs,
+    net::SocketAddr,
+    path::PathBuf,
+};
 
 use crate::database::DbFacade;
 
@@ -42,7 +47,7 @@ fn check_latency_simple() {
 
         state.observe(FILES[0], true, time(1), &db, peer(100));
         state.observe(FILES[0], false, time(2), &db, peer(100));
-    
+
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 2);
         assert_eq!(stat.events[0].latency, None);
@@ -57,7 +62,7 @@ fn check_latency_outgoing_simple() {
 
         state.observe(FILES[0], false, time(1), &db, peer(100));
         state.observe(FILES[0], false, time(2), &db, peer(100));
-    
+
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 2);
         assert_eq!(stat.events[0].latency, None);
@@ -95,7 +100,13 @@ fn check_multiple() {
             state.observe(FILES[i], true, time(i as _), &db, peer(1000 + i as u16));
         }
         for i in 0..100 {
-            state.observe(FILES[7], i % 7 > 3, time(100 + i as u64), &db, peer(2000 + i as u16));
+            state.observe(
+                FILES[7],
+                i % 7 > 3,
+                time(100 + i as u64),
+                &db,
+                peer(2000 + i as u16),
+            );
         }
 
         let (_, stat) = db.core().fetch_last_stat().unwrap();

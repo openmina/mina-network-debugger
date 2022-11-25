@@ -221,7 +221,7 @@ pub fn parse_it(
                     } else {
                         let hash = if calc_hash {
                             use blake2::digest::{Mac, Update, FixedOutput, typenum};
-        
+
                             let key;
                             let key = if topic.as_bytes().len() <= 64 {
                                 topic.as_bytes()
@@ -267,7 +267,7 @@ pub fn parse_it(
                                 GossipNetMessagePreview::TransactionPoolDiff
                             }
                         };
-                        return Some(Event::PublishPreview { topic, message })
+                        return Some(Event::PublishPreview { topic, message });
                     } else {
                         return Some(Event::Publish {
                             from: from.map(hex::encode),
