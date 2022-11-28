@@ -43,6 +43,7 @@ pub struct LedgerHashIdx {
     pub offset: u64,
     pub size: u64,
     pub id: StreamFullId,
+    pub message_id: MessageId,
 }
 
 impl LedgerHashIdx {
@@ -61,6 +62,7 @@ impl LedgerHashIdx {
                 cn: ConnectionId(0),
                 id: super::StreamId::Handshake,
             },
+            message_id: MessageId(0),
         }
     }
 
@@ -69,7 +71,7 @@ impl LedgerHashIdx {
             LedgerHash::Source(x) => x,
             LedgerHash::Target(x) => x,
             LedgerHash::FirstSource(x) => x,
-            LedgerHash::FirstTargetSecondSource(x) => x,
+            LedgerHash::Middle(x) => x,
             LedgerHash::SecondTarget(x) => x,
         }
     }
@@ -87,7 +89,7 @@ impl LedgerHashIdx {
     }
 
     pub fn middle(h: mina_p2p_messages::v2::LedgerHash) -> Self {
-        Self::new(LedgerHash::FirstTargetSecondSource(Self::_31(h)))
+        Self::new(LedgerHash::Middle(Self::_31(h)))
     }
 
     pub fn second_target(h: mina_p2p_messages::v2::LedgerHash) -> Self {
@@ -101,6 +103,6 @@ pub enum LedgerHash {
     Source([u8; 31]),
     Target([u8; 31]),
     FirstSource([u8; 31]),
-    FirstTargetSecondSource([u8; 31]),
+    Middle([u8; 31]),
     SecondTarget([u8; 31]),
 }

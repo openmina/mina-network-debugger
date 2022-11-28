@@ -11,7 +11,7 @@ use std::{
     net::SocketAddr,
 };
 
-use mina_p2p_messages::{gossip::GossipNetMessageV2, v2::NetworkPoolSnarkPoolDiffVersionedStableV2};
+use mina_p2p_messages::gossip::GossipNetMessageV2;
 use radiation::{AbsorbExt, nom, ParseError, Emit};
 
 use serde::Serialize;
@@ -36,7 +36,7 @@ use crate::{
         meshsub_stats::{BlockStat, TxStat},
     },
     strace::StraceLine,
-    meshsub::{SnarkByHash, Event},
+    meshsub::{SnarkByHash, Event, SnarkWithHash},
 };
 
 #[derive(Debug, Error)]
@@ -346,15 +346,16 @@ impl DbCore {
                 .put_cf(self.message_kind_index(), index.chain(vec![]), vec![])?;
         }
         for hash in ledger_hashes {
-            let id = StreamFullId {
-                cn: v.connection_id,
-                id: v.stream_id,
-            };
+            let message_id = id;
             let index = LedgerHashIdx {
                 hash,
                 offset: v.offset,
                 size: v.size as u64,
-                id,
+                id: StreamFullId {
+                    cn: v.connection_id,
+                    id: v.stream_id,
+                },
+                message_id,
             };
             self.inner
                 .put_cf(self.ledger_hash_index(), index.chain(vec![]), vec![])?;
@@ -940,11 +941,11 @@ impl DbCore {
         }
     }
 
-    pub fn fetch_snark_by_hash(&self, hash: String) -> Result<SnarkByHash, DbError> {
-        let hash = serde_json::Value::String(hash);
+    pub fn fetch_snark_by_hash(&self, hash_str: String) -> Result<SnarkByHash, DbError> {
+        let hash = serde_json::Value::String(hash_str.clone());
         let h = serde_json::from_value::<mina_p2p_messages::v2::LedgerHash>(hash)?;
         let o =
-            |key_b: Vec<u8>| -> Result<Vec<NetworkPoolSnarkPoolDiffVersionedStableV2>, DbError> {
+            |key_b: Vec<u8>| -> Result<Vec<(SnarkWithHash, u64)>, DbError> {
                 let mut v = vec![];
                 let mut deduplicate = HashSet::new();
                 let key = rocksdb::IteratorMode::From(&key_b, rocksdb::Direction::Forward);
@@ -963,10 +964,66 @@ impl DbCore {
                     self.remove_stream(id.id);
                     for event in crate::decode::meshsub::parse_it(&buf, false, true)? {
                         if let Event::PublishV2 { message, hash, .. } = event {
-                            if let GossipNetMessageV2::SnarkPoolDiff(snark) = &*message {
-                                if deduplicate.insert(hash) {
-                                    v.push(snark.clone());
+                            use self::SnarkWithHash::*;
+                            match &*message {
+                                GossipNetMessageV2::SnarkPoolDiff(snark) => {
+                                    let snark = match SnarkWithHash::try_from_inner(snark) {
+                                        Some(v) => v,
+                                        None => continue,
+                                    };
+
+                                    let conform = match (&snark, &id.hash) {
+                                        (Leaf { hashes, .. }, LedgerHash::Source(v)) => {
+                                            hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
+                                        }
+                                        (Leaf { hashes, .. }, LedgerHash::Target(v)) => {
+                                            hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
+                                        }
+                                        (Merge { hashes, .. }, LedgerHash::FirstSource(v)) => {
+                                            hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
+                                        }
+                                        (Merge { hashes, .. }, LedgerHash::Middle(v)) => {
+                                            hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
+                                        }
+                                        (Merge { hashes, .. }, LedgerHash::SecondTarget(v)) => {
+                                            hashes[2].clone().into_inner().0.as_ref()[1..].eq(v)
+                                        }
+                                        _ => false,
+                                    };
+                                    if conform {
+                                        if deduplicate.insert(hash) {
+                                            v.push((snark, id.message_id.0));
+                                        }
+                                    }
                                 }
+                                GossipNetMessageV2::NewState(block) => {
+                                    for snark in SnarkWithHash::try_from_block(block) {
+                                        let conform = match (&snark, &id.hash) {
+                                            (Leaf { hashes, .. }, LedgerHash::Source(v)) => {
+                                                hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
+                                            }
+                                            (Leaf { hashes, .. }, LedgerHash::Target(v)) => {
+                                                hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
+                                            }
+                                            (Merge { hashes, .. }, LedgerHash::FirstSource(v)) => {
+                                                hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
+                                            }
+                                            (Merge { hashes, .. }, LedgerHash::Middle(v)) => {
+                                                hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
+                                            }
+                                            (Merge { hashes, .. }, LedgerHash::SecondTarget(v)) => {
+                                                hashes[2].clone().into_inner().0.as_ref()[1..].eq(v)
+                                            }
+                                            _ => false,
+                                        };
+                                        if conform {
+                                            if deduplicate.insert(hash) {
+                                                v.push((snark, id.message_id.0));
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => (),
                             }
                         }
                     }
