@@ -8,11 +8,11 @@ use std::{
 
 use radiation::{Absorb, Emit};
 
-use serde::{Serialize};
+use serde::{Serialize, Deserialize};
 
 use crate::{event::ConnectionInfo, custom_coding, strace::StraceLine};
 
-#[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectionId(pub u64);
 
 impl fmt::Display for ConnectionId {
@@ -117,7 +117,7 @@ impl fmt::Display for StreamFullId {
 }
 
 #[repr(u16)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StreamKind {
     Unknown = 0xffff,
     Handshake = 0x0001,
@@ -162,6 +162,15 @@ impl Serialize for StreamKind {
         S: serde::Serializer,
     {
         self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for StreamKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer).map(|s| s.parse().unwrap())
     }
 }
 
@@ -211,7 +220,7 @@ impl StreamKind {
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamId {
     #[default]
@@ -267,7 +276,7 @@ pub struct Message {
     pub brief: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct FullMessage {
     pub connection_id: ConnectionId,
     pub remote_addr: SocketAddr,

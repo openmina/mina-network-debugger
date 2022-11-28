@@ -58,7 +58,7 @@ pub struct TxStat {
     pub snarks: Vec<Snark>,
 
     pub pending_txs: Vec<u64>,
-    pub pending_snarks: Vec<u64>,
+    // pub pending_snarks: Vec<u64>,
 }
 
 #[derive(Clone, Absorb, Emit, Serialize)]

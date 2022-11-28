@@ -133,7 +133,7 @@ impl StatsState {
                                     transactions: vec![],
                                     snarks: vec![],
                                     pending_txs: vec![],
-                                    pending_snarks: vec![],
+                                    // pending_snarks: vec![],
                                 });
 
                                 let it0 = block.body.staged_ledger_diff.diff.0.commands.iter();
@@ -197,8 +197,8 @@ impl StatsState {
                                         tx_stat_updated = true;
                                     }
                                 }
-                                tx_stat.pending_snarks =
-                                    self.snarks.values().map(|v| v.message_id).collect();
+                                // tx_stat.pending_snarks =
+                                //     self.snarks.values().map(|v| v.message_id).collect();
 
                                 None
                             };
