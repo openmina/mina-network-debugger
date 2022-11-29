@@ -3,5 +3,6 @@ members = [
     "bpf-recorder",
     "bpf-ring-buffer",
     "mina-recorder",
+    "mina-aggregator",
     "tester",
 ]

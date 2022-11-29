@@ -1,0 +1,19 @@
+[package]
+name = "mina-aggregator"
+version = "0.1.0"
+authors = ["Vladislav Melnik <vladislav.melnik@viablesystems.io>"]
+edition = "2021"
+rust-version = "1.58.1"
+license = "MIT"
+
+[dependencies]
+reqwest = { version = "0.11.13", features = ["blocking"] }
+tokio = { version = "1.22", features = ["rt-multi-thread"] }
+warp = { version = "0.3.3", features = ["tls"] }
+log = { version = "0.4.17" }
+env_logger = { version = "0.10.0", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+ctrlc = { version = "3.2" }
+
+mina-recorder = { path = "../mina-recorder" }
