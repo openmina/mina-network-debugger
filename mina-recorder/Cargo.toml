@@ -43,7 +43,7 @@ itertools = { version = "0.10.5" }
 tokio = { version = "1.22", features = ["rt-multi-thread"] }
 warp = { version = "0.3.3", features = ["tls"] }
 
-libp2p-core = { version = "0.38.0", features = ["secp256k1", "ecdsa"] }
+libp2p-core = { version = "0.38.0", features = ["secp256k1", "ecdsa", "serde"] }
 # ed25519-dalek = { version = "*" }
 
 pete = { version = "0.9.0" }

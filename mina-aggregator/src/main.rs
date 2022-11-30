@@ -1,6 +1,8 @@
 mod routes;
+mod database;
+use self::database::{Client, Config, Database};
 
-use std::{thread, env, sync::{Arc, atomic::{Ordering, AtomicBool}}};
+use std::{thread, env, sync::{Arc, atomic::{Ordering, AtomicBool}}, fs::File, io::Read, time::Duration};
 
 use tokio::{sync::oneshot, runtime::Runtime};
 
@@ -22,10 +24,12 @@ fn main() {
         }
     };
 
+    let database = Database::default();
+
     let _guard = rt.enter();
     let (tx, rx) = oneshot::channel();
     let addr = ([0, 0, 0, 0], port);
-    let routes = routes::routes();
+    let routes = routes::routes(database.clone());
     let shutdown = async move {
         rx.await.expect("corresponding sender should exist");
         log::info!("terminating http server...");
@@ -60,8 +64,21 @@ fn main() {
         }
     }
 
-    while !terminating.load(Ordering::SeqCst) {
-        thread::yield_now();
+    let mut s = String::new();
+    let mut f = File::open("config.ron").unwrap();
+    f.read_to_string(&mut s).unwrap();
+    let config = ron::from_str::<Config>(&s).unwrap();
+    let client = Client::new(config);
+    
+    'main: while !terminating.load(Ordering::SeqCst) {
+        client.refresh(&database);
+
+        for _ in 0..10 {
+            thread::sleep(Duration::from_secs(1));
+            if terminating.load(Ordering::SeqCst) {
+                break 'main;
+            }
+        }
     }
 
     if server_thread.join().is_err() {

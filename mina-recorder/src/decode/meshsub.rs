@@ -11,7 +11,6 @@ use serde::Serialize;
 use prost::{bytes::Bytes, Message};
 
 use super::{DecodeError, MessageType, meshsub_stats::Hash, LedgerHash};
-use crate::custom_coding;
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 mod pb {
@@ -38,7 +37,6 @@ pub enum Event {
     },
     #[serde(rename = "publish_v2")]
     PublishV2 {
-        #[serde(serialize_with = "custom_coding::serialize_peer_id_opt")]
         from: Option<PeerId>,
         seqno: Option<String>,
         signature: Option<String>,

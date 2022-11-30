@@ -4,6 +4,8 @@ use warp::{
     http::StatusCode,
 };
 
+use super::database::Database;
+
 fn version(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("version")
@@ -25,7 +27,17 @@ fn openapi(
         })
 }
 
+fn stats_latest(
+    db: Database,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("block" / "latest").map(move || -> WithStatus<Json> {
+        let v = db.latest();
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
+
 pub fn routes(
+    database: Database,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
 
@@ -36,7 +48,7 @@ pub fn routes(
 
         warp::get()
         .and(
-            version().or(openapi()),
+            version().or(openapi()).or(stats_latest(database)),
         )
         .with(with::header("Content-Type", "application/json"))
         .with(with::header("Access-Control-Allow-Origin", "*"))

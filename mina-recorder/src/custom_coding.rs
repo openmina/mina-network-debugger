@@ -96,30 +96,6 @@ where
     value.to_bytes().emit(buffer);
 }
 
-pub fn serialize_peer_id<S>(v: &PeerId, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    use serde::Serialize;
-
-    if serializer.is_human_readable() {
-        v.to_base58().serialize(serializer)
-    } else {
-        v.to_bytes().serialize(serializer)
-    }
-}
-
-// https://github.com/serde-rs/serde/issues/723
-pub fn serialize_peer_id_opt<S>(v: &Option<PeerId>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    match v {
-        Some(v) => serialize_peer_id(v, serializer),
-        None => serializer.serialize_none(),
-    }
-}
-
 pub fn binprot_absorb<T: BinProtRead>(input: &[u8]) -> nom::IResult<&[u8], T, ParseError<&[u8]>> {
     nom::combinator::map_res(Vec::<u8>::absorb::<()>, |v| {
         let mut c = io::Cursor::new(v);

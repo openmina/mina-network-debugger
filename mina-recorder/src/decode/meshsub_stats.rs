@@ -1,18 +1,18 @@
 use std::{
     time::{SystemTime, Duration},
-    fmt,
+    fmt, str::FromStr,
 };
 
 use libp2p_core::PeerId;
 use mina_p2p_messages::{bigint::BigInt, v2};
 use radiation::{Absorb, Emit};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 use crate::custom_coding;
 
 use super::MessageType;
 
-#[derive(Default, Clone, Absorb, Emit, Serialize)]
+#[derive(Default, Clone, Absorb, Emit, Serialize, Deserialize)]
 pub struct BlockStat {
     pub height: u32,
     pub events: Vec<Event>,
@@ -24,9 +24,8 @@ impl BlockStat {
     }
 }
 
-#[derive(Clone, Absorb, Emit, Serialize)]
+#[derive(Clone, Absorb, Emit, Serialize, Deserialize)]
 pub struct Event {
-    #[serde(serialize_with = "custom_coding::serialize_peer_id")]
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
@@ -63,7 +62,6 @@ pub struct TxStat {
 
 #[derive(Clone, Absorb, Emit, Serialize)]
 pub struct Tx {
-    #[serde(serialize_with = "custom_coding::serialize_peer_id")]
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
@@ -83,7 +81,6 @@ pub struct Tx {
 
 #[derive(Clone, Absorb, Emit, Serialize)]
 pub struct Snark {
-    #[serde(serialize_with = "custom_coding::serialize_peer_id")]
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
@@ -112,6 +109,31 @@ impl Serialize for Hash {
         S: serde::Serializer,
     {
         hex::encode(&self.0).serialize(serializer)
+    }
+}
+
+impl FromStr for Hash {
+    type Err = hex::FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let v = hex::decode(s)?;
+        if v.len() != 32 {
+            Err(hex::FromHexError::InvalidStringLength)
+        } else {
+            let mut s = Hash([0; 32]);
+            s.0.clone_from_slice(&v);
+            Ok(s)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Hash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        String::deserialize(deserializer)
+            .and_then(|s| s.parse().map_err(serde::de::Error::custom))
     }
 }
 

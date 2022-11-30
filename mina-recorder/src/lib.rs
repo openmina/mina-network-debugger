@@ -13,7 +13,7 @@ mod connection;
 pub use self::connection::yamux;
 
 mod decode;
-pub use self::decode::meshsub;
+pub use self::decode::{meshsub, meshsub_stats};
 
 mod custom_coding;
 
