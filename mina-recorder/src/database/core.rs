@@ -944,34 +944,59 @@ impl DbCore {
     pub fn fetch_snark_by_hash(&self, hash_str: String) -> Result<SnarkByHash, DbError> {
         let hash = serde_json::Value::String(hash_str.clone());
         let h = serde_json::from_value::<mina_p2p_messages::v2::LedgerHash>(hash)?;
-        let o =
-            |key_b: Vec<u8>| -> Result<Vec<(SnarkWithHash, u64)>, DbError> {
-                let mut v = vec![];
-                let mut deduplicate = HashSet::new();
-                let key = rocksdb::IteratorMode::From(&key_b, rocksdb::Direction::Forward);
-                let indexes = self
-                    .inner
-                    .iterator_cf(self.ledger_hash_index(), key)
-                    .filter_map(Self::decode_index::<LedgerHashIdx>)
-                    .take_while(|idx| idx.get_31().eq(&key_b[1..32]));
-                for id in indexes {
-                    let mut buf = vec![0; id.size as usize];
-                    let sb = self.get_stream(id.id)?;
-                    let mut file = sb.lock().expect("poisoned");
-                    file.read(id.offset, &mut buf)
-                        .map_err(|err| DbError::Io(id.id, err))?;
-                    drop(file);
-                    self.remove_stream(id.id);
-                    for event in crate::decode::meshsub::parse_it(&buf, false, true)? {
-                        if let Event::PublishV2 { message, hash, .. } = event {
-                            use self::SnarkWithHash::*;
-                            match &*message {
-                                GossipNetMessageV2::SnarkPoolDiff(snark) => {
-                                    let snark = match SnarkWithHash::try_from_inner(snark) {
-                                        Some(v) => v,
-                                        None => continue,
-                                    };
+        let o = |key_b: Vec<u8>| -> Result<Vec<(SnarkWithHash, u64)>, DbError> {
+            let mut v = vec![];
+            let mut deduplicate = HashSet::new();
+            let key = rocksdb::IteratorMode::From(&key_b, rocksdb::Direction::Forward);
+            let indexes = self
+                .inner
+                .iterator_cf(self.ledger_hash_index(), key)
+                .filter_map(Self::decode_index::<LedgerHashIdx>)
+                .take_while(|idx| idx.get_31().eq(&key_b[1..32]));
+            for id in indexes {
+                let mut buf = vec![0; id.size as usize];
+                let sb = self.get_stream(id.id)?;
+                let mut file = sb.lock().expect("poisoned");
+                file.read(id.offset, &mut buf)
+                    .map_err(|err| DbError::Io(id.id, err))?;
+                drop(file);
+                self.remove_stream(id.id);
+                for event in crate::decode::meshsub::parse_it(&buf, false, true)? {
+                    if let Event::PublishV2 { message, hash, .. } = event {
+                        use self::SnarkWithHash::*;
+                        match &*message {
+                            GossipNetMessageV2::SnarkPoolDiff(snark) => {
+                                let snark = match SnarkWithHash::try_from_inner(snark) {
+                                    Some(v) => v,
+                                    None => continue,
+                                };
 
+                                let conform = match (&snark, &id.hash) {
+                                    (Leaf { hashes, .. }, LedgerHash::Source(v)) => {
+                                        hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
+                                    }
+                                    (Leaf { hashes, .. }, LedgerHash::Target(v)) => {
+                                        hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
+                                    }
+                                    (Merge { hashes, .. }, LedgerHash::FirstSource(v)) => {
+                                        hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
+                                    }
+                                    (Merge { hashes, .. }, LedgerHash::Middle(v)) => {
+                                        hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
+                                    }
+                                    (Merge { hashes, .. }, LedgerHash::SecondTarget(v)) => {
+                                        hashes[2].clone().into_inner().0.as_ref()[1..].eq(v)
+                                    }
+                                    _ => false,
+                                };
+                                if conform {
+                                    if deduplicate.insert(hash) {
+                                        v.push((snark, id.message_id.0));
+                                    }
+                                }
+                            }
+                            GossipNetMessageV2::NewState(block) => {
+                                for snark in SnarkWithHash::try_from_block(block) {
                                     let conform = match (&snark, &id.hash) {
                                         (Leaf { hashes, .. }, LedgerHash::Source(v)) => {
                                             hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
@@ -996,40 +1021,14 @@ impl DbCore {
                                         }
                                     }
                                 }
-                                GossipNetMessageV2::NewState(block) => {
-                                    for snark in SnarkWithHash::try_from_block(block) {
-                                        let conform = match (&snark, &id.hash) {
-                                            (Leaf { hashes, .. }, LedgerHash::Source(v)) => {
-                                                hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
-                                            }
-                                            (Leaf { hashes, .. }, LedgerHash::Target(v)) => {
-                                                hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
-                                            }
-                                            (Merge { hashes, .. }, LedgerHash::FirstSource(v)) => {
-                                                hashes[0].clone().into_inner().0.as_ref()[1..].eq(v)
-                                            }
-                                            (Merge { hashes, .. }, LedgerHash::Middle(v)) => {
-                                                hashes[1].clone().into_inner().0.as_ref()[1..].eq(v)
-                                            }
-                                            (Merge { hashes, .. }, LedgerHash::SecondTarget(v)) => {
-                                                hashes[2].clone().into_inner().0.as_ref()[1..].eq(v)
-                                            }
-                                            _ => false,
-                                        };
-                                        if conform {
-                                            if deduplicate.insert(hash) {
-                                                v.push((snark, id.message_id.0));
-                                            }
-                                        }
-                                    }
-                                }
-                                _ => (),
                             }
+                            _ => (),
                         }
                     }
                 }
-                Ok(v)
-            };
+            }
+            Ok(v)
+        };
         Ok(SnarkByHash {
             source: o(LedgerHashIdx::source(h.clone()).chain(vec![]))?,
             target: o(LedgerHashIdx::target(h.clone()).chain(vec![]))?,

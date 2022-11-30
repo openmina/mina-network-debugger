@@ -12,7 +12,9 @@ use serde::{Serialize, Deserialize};
 
 use crate::{event::ConnectionInfo, custom_coding, strace::StraceLine};
 
-#[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Absorb, Emit, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
+)]
 pub struct ConnectionId(pub u64);
 
 impl fmt::Display for ConnectionId {

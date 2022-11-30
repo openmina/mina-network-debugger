@@ -1,6 +1,7 @@
 use std::{
     time::{SystemTime, Duration},
-    fmt, str::FromStr,
+    fmt,
+    str::FromStr,
 };
 
 use libp2p_core::PeerId;
@@ -132,8 +133,7 @@ impl<'de> Deserialize<'de> for Hash {
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer)
-            .and_then(|s| s.parse().map_err(serde::de::Error::custom))
+        String::deserialize(deserializer).and_then(|s| s.parse().map_err(serde::de::Error::custom))
     }
 }
 

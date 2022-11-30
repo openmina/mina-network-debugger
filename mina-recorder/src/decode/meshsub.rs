@@ -4,7 +4,10 @@ use libp2p_core::PeerId;
 use mina_p2p_messages::{
     GossipNetMessageV1,
     gossip::GossipNetMessageV2,
-    v2::{NetworkPoolSnarkPoolDiffVersionedStableV2, TransactionSnarkWorkStatementStableV2, self, TransactionSnarkWorkTStableV2Proofs, MinaBlockBlockStableV2},
+    v2::{
+        NetworkPoolSnarkPoolDiffVersionedStableV2, TransactionSnarkWorkStatementStableV2, self,
+        TransactionSnarkWorkTStableV2Proofs, MinaBlockBlockStableV2,
+    },
 };
 use binprot::BinProtRead;
 use serde::Serialize;
@@ -127,16 +130,11 @@ pub struct SnarkByHash {
 }
 
 #[derive(Serialize)]
-
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum SnarkWithHash {
-    Leaf {
-        hashes: [v2::LedgerHash; 2],
-    },
-    Merge {
-        hashes: [v2::LedgerHash; 3],
-    },
+    Leaf { hashes: [v2::LedgerHash; 2] },
+    Merge { hashes: [v2::LedgerHash; 3] },
 }
 
 impl SnarkWithHash {
@@ -144,7 +142,11 @@ impl SnarkWithHash {
         if let NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(w) = inner {
             match &w.0 {
                 TransactionSnarkWorkStatementStableV2::Two((l, r)) => Some(SnarkWithHash::Merge {
-                    hashes: [l.source.ledger.clone(), l.target.ledger.clone(), r.target.ledger.clone()],
+                    hashes: [
+                        l.source.ledger.clone(),
+                        l.target.ledger.clone(),
+                        r.target.ledger.clone(),
+                    ],
                 }),
                 TransactionSnarkWorkStatementStableV2::One(w) => Some(SnarkWithHash::Leaf {
                     hashes: [w.source.ledger.clone(), w.target.ledger.clone()],
@@ -158,13 +160,22 @@ impl SnarkWithHash {
     pub fn try_from_block(block: &MinaBlockBlockStableV2) -> Vec<Self> {
         let mut snarks = vec![];
         let it0 = block.body.staged_ledger_diff.diff.0.completed_works.iter();
-        let it1 = block.body.staged_ledger_diff.diff.1.as_ref().into_iter().flat_map(|x| x.completed_works.iter());
+        let it1 = block
+            .body
+            .staged_ledger_diff
+            .diff
+            .1
+            .as_ref()
+            .into_iter()
+            .flat_map(|x| x.completed_works.iter());
         for di in it0.chain(it1) {
             match &di.proofs {
                 TransactionSnarkWorkTStableV2Proofs::One(w) => {
                     let source = w.0.statement.source.ledger.clone();
                     let target = w.0.statement.target.ledger.clone();
-                    snarks.push(SnarkWithHash::Leaf { hashes: [source, target] })
+                    snarks.push(SnarkWithHash::Leaf {
+                        hashes: [source, target],
+                    })
                 }
                 TransactionSnarkWorkTStableV2Proofs::Two((f, s)) => {
                     let l = f.0.statement.source.ledger.clone();
@@ -203,7 +214,14 @@ pub fn parse_types(bytes: &[u8]) -> Result<(Vec<MessageType>, Vec<LedgerHash>), 
                 match GossipNetMessageV2::binprot_read(&mut c) {
                     Ok(GossipNetMessageV2::NewState(block)) => {
                         let it0 = block.body.staged_ledger_diff.diff.0.completed_works.iter();
-                        let it1 = block.body.staged_ledger_diff.diff.1.as_ref().into_iter().flat_map(|x| x.completed_works.iter());
+                        let it1 = block
+                            .body
+                            .staged_ledger_diff
+                            .diff
+                            .1
+                            .as_ref()
+                            .into_iter()
+                            .flat_map(|x| x.completed_works.iter());
                         for di in it0.chain(it1) {
                             match &di.proofs {
                                 TransactionSnarkWorkTStableV2Proofs::One(w) => {
@@ -236,7 +254,7 @@ pub fn parse_types(bytes: &[u8]) -> Result<(Vec<MessageType>, Vec<LedgerHash>), 
                     _ => (),
                 }
                 Some(MessageType::PublishNewState)
-            },
+            }
             1 => {
                 let mut c = Cursor::new(&data[8..]);
                 match GossipNetMessageV2::binprot_read(&mut c) {
