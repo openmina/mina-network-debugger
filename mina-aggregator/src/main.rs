@@ -1,10 +1,18 @@
 mod routes;
 mod database;
-use self::database::{Client, Config, Database};
 
-use std::{thread, env, sync::{Arc, atomic::{Ordering, AtomicBool}}, fs::File, io::Read, time::Duration};
+use std::{
+    thread, env,
+    sync::{
+        Arc,
+        atomic::{Ordering, AtomicBool},
+    },
+    time::Duration,
+};
 
 use tokio::{sync::oneshot, runtime::Runtime};
+
+use self::database::{Client, Database};
 
 fn main() {
     env_logger::init();
@@ -64,12 +72,8 @@ fn main() {
         }
     }
 
-    let mut s = String::new();
-    let mut f = File::open("config.ron").unwrap();
-    f.read_to_string(&mut s).unwrap();
-    let config = ron::from_str::<Config>(&s).unwrap();
-    let client = Client::new(config);
-    
+    let client = Client::new();
+
     'main: while !terminating.load(Ordering::SeqCst) {
         client.refresh(&database);
 

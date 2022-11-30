@@ -180,6 +180,7 @@ dependencies = [
  "libbpf-sys",
  "log",
  "mina-recorder",
+ "reqwest",
  "typenum",
 ]
 
@@ -1315,10 +1316,10 @@ version = "0.1.0"
 dependencies = [
  "ctrlc",
  "env_logger",
+ "libp2p-core",
  "log",
  "mina-recorder",
  "reqwest",
- "ron",
  "serde",
  "serde_json",
  "tokio",
@@ -2082,17 +2083,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ron"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "300a51053b1cb55c80b7a9fde4120726ddf25ca241a1cbb926626f62fb136bff"
-dependencies = [
- "base64",
- "bitflags",
- "serde",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2752,7 +2742,6 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
- "serde",
 ]
 
 [[package]]

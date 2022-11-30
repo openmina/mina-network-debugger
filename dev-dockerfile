@@ -24,7 +24,7 @@ RUN cargo install --path bpf-recorder bpf-recorder
 
 FROM ubuntu:20.04
 
-RUN apt-get update && apt-get install -y zlib1g libelf1 libgcc1
+RUN apt-get update && apt-get install -y zlib1g libelf1 libgcc1 libssl-dev
 COPY --from=builder /root/.cargo/bin/bpf-recorder /usr/bin/bpf-recorder
 
 ENTRYPOINT ["/usr/bin/bpf-recorder"]
