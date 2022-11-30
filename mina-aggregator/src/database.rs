@@ -109,8 +109,8 @@ impl Client {
         for (addr, hostname) in debuggers {
             let port = addr.port();
             let scheme = if port == 443 { "https" } else { "http" };
-            let url = Url::parse(&format!("{scheme}://{addr}/block/latest")).unwrap();
-            let response = self.inner.get(url).send().unwrap();
+            let debugger_url = Url::parse(&format!("{scheme}://{hostname}:{port}")).unwrap();
+            let response = self.inner.get(debugger_url.join("block/latest").unwrap()).send().unwrap();
             let item = serde_json::from_reader::<_, Option<BlockStat>>(response).unwrap();
             if let Some(item) = item {
                 for mut event in item.events {
@@ -125,12 +125,11 @@ impl Client {
                     };
                     let mut database_lock = database.0.lock().expect("poisoned");
                     let db_events = database_lock.blocks.entry(item.height).or_default();
-                    let debugger_url = format!("{scheme}://{hostname}:{port}");
                     if let Some(g_event) = db_events.get_mut(&key) {
                         if g_event.sent_message_id.is_none() {
                             g_event.append(event);
                         }
-                    } else if let Some(g_event) = GlobalEvent::from_event(event, debugger_url) {
+                    } else if let Some(g_event) = GlobalEvent::from_event(event, debugger_url.to_string()) {
                         db_events.insert(key, g_event);
                     }
                     drop(database_lock);
