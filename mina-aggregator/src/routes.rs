@@ -44,12 +44,9 @@ fn register(
         .and(warp::addr::remote())
         .and(warp::post())
         .and(warp::body::json())
-        .map(move |address: Option<SocketAddr>, Body { alias, port }| {
-            log::info!("register {alias}");
-            if let Some(mut address) = address {
-                address.set_port(port);
-                db.register_debugger(alias, address);
-            }
+        .map(move |addr: Option<SocketAddr>, Body { alias, port }| {
+            let ip = addr.map(|addr| addr.ip());
+            db.register_debugger(ip, alias, port);
             reply::with_status(reply::reply(), StatusCode::OK)
         })
 }

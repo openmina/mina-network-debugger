@@ -495,6 +495,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dns-lookup"
+version = "1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53ecafc952c4528d9b51a458d1a8904b81783feff9fde08ab6ed2545ff396872"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "socket2",
+ "winapi",
+]
+
+[[package]]
 name = "ebpf-kern"
 version = "0.2.0"
 source = "git+https://github.com/vlad9486/ebpf-tools#01a03e981d094499d008ac18d78cb6cb1c7573f0"
@@ -1315,6 +1327,7 @@ name = "mina-aggregator"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
+ "dns-lookup",
  "env_logger",
  "libp2p-core",
  "log",

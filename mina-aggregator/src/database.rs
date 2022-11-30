@@ -1,8 +1,7 @@
 use std::{
     sync::{Arc, Mutex},
     collections::BTreeMap,
-    time::{SystemTime, Duration},
-    net::SocketAddr,
+    time::{SystemTime, Duration}, net::{SocketAddr, Ipv4Addr, IpAddr},
 };
 
 use mina_recorder::meshsub_stats::{BlockStat, Event};
@@ -32,13 +31,13 @@ pub struct Key {
 }
 
 impl GlobalEvent {
-    pub fn from_event(event: Event, node_addr: SocketAddr, debugger_url: String) -> Option<Self> {
+    pub fn new(event: Event, node_addr: SocketAddr, debugger_url: Url) -> Option<Self> {
         if event.incoming {
             Some(GlobalEvent {
                 producer_id: event.producer_id,
                 block_height: event.block_height,
                 global_slot: event.global_slot,
-                debugger_url,
+                debugger_url: debugger_url.to_string(),
                 received_message_id: event.message_id,
                 sent_message_id: None,
                 time: event.time,
@@ -66,20 +65,30 @@ impl GlobalEvent {
 #[derive(Default)]
 pub struct State {
     blocks: BTreeMap<u32, BTreeMap<Key, GlobalEvent>>,
-    debuggers: Vec<(SocketAddr, String)>,
+    debuggers: Vec<(u16, String, SocketAddr)>,
 }
 
 #[derive(Clone, Default)]
 pub struct Database(Arc<Mutex<State>>);
 
 impl Database {
-    pub fn register_debugger(&self, alias: String, address: SocketAddr) {
-        log::info!("register debugger: {alias} at {address}");
+    pub fn register_debugger(&self, ip: Option<IpAddr>, hostname: String, port: u16) {
+        log::info!("register debugger: {hostname}:{port}");
+
+        let ip = ip
+            .or_else(|| {
+                dns_lookup::lookup_host(&hostname)
+                .ok()
+                .and_then(|v| v.first().cloned())
+            })
+            .unwrap_or(Ipv4Addr::UNSPECIFIED.into());
+        let node_addr = SocketAddr::new(ip, 8308); // TODO: get from debugger
+
         self.0
             .lock()
             .expect("poisoned")
             .debuggers
-            .push((address, alias));
+            .push((port, hostname, node_addr));
     }
 
     pub fn latest(&self) -> Option<(u32, Vec<GlobalEvent>)> {
@@ -108,28 +117,17 @@ impl Client {
         let database_lock = database.0.lock().expect("poisoned");
         let debuggers = database_lock.debuggers.clone();
         drop(database_lock);
-        for (addr, hostname) in debuggers {
-            let port = addr.port();
-            let node_addr = {
-                let mut a = addr;
-                a.set_port(8303); // TODO: from debugger
-                a
-            };
+        for (port, hostname, node_addr) in debuggers {
             let scheme = if port == 443 { "https" } else { "http" };
-            let debugger_url = Url::parse(&format!("{scheme}://{hostname}:{port}")).unwrap();
+            let url = Url::parse(&format!("{scheme}://{hostname}:{port}")).unwrap();
             let response = self
                 .inner
-                .get(debugger_url.join("block/latest").unwrap())
+                .get(url.join("block/latest").unwrap())
                 .send()
                 .unwrap();
             let item = serde_json::from_reader::<_, Option<BlockStat>>(response).unwrap();
             if let Some(item) = item {
-                for mut event in item.events {
-                    if event.incoming {
-                        event.receiver_addr = hostname.clone();
-                    } else {
-                        event.sender_addr = hostname.clone();
-                    }
+                for event in item.events {
                     let key = Key {
                         producer_id: event.producer_id,
                         debugger_hostname: hostname.clone(),
@@ -140,12 +138,9 @@ impl Client {
                         if g_event.sent_message_id.is_none() {
                             g_event.append(event);
                         }
-                    } else if let Some(g_event) =
-                        GlobalEvent::from_event(event, node_addr, debugger_url.to_string())
-                    {
+                    } else if let Some(g_event) = GlobalEvent::new(event, node_addr, url.clone()) {
                         db_events.insert(key, g_event);
                     }
-                    drop(database_lock);
                 }
             }
         }
