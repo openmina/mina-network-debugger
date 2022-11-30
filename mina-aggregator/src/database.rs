@@ -15,7 +15,7 @@ pub struct GlobalEvent {
     pub producer_id: PeerId,
     pub block_height: u32,
     pub global_slot: u32,
-    pub debugger_id: String,
+    pub debugger_url: String,
     pub received_message_id: u64,
     pub sent_message_id: Option<u64>,
     pub time: SystemTime,
@@ -27,17 +27,17 @@ pub struct GlobalEvent {
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct Key {
     pub producer_id: PeerId,
-    pub debugger_id: String,
+    pub debugger_hostname: String,
 }
 
 impl GlobalEvent {
-    pub fn from_event(event: Event, alias: String) -> Option<Self> {
+    pub fn from_event(event: Event, debugger_url: String) -> Option<Self> {
         if event.incoming {
             Some(GlobalEvent {
                 producer_id: event.producer_id,
                 block_height: event.block_height,
                 global_slot: event.global_slot,
-                debugger_id: alias,
+                debugger_url,
                 received_message_id: event.message_id,
                 sent_message_id: None,
                 time: event.time,
@@ -106,29 +106,31 @@ impl Client {
         let database_lock = database.0.lock().expect("poisoned");
         let debuggers = database_lock.debuggers.clone();
         drop(database_lock);
-        for (addr, alias) in debuggers {
-            let scheme = if addr.port() == 443 { "https" } else { "http" };
+        for (addr, hostname) in debuggers {
+            let port = addr.port();
+            let scheme = if port == 443 { "https" } else { "http" };
             let url = Url::parse(&format!("{scheme}://{addr}/block/latest")).unwrap();
             let response = self.inner.get(url).send().unwrap();
             let item = serde_json::from_reader::<_, Option<BlockStat>>(response).unwrap();
             if let Some(item) = item {
                 for mut event in item.events {
                     if event.incoming {
-                        event.receiver_addr = alias.clone();
+                        event.receiver_addr = hostname.clone();
                     } else {
-                        event.sender_addr = alias.clone();
+                        event.sender_addr = hostname.clone();
                     }
                     let key = Key {
                         producer_id: event.producer_id,
-                        debugger_id: alias.clone(),
+                        debugger_hostname: hostname.clone(),
                     };
                     let mut database_lock = database.0.lock().expect("poisoned");
                     let db_events = database_lock.blocks.entry(item.height).or_default();
+                    let debugger_url = format!("{scheme}://{hostname}:{port}");
                     if let Some(g_event) = db_events.get_mut(&key) {
                         if g_event.sent_message_id.is_none() {
                             g_event.append(event);
                         }
-                    } else if let Some(g_event) = GlobalEvent::from_event(event, alias.clone()) {
+                    } else if let Some(g_event) = GlobalEvent::from_event(event, debugger_url) {
                         db_events.insert(key, g_event);
                     }
                     drop(database_lock);
