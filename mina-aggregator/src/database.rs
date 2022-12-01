@@ -2,7 +2,7 @@ use std::{
     sync::{Arc, Mutex},
     collections::BTreeMap,
     time::{SystemTime, Duration},
-    net::{SocketAddr, Ipv4Addr, IpAddr},
+    net::SocketAddr,
 };
 
 use mina_recorder::meshsub_stats::Event;
@@ -71,11 +71,8 @@ pub struct State {
 pub struct Database(Arc<Mutex<State>>);
 
 impl Database {
-    pub fn post_data(&self, ip: Option<IpAddr>, debugger_name: &str, event: Event) {
-        let ip = ip.unwrap_or_else(|| Ipv4Addr::UNSPECIFIED.into());
-        log::info!("got data from {debugger_name} at {ip}");
-
-        let node_addr = SocketAddr::new(ip, 8308); // TODO: get from debugger
+    pub fn post_data(&self, node_addr: SocketAddr, debugger_name: &str, event: Event) {
+        log::info!("got data from {debugger_name} at {node_addr}");
 
         let key = Key {
             producer_id: event.producer_id,

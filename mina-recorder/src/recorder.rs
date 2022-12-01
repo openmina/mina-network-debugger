@@ -50,6 +50,7 @@ pub struct Aggregator {
     pub client: reqwest::blocking::Client,
     pub url: reqwest::Url,
     pub debugger_name: String,
+    pub port: u16,
 }
 
 impl Aggregator {
@@ -59,9 +60,10 @@ impl Aggregator {
     {
         let url = self.url.clone();
         let body = format!(
-            "{{\"alias\": \"{}\", \"event\": {} }}",
+            "{{\"alias\": \"{}\", \"event\": {}, \"port\": {} }}",
             self.debugger_name,
             serde_json::to_string(&event).unwrap(),
+            self.port,
         );
         if let Err(err) = self.client.post(url).body(body).send() {
             log::error!("failed to post event on aggregator {err}");
@@ -88,6 +90,7 @@ impl P2pRecorder {
                     client,
                     url,
                     debugger_name,
+                    port: 8302,
                 })
             } else {
                 log::error!("cannot parse aggregator url {aggregator_str}");
@@ -107,6 +110,12 @@ impl P2pRecorder {
                 aggregator,
             },
             apps: BTreeMap::default(),
+        }
+    }
+
+    pub fn set_port(&mut self, port: u16) {
+        if let Some(a) = &mut self.cx.aggregator {
+            a.port = port;
         }
     }
 
