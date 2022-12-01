@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, time::SystemTime};
 
+use serde::Serialize;
+
 use super::{
     event::{EventMetadata, ConnectionInfo, DirectedId},
     connection::{HandleData, pnet, multistream_select, noise, mux, mina_protocol},
@@ -41,10 +43,60 @@ pub struct Cx {
     pub db: DbFacade,
     pub stats: Stats,
     pub stats_state: StatsState,
+    pub aggregator: Option<Aggregator>,
+}
+
+pub struct Aggregator {
+    pub client: reqwest::blocking::Client,
+    pub url: reqwest::Url,
+    pub debugger_name: String,
+}
+
+impl Aggregator {
+    pub fn post_event<T>(&self, event: T)
+    where
+        T: Serialize,
+    {
+        let url = self.url.clone();
+        let body = format!(
+            "{{\"alias\": \"{}\", \"event\": {} }}",
+            self.debugger_name,
+            serde_json::to_string(&event).unwrap(),
+        );
+        if let Err(err) = self.client.post(url).body(body).send() {
+            log::error!("failed to post event on aggregator {err}");
+        }
+    }
 }
 
 impl P2pRecorder {
     pub fn new(db: DbFacade, test: bool) -> Self {
+        use std::env;
+
+        let aggregator = if let Ok(aggregator_str) = env::var("AGGREGATOR") {
+            log::info!("use aggregator {aggregator_str}");
+            if let Ok(aggregator) = aggregator_str.parse::<reqwest::Url>() {
+                let debugger_name = env::var("DEBUGGER_NAME").unwrap_or("noname".to_owned());
+                let client = reqwest::blocking::Client::new();
+                let url = aggregator.join("new").unwrap();
+                // let body = format!("{{\"alias\": {hostname:?}, \"port\": {port} }}");
+                // match client.post(url).body(body).send() {
+                //     Ok(_) => (),
+                //     Err(err) => log::error!("cannot register at aggregator: {err}"),
+                // }
+                Some(Aggregator {
+                    client,
+                    url,
+                    debugger_name,
+                })
+            } else {
+                log::error!("cannot parse aggregator url {aggregator_str}");
+                None
+            }
+        } else {
+            None
+        };
+
         P2pRecorder {
             tester: if test { Some(Tester::default()) } else { None },
             cns: BTreeMap::default(),
@@ -52,6 +104,7 @@ impl P2pRecorder {
                 db,
                 stats: Stats::default(),
                 stats_state: StatsState::default(),
+                aggregator,
             },
             apps: BTreeMap::default(),
         }

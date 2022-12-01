@@ -4,7 +4,7 @@ use mina_p2p_messages::{gossip::GossipNetMessageV2, v2};
 use radiation::{Absorb, Emit};
 use libp2p_core::PeerId;
 
-use super::database::DbFacade;
+use super::{database::DbFacade, recorder::Aggregator};
 
 use crate::decode::{
     meshsub_stats::{BlockStat, TxStat, Hash, Event, Signature, Tx, Snark},
@@ -60,6 +60,7 @@ impl StatsState {
         time: SystemTime,
         db: &DbFacade,
         peer: SocketAddr,
+        aggregator: &Option<Aggregator>,
     ) {
         let (sender_addr, receiver_addr) = if incoming {
             (peer.to_string(), "local node".to_string())
@@ -202,7 +203,7 @@ impl StatsState {
 
                                 None
                             };
-                            self.block_stat.events.push(Event {
+                            let event = Event {
                                 producer_id,
                                 hash,
                                 block_height,
@@ -214,7 +215,11 @@ impl StatsState {
                                 latency,
                                 sender_addr: sender_addr.clone(),
                                 receiver_addr: receiver_addr.clone(),
-                            });
+                            };
+                            if let Some(aggregator) = aggregator {
+                                aggregator.post_event(&event);
+                            }
+                            self.block_stat.events.push(event);
                             block_stat_updated = true;
                         }
                         GossipNetMessageV2::TransactionPoolDiff(transaction) => {
@@ -270,7 +275,7 @@ impl StatsState {
                             let global_slot = first.global_slot;
                             let producer_id = first.producer_id;
                             if block_height == self.block_stat.height {
-                                self.block_stat.events.push(Event {
+                                let event = Event {
                                     producer_id,
                                     hash,
                                     block_height,
@@ -282,7 +287,11 @@ impl StatsState {
                                     latency: time.duration_since(first.time).ok(),
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
-                                });
+                                };
+                                if let Some(aggregator) = aggregator {
+                                    aggregator.post_event(&event);
+                                }
+                                self.block_stat.events.push(event);
                                 block_stat_updated = true;
                             }
                         }

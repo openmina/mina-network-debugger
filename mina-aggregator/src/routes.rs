@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 
+use mina_recorder::meshsub_stats::Event;
 use serde::Deserialize;
 use warp::{
     Filter, Rejection, Reply,
@@ -37,16 +38,16 @@ fn register(
     #[derive(Deserialize)]
     struct Body {
         alias: String,
-        port: u16,
+        event: Event,
     }
 
-    warp::path!("register")
+    warp::path!("new")
         .and(warp::addr::remote())
         .and(warp::post())
         .and(warp::body::json())
-        .map(move |addr: Option<SocketAddr>, Body { alias, port }| {
+        .map(move |addr: Option<SocketAddr>, Body { alias, event }| {
             let ip = addr.map(|addr| addr.ip());
-            db.register_debugger(ip, alias, port);
+            db.post_data(ip, &alias, event);
             reply::with_status(reply::reply(), StatusCode::OK)
         })
 }

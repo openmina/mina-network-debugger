@@ -591,21 +591,21 @@ fn main() {
     // builder.try_init().expect("cannot setup logging");
     env_logger::init();
 
-    if let Ok(aggregator_str) = env::var("AGGREGATOR") {
-        log::info!("use aggregator {aggregator_str}");
-        if let Ok(aggregator) = aggregator_str.parse::<reqwest::Url>() {
-            let hostname = env::var("HOSTNAME").unwrap_or("none".to_owned());
-            let client = reqwest::blocking::Client::new();
-            let url = aggregator.join("register").unwrap();
-            let body = format!("{{\"alias\": {hostname:?}, \"port\": {port} }}");
-            match client.post(url).body(body).send() {
-                Ok(_) => (),
-                Err(err) => log::error!("cannot register at aggregator {aggregator_str}, {err}"),
-            }
-        } else {
-            log::error!("cannot parse aggregator url {aggregator_str}");
-        }
-    }
+    // if let Ok(aggregator_str) = env::var("AGGREGATOR") {
+    //     log::info!("use aggregator {aggregator_str}");
+    //     if let Ok(aggregator) = aggregator_str.parse::<reqwest::Url>() {
+    //         let hostname = env::var("HOSTNAME").unwrap_or("none".to_owned());
+    //         let client = reqwest::blocking::Client::new();
+    //         let url = aggregator.join("register").unwrap();
+    //         let body = format!("{{\"alias\": {hostname:?}, \"port\": {port} }}");
+    //         match client.post(url).body(body).send() {
+    //             Ok(_) => (),
+    //             Err(err) => log::error!("cannot register at aggregator {aggregator_str}, {err}"),
+    //         }
+    //     } else {
+    //         log::error!("cannot parse aggregator url {aggregator_str}");
+    //     }
+    // }
 
     let (db, callback, server_thread) = server::spawn(port, db_path, key_path, cert_path);
     let mut db_strace = Some(db.strace().expect("cannot add strace db link"));

@@ -6,6 +6,7 @@ mod rpc;
 use crate::{
     database::{StreamId, StreamKind, ConnectionStats, DbStream, DbFacade},
     stats::StatsState,
+    recorder::Aggregator,
 };
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
@@ -69,10 +70,26 @@ impl HandleData for State {
         } else if self.kind == StreamKind::Meshsub {
             let st = self.meshsub_state.as_mut().expect("must exist");
             if !st.extend(bytes) {
-                meshsub_sink(&id, &cx.db, db, &stream, &mut cx.stats_state, bytes);
+                meshsub_sink(
+                    &id,
+                    &cx.db,
+                    db,
+                    &stream,
+                    &mut cx.stats_state,
+                    bytes,
+                    &cx.aggregator,
+                );
             } else {
                 while let Some(slice) = st.next_msg() {
-                    meshsub_sink(&id, &cx.db, db, &stream, &mut cx.stats_state, slice);
+                    meshsub_sink(
+                        &id,
+                        &cx.db,
+                        db,
+                        &stream,
+                        &mut cx.stats_state,
+                        slice,
+                        &cx.aggregator,
+                    );
                 }
             }
         } else {
@@ -98,8 +115,16 @@ fn meshsub_sink(
     stream: &DbStream,
     st: &mut StatsState,
     msg: &[u8],
+    aggregator: &Option<Aggregator>,
 ) {
-    st.observe(msg, id.incoming, id.metadata.time, dbf, id.metadata.id.addr);
+    st.observe(
+        msg,
+        id.incoming,
+        id.metadata.time,
+        dbf,
+        id.metadata.id.addr,
+        aggregator,
+    );
     if let Err(err) = stream.add(id, StreamKind::Meshsub, msg) {
         log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
     }

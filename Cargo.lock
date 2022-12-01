@@ -180,7 +180,6 @@ dependencies = [
  "libbpf-sys",
  "log",
  "mina-recorder",
- "reqwest",
  "typenum",
 ]
 
@@ -492,18 +491,6 @@ dependencies = [
  "block-buffer 0.10.3",
  "crypto-common",
  "subtle",
-]
-
-[[package]]
-name = "dns-lookup"
-version = "1.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53ecafc952c4528d9b51a458d1a8904b81783feff9fde08ab6ed2545ff396872"
-dependencies = [
- "cfg-if",
- "libc",
- "socket2",
- "winapi",
 ]
 
 [[package]]
@@ -1327,16 +1314,13 @@ name = "mina-aggregator"
 version = "0.1.0"
 dependencies = [
  "ctrlc",
- "dns-lookup",
  "env_logger",
  "libp2p-core",
  "log",
  "mina-recorder",
- "reqwest",
  "serde",
  "serde_json",
  "tokio",
- "url",
  "warp",
 ]
 
@@ -1375,6 +1359,7 @@ dependencies = [
  "prost",
  "prost-build",
  "radiation",
+ "reqwest",
  "rocksdb",
  "salsa20",
  "serde",

@@ -45,8 +45,8 @@ fn check_latency_simple() {
     generic::<0, _>(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
-        state.observe(FILES[0], true, time(1), &db, peer(100));
-        state.observe(FILES[0], false, time(2), &db, peer(100));
+        state.observe(FILES[0], true, time(1), &db, peer(100), &None);
+        state.observe(FILES[0], false, time(2), &db, peer(100), &None);
 
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 2);
@@ -60,8 +60,8 @@ fn check_latency_outgoing_simple() {
     generic::<1, _>(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
-        state.observe(FILES[0], false, time(1), &db, peer(100));
-        state.observe(FILES[0], false, time(2), &db, peer(100));
+        state.observe(FILES[0], false, time(1), &db, peer(100), &None);
+        state.observe(FILES[0], false, time(2), &db, peer(100), &None);
 
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 2);
@@ -75,11 +75,11 @@ fn check_mixed_hashes() {
     generic::<2, _>(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
-        state.observe(FILES[2], true, time(0), &db, peer(1000));
-        state.observe(FILES[2], false, time(1), &db, peer(1001));
-        state.observe(FILES[3], true, time(2), &db, peer(1002));
-        state.observe(FILES[2], false, time(3), &db, peer(1003));
-        state.observe(FILES[3], false, time(4), &db, peer(1004));
+        state.observe(FILES[2], true, time(0), &db, peer(1000), &None);
+        state.observe(FILES[2], false, time(1), &db, peer(1001), &None);
+        state.observe(FILES[3], true, time(2), &db, peer(1002), &None);
+        state.observe(FILES[2], false, time(3), &db, peer(1003), &None);
+        state.observe(FILES[3], false, time(4), &db, peer(1004), &None);
 
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 5);
@@ -97,7 +97,14 @@ fn check_multiple() {
         let time = |d| now + Duration::from_secs(d);
 
         for i in 0..7 {
-            state.observe(FILES[i], true, time(i as _), &db, peer(1000 + i as u16));
+            state.observe(
+                FILES[i],
+                true,
+                time(i as _),
+                &db,
+                peer(1000 + i as u16),
+                &None,
+            );
         }
         for i in 0..100 {
             state.observe(
@@ -106,6 +113,7 @@ fn check_multiple() {
                 time(100 + i as u64),
                 &db,
                 peer(2000 + i as u16),
+                &None,
             );
         }
 
@@ -123,11 +131,11 @@ fn check_mixed_hashes_outgoing() {
     generic::<4, _>(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
-        state.observe(FILES[2], false, time(0), &db, peer(1000));
-        state.observe(FILES[2], false, time(1), &db, peer(1001));
-        state.observe(FILES[3], false, time(2), &db, peer(1002));
-        state.observe(FILES[2], false, time(3), &db, peer(1003));
-        state.observe(FILES[3], false, time(4), &db, peer(1004));
+        state.observe(FILES[2], false, time(0), &db, peer(1000), &None);
+        state.observe(FILES[2], false, time(1), &db, peer(1001), &None);
+        state.observe(FILES[3], false, time(2), &db, peer(1002), &None);
+        state.observe(FILES[2], false, time(3), &db, peer(1003), &None);
+        state.observe(FILES[3], false, time(4), &db, peer(1004), &None);
 
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 5);
@@ -144,12 +152,12 @@ fn check_cleanup() {
     generic::<5, _>(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
-        state.observe(FILES[2], true, time(0), &db, peer(1000));
-        state.observe(FILES[2], false, time(1), &db, peer(1001));
-        state.observe(FILES[3], true, time(2), &db, peer(1002));
-        state.observe(FILES[2], false, time(3), &db, peer(1003));
-        state.observe(FILES[3], false, time(4), &db, peer(1004));
-        state.observe(FILES[4], true, time(10), &db, peer(1010));
+        state.observe(FILES[2], true, time(0), &db, peer(1000), &None);
+        state.observe(FILES[2], false, time(1), &db, peer(1001), &None);
+        state.observe(FILES[3], true, time(2), &db, peer(1002), &None);
+        state.observe(FILES[2], false, time(3), &db, peer(1003), &None);
+        state.observe(FILES[3], false, time(4), &db, peer(1004), &None);
+        state.observe(FILES[4], true, time(10), &db, peer(1010), &None);
 
         let (id, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 1);
@@ -170,17 +178,17 @@ fn check_cleanup_obsolete() {
     generic::<6, _>(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
-        state.observe(FILES[2], true, time(0), &db, peer(1000));
-        state.observe(FILES[2], false, time(1), &db, peer(1001));
-        state.observe(FILES[3], true, time(2), &db, peer(1002));
-        state.observe(FILES[2], false, time(3), &db, peer(1003));
-        state.observe(FILES[3], false, time(4), &db, peer(1004));
-        state.observe(FILES[4], true, time(10), &db, peer(1010));
+        state.observe(FILES[2], true, time(0), &db, peer(1000), &None);
+        state.observe(FILES[2], false, time(1), &db, peer(1001), &None);
+        state.observe(FILES[3], true, time(2), &db, peer(1002), &None);
+        state.observe(FILES[2], false, time(3), &db, peer(1003), &None);
+        state.observe(FILES[3], false, time(4), &db, peer(1004), &None);
+        state.observe(FILES[4], true, time(10), &db, peer(1010), &None);
         // obsolete events come after cleanup
-        state.observe(FILES[3], true, time(11), &db, peer(1011));
-        state.observe(FILES[3], true, time(12), &db, peer(1012));
-        state.observe(FILES[3], true, time(13), &db, peer(1013));
-        state.observe(FILES[3], true, time(14), &db, peer(1014));
+        state.observe(FILES[3], true, time(11), &db, peer(1011), &None);
+        state.observe(FILES[3], true, time(12), &db, peer(1012), &None);
+        state.observe(FILES[3], true, time(13), &db, peer(1013), &None);
+        state.observe(FILES[3], true, time(14), &db, peer(1014), &None);
 
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 1);

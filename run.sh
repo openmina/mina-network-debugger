@@ -6,7 +6,7 @@ sudo rm -Rf /tmp/mina-debugger-db-$1 &> /dev/null
 nohup sudo \
     RUST_LOG='info' \
     AGGREGATOR='http://develop.dev.openmina.com:8000' \
-    HOSTNAME='debug.dev.openmina.com' \
+    DEBUGGER_NAME='debug.dev.openmina.com' \
     SERVER_PORT='443' \
     HTTPS_KEY_PATH='/etc/letsencrypt/live/debug.dev.openmina.com/privkey.pem' \
     HTTPS_CERT_PATH='/etc/letsencrypt/live/debug.dev.openmina.com/fullchain.pem' \

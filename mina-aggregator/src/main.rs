@@ -1,18 +1,11 @@
 mod routes;
 mod database;
 
-use std::{
-    thread, env,
-    sync::{
-        Arc,
-        atomic::{Ordering, AtomicBool},
-    },
-    time::Duration,
-};
+use std::{thread, env};
 
 use tokio::{sync::oneshot, runtime::Runtime};
 
-use self::database::{Client, Database};
+use self::database::Database;
 
 fn main() {
     env_logger::init();
@@ -53,36 +46,15 @@ fn main() {
         let (_, server) = warp::serve(routes).bind_with_graceful_shutdown(addr, shutdown);
         thread::spawn(move || rt.block_on(server))
     };
-    let callback = move || tx.send(()).expect("corresponding receiver should exist");
+    let mut callback = Some(move || tx.send(()).expect("corresponding receiver should exist"));
 
-    let terminating = Arc::new(AtomicBool::new(false));
-    {
-        let terminating = terminating.clone();
-        let mut callback = Some(callback);
-        let user_handler = move || {
-            log::info!("ctrlc");
-            if let Some(cb) = callback.take() {
-                cb();
-            }
-            terminating.store(true, Ordering::SeqCst);
-        };
-        if let Err(err) = ctrlc::set_handler(user_handler) {
-            log::error!("failed to set ctrlc handler {err}");
-            return;
-        }
-    }
-
-    let client = Client::new();
-
-    'main: while !terminating.load(Ordering::SeqCst) {
-        client.refresh(&database);
-
-        for _ in 0..10 {
-            thread::sleep(Duration::from_secs(1));
-            if terminating.load(Ordering::SeqCst) {
-                break 'main;
-            }
-        }
+    let user_handler = move || {
+        log::info!("ctrlc");
+        callback.take().map(|f| f());
+    };
+    if let Err(err) = ctrlc::set_handler(user_handler) {
+        log::error!("failed to set ctrlc handler {err}");
+        return;
     }
 
     if server_thread.join().is_err() {
