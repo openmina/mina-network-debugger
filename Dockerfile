@@ -10,8 +10,8 @@ ENV TZ=UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && apt-get install -y git curl clang make pkg-config libelf-dev \
-    protobuf-compiler libbz2-dev \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    protobuf-compiler libbz2-dev libssl-dev
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- --default-toolchain nightly-2022-10-10 -y
 ENV PATH=/root/.cargo/bin:$PATH
 RUN rustup component add rust-src \

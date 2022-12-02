@@ -38,6 +38,8 @@ Use environment variables for configuration:
 * `DB_PATH`. Default value is `target/db`.
 * `DRY`. By default the variable is not set. Set any value `DRY=1` to disable BPF. Useful for inspecting database.
 * `HTTPS_KEY_PATH` and `HTTPS_CERT_PATH`. By default the variables are not set. Set the path to crypto stuff in order to enable tls (https).
+* `AGGREGATOR`. No default value. If the value is not set, debugger will not connect aggregator. The value must be http or https url, for example: "http://develop.dev.openmina.com:8000".
+* `DEBUGGER_NAME`. The name of this debugger for aggregator to distinguish. Any string is valid.
 
 Line in log `libbpf: BTF loading error: -22` may be ignored.
 
@@ -46,6 +48,57 @@ The value of the variable must start with `mainnet-` or `devnet-` or `berkeley-`
 For example: `BPF_ALIAS=berkeley-node`.
 
 Maybe, we will pass some useful info to the debugger using this env variables.
+
+## Build and run aggregator
+
+```
+cargo build --bin bpf-recorder --release
+```
+
+Use environment variables:
+
+* `SERVER_PORT`. Aggregator will listen here.
+* `HTTPS_KEY_PATH` and `HTTPS_CERT_PATH`. Enables https.
+
+## Docker
+
+Build the image:
+
+```
+docker build -t mina-debugger:local .
+```
+
+The image containing both debugger and aggregator. Default entrypoint is debugger. 
+
+Simple config for docker-compose:
+
+```
+services:
+  aggregator:
+    image: mina-debugger:local
+    environment:
+      - RUST_LOG=info
+      - SERVER_PORT=8000
+    ports:
+      - "8000:8000"
+    entrypoint: /usr/bin/mina-aggregator
+
+  debugger:
+    privileged: true
+    image: mina-debugger:local
+    environment:
+      - RUST_LOG=info
+      - SERVER_PORT=80
+      - DB_PATH=/tmp/mina-debugger-db
+      - AGGREGATOR=http://aggregator:8000
+      - DEBUGGER_NAME=develop.dev.openmina.com
+      # - HTTPS_KEY_PATH=".../privkey.pem"
+      # - HTTPS_CERT_PATH=".../fullchain.pem"
+    volumes:
+      - "/sys/kernel/debug:/sys/kernel/debug:rw"
+    ports:
+      - "80:80"
+```
 
 ## Protocol stack
 
