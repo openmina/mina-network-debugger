@@ -19,7 +19,6 @@ pub struct P2pRecorder {
     tester: Option<Tester>,
     cns: BTreeMap<ConnectionInfo, (Cn, DbGroup)>,
     cx: Cx,
-    apps: BTreeMap<u32, String>,
 }
 
 // my local sandbox
@@ -40,6 +39,7 @@ const CHAINS: [(&str, &str); 3] = [
 ];
 
 pub struct Cx {
+    pub apps: BTreeMap<u32, (String, u16)>,
     pub db: DbFacade,
     pub stats: Stats,
     pub stats_state: StatsState,
@@ -50,11 +50,10 @@ pub struct Aggregator {
     pub client: reqwest::blocking::Client,
     pub url: reqwest::Url,
     pub debugger_name: String,
-    pub port: u16,
 }
 
 impl Aggregator {
-    pub fn post_event<T>(&self, event: T)
+    pub fn post_event<T>(&self, event: T, port: u16)
     where
         T: Serialize,
     {
@@ -63,7 +62,7 @@ impl Aggregator {
             "{{\"alias\": \"{}\", \"event\": {}, \"port\": {} }}",
             self.debugger_name,
             serde_json::to_string(&event).unwrap(),
-            self.port,
+            port,
         );
         if let Err(err) = self.client.post(url).body(body).send() {
             log::error!("failed to post event on aggregator {err}");
@@ -90,7 +89,6 @@ impl P2pRecorder {
                     client,
                     url,
                     debugger_name,
-                    port: 8302,
                 })
             } else {
                 log::error!("cannot parse aggregator url {aggregator_str}");
@@ -104,23 +102,21 @@ impl P2pRecorder {
             tester: if test { Some(Tester::default()) } else { None },
             cns: BTreeMap::default(),
             cx: Cx {
+                apps: BTreeMap::default(),
                 db,
                 stats: Stats::default(),
                 stats_state: StatsState::default(),
                 aggregator,
             },
-            apps: BTreeMap::default(),
         }
     }
 
-    pub fn set_port(&mut self, port: u16) {
-        if let Some(a) = &mut self.cx.aggregator {
-            a.port = port;
-        }
+    pub fn set_port(&mut self, pid: u32, port: u16) {
+        self.cx.apps.get_mut(&pid).map(|(_, p)| *p = port);
     }
 
     pub fn on_alias(&mut self, pid: u32, alias: String) {
-        self.apps.insert(pid, alias);
+        self.cx.apps.insert(pid, (alias, 8302));
     }
 
     pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata, buffered: usize) {
@@ -128,7 +124,7 @@ impl P2pRecorder {
             tester.on_connect(incoming, metadata);
             return;
         }
-        let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
+        let (alias, _) = self.cx.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
         let mut it = alias.split('-');
         let network = it.next().expect("`split` must yield at least one");
         let chain_id = CHAINS
@@ -164,7 +160,7 @@ impl P2pRecorder {
             tester.on_disconnect(metadata);
             return;
         }
-        let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
+        let (alias, _) = self.cx.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
         let incoming = false; // warning, we really don't know at this point
         let id = DirectedId {
             metadata,
@@ -184,7 +180,7 @@ impl P2pRecorder {
             return;
         }
         if let Some((cn, group)) = self.cns.get_mut(&metadata.id) {
-            let alias = self.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
+            let (alias, _) = self.cx.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
             let id = DirectedId {
                 metadata,
                 alias,

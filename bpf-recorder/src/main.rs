@@ -717,7 +717,7 @@ fn main() {
                     recorder.on_alias(event.pid, alias);
                 }
                 SnifferEventVariant::Bind(addr) => {
-                    recorder.set_port(addr.port());
+                    recorder.set_port(event.pid, addr.port());
                     let matches_port = matches!(addr.port(), 8302 | 8303);
                     if strace && strace_running.is_none() && matches_port {
                         if let Some(db_strace) = db_strace.take() {

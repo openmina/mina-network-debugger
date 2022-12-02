@@ -21,10 +21,12 @@ RUN cargo install bpf-linker --git ${linker_src} --branch ${linker_branch}
 # RUN cargo install --git https://github.com/name-placeholder/mina-network-debugger bpf-recorder --bin bpf-recorder
 COPY . .
 RUN cargo install --path bpf-recorder bpf-recorder
+RUN cargo install --path mina-aggregator mina-aggregator
 
 FROM ubuntu:20.04
 
 RUN apt-get update && apt-get install -y zlib1g libelf1 libgcc1 libssl-dev
 COPY --from=builder /root/.cargo/bin/bpf-recorder /usr/bin/bpf-recorder
+COPY --from=builder /root/.cargo/bin/mina-aggregator /usr/bin/mina-aggregator
 
 ENTRYPOINT ["/usr/bin/bpf-recorder"]

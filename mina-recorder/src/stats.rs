@@ -61,6 +61,7 @@ impl StatsState {
         db: &DbFacade,
         peer: SocketAddr,
         aggregator: &Option<Aggregator>,
+        port: u16,
     ) {
         let (sender_addr, receiver_addr) = if incoming {
             (peer.to_string(), "local node".to_string())
@@ -217,7 +218,7 @@ impl StatsState {
                                 receiver_addr: receiver_addr.clone(),
                             };
                             if let Some(aggregator) = aggregator {
-                                aggregator.post_event(&event);
+                                aggregator.post_event(&event, port);
                             }
                             self.block_stat.events.push(event);
                             block_stat_updated = true;
@@ -289,7 +290,7 @@ impl StatsState {
                                     receiver_addr: receiver_addr.clone(),
                                 };
                                 if let Some(aggregator) = aggregator {
-                                    aggregator.post_event(&event);
+                                    aggregator.post_event(&event, port);
                                 }
                                 self.block_stat.events.push(event);
                                 block_stat_updated = true;

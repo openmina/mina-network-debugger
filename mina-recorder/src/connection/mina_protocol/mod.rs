@@ -3,11 +3,7 @@ use super::accumulator;
 mod meshsub;
 mod rpc;
 
-use crate::{
-    database::{StreamId, StreamKind, ConnectionStats, DbStream, DbFacade},
-    stats::StatsState,
-    recorder::Aggregator,
-};
+use crate::database::{StreamId, StreamKind, ConnectionStats, DbStream};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -72,23 +68,19 @@ impl HandleData for State {
             if !st.extend(bytes) {
                 meshsub_sink(
                     &id,
-                    &cx.db,
                     db,
                     &stream,
-                    &mut cx.stats_state,
                     bytes,
-                    &cx.aggregator,
+                    cx,
                 );
             } else {
                 while let Some(slice) = st.next_msg() {
                     meshsub_sink(
                         &id,
-                        &cx.db,
                         db,
                         &stream,
-                        &mut cx.stats_state,
                         slice,
-                        &cx.aggregator,
+                        cx,
                     );
                 }
             }
@@ -110,20 +102,20 @@ impl HandleData for State {
 
 fn meshsub_sink(
     id: &DirectedId,
-    dbf: &DbFacade,
     db: &Db,
     stream: &DbStream,
-    st: &mut StatsState,
     msg: &[u8],
-    aggregator: &Option<Aggregator>,
+    cx: &mut Cx,
 ) {
-    st.observe(
+    let port = cx.apps.get(&id.metadata.id.pid).map(|(_, p)| *p).unwrap_or(8302);
+    cx.stats_state.observe(
         msg,
         id.incoming,
         id.metadata.time,
-        dbf,
+        &cx.db,
         id.metadata.id.addr,
-        aggregator,
+        &cx.aggregator,
+        port,
     );
     if let Err(err) = stream.add(id, StreamKind::Meshsub, msg) {
         log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
