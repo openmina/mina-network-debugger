@@ -52,7 +52,7 @@ Maybe, we will pass some useful info to the debugger using this env variables.
 ## Build and run aggregator
 
 ```
-cargo build --bin bpf-recorder --release
+cargo build --bin mina-aggregator --release
 ```
 
 Use environment variables:
