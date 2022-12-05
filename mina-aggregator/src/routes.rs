@@ -86,8 +86,12 @@ pub fn routes(
         .build();
 
     let post = warp::post().and(register(database.clone()));
-    let get = warp::get()
-        .and(version().or(openapi()).or(stats_latest(database.clone())).or(stats(database)));
+    let get = warp::get().and(
+        version()
+            .or(openapi())
+            .or(stats_latest(database.clone()))
+            .or(stats(database)),
+    );
 
     get.or(post)
         .with(with::header("Content-Type", "application/json"))

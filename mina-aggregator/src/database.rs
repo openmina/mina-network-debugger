@@ -2,7 +2,8 @@ use std::{
     sync::{Arc, Mutex},
     collections::BTreeMap,
     time::{SystemTime, Duration},
-    net::SocketAddr, path::Path,
+    net::SocketAddr,
+    path::Path,
 };
 
 use radiation::{Absorb, Emit};
@@ -126,7 +127,10 @@ impl Database {
         } else if let Some(g_event) = GlobalEvent::new(event, node_addr, debugger_name.to_owned()) {
             database_lock.last.insert(key, g_event);
         }
-        if let Err(err) = self.db.put_block(current, database_lock.last.values().cloned()) {
+        let events = database_lock.last.values().cloned().collect::<Vec<_>>();
+        drop(database_lock);
+
+        if let Err(err) = self.db.put_block(current, events) {
             log::error!("{err}");
         }
     }
@@ -142,15 +146,8 @@ impl Database {
     }
 
     pub fn latest(&self) -> Option<(u32, Vec<GlobalEvent>)> {
-        let lock = self
-            .cache
-            .lock()
-            .expect("poisoned");
-        let events = lock
-            .last
-            .values()
-            .cloned()
-            .collect();
+        let lock = self.cache.lock().expect("poisoned");
+        let events = lock.last.values().cloned().collect();
 
         Some((lock.height, events))
     }

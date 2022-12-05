@@ -124,7 +124,12 @@ impl P2pRecorder {
             tester.on_connect(incoming, metadata);
             return;
         }
-        let (alias, _) = self.cx.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
+        let (alias, _) = self
+            .cx
+            .apps
+            .get(&metadata.id.pid)
+            .cloned()
+            .unwrap_or_default();
         let mut it = alias.split('-');
         let network = it.next().expect("`split` must yield at least one");
         let chain_id = CHAINS
@@ -160,7 +165,12 @@ impl P2pRecorder {
             tester.on_disconnect(metadata);
             return;
         }
-        let (alias, _) = self.cx.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
+        let (alias, _) = self
+            .cx
+            .apps
+            .get(&metadata.id.pid)
+            .cloned()
+            .unwrap_or_default();
         let incoming = false; // warning, we really don't know at this point
         let id = DirectedId {
             metadata,

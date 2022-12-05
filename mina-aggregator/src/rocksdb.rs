@@ -1,4 +1,7 @@
-use std::{path::{Path, PathBuf}, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use radiation::{Collection, Emit, AbsorbExt, nom, ParseError};
 use thiserror::Error;
@@ -27,8 +30,10 @@ impl DbInner {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        let cfs = [
-            rocksdb::ColumnFamilyDescriptor::new("block", Default::default())];
+        let cfs = [rocksdb::ColumnFamilyDescriptor::new(
+            "block",
+            Default::default(),
+        )];
 
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -40,7 +45,11 @@ impl DbInner {
         self.0.cf_handle("block").expect("must exist")
     }
 
-    pub fn put_block(&self, height: u32, value: impl IntoIterator<Item = GlobalEvent> + Clone) -> Result<(), DbError> {
+    pub fn put_block(
+        &self,
+        height: u32,
+        value: impl IntoIterator<Item = GlobalEvent> + Clone,
+    ) -> Result<(), DbError> {
         let value = Collection(value);
         let bytes = value.chain(vec![]);
         self.0.put_cf(self.block(), height.to_be_bytes(), bytes)?;

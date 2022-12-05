@@ -66,22 +66,10 @@ impl HandleData for State {
         } else if self.kind == StreamKind::Meshsub {
             let st = self.meshsub_state.as_mut().expect("must exist");
             if !st.extend(bytes) {
-                meshsub_sink(
-                    &id,
-                    db,
-                    &stream,
-                    bytes,
-                    cx,
-                );
+                meshsub_sink(&id, db, &stream, bytes, cx);
             } else {
                 while let Some(slice) = st.next_msg() {
-                    meshsub_sink(
-                        &id,
-                        db,
-                        &stream,
-                        slice,
-                        cx,
-                    );
+                    meshsub_sink(&id, db, &stream, slice, cx);
                 }
             }
         } else {
@@ -100,14 +88,12 @@ impl HandleData for State {
     }
 }
 
-fn meshsub_sink(
-    id: &DirectedId,
-    db: &Db,
-    stream: &DbStream,
-    msg: &[u8],
-    cx: &mut Cx,
-) {
-    let port = cx.apps.get(&id.metadata.id.pid).map(|(_, p)| *p).unwrap_or(8302);
+fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &mut Cx) {
+    let port = cx
+        .apps
+        .get(&id.metadata.id.pid)
+        .map(|(_, p)| *p)
+        .unwrap_or(8302);
     cx.stats_state.observe(
         msg,
         id.incoming,
