@@ -135,10 +135,10 @@ impl P2pRecorder {
         let chain_id = CHAINS
             .iter()
             .find_map(|(k, v)| if *k == network { Some(*v) } else { None })
-            .unwrap_or(CHAINS[0].1);
+            .unwrap_or(network);
         let id = DirectedId {
             metadata,
-            alias,
+            alias: alias.clone(),
             incoming,
             buffered,
         };
