@@ -1,5 +1,3 @@
-use std::net::{SocketAddr, Ipv4Addr};
-
 use mina_recorder::meshsub_stats::Event;
 use serde::Deserialize;
 use warp::{
@@ -42,14 +40,10 @@ fn register(
     }
 
     warp::path!("new")
-        .and(warp::addr::remote())
         .and(warp::post())
         .and(warp::body::json())
-        .map(move |addr: Option<SocketAddr>, Body { alias, event }| {
-            let ip = addr.map(|addr| addr.ip());
-            let ip = ip.unwrap_or_else(|| Ipv4Addr::UNSPECIFIED.into());
-            let node_addr = SocketAddr::new(ip, event.node_port);
-            db.post_data(node_addr, &alias, event);
+        .map(move |Body { alias, event }| {
+            db.post_data(&alias, event);
             reply::with_status(reply::reply(), StatusCode::OK)
         })
 }

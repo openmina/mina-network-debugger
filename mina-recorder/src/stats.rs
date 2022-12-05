@@ -61,7 +61,7 @@ impl StatsState {
         db: &DbFacade,
         peer: SocketAddr,
         aggregator: &Option<Aggregator>,
-        port: u16,
+        node_address: SocketAddr,
     ) {
         let (sender_addr, receiver_addr) = if incoming {
             (peer.to_string(), "local node".to_string())
@@ -216,7 +216,7 @@ impl StatsState {
                                 latency,
                                 sender_addr: sender_addr.clone(),
                                 receiver_addr: receiver_addr.clone(),
-                                node_port: port,
+                                node_address,
                             };
                             if let Some(aggregator) = aggregator {
                                 aggregator.post_event(&event);
@@ -289,7 +289,7 @@ impl StatsState {
                                     latency: time.duration_since(first.time).ok(),
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
-                                    node_port: port,
+                                    node_address,
                                 };
                                 if let Some(aggregator) = aggregator {
                                     aggregator.post_event(&event);

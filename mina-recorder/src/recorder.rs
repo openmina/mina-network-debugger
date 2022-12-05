@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, time::SystemTime};
+use std::{
+    collections::BTreeMap,
+    time::SystemTime,
+    net::{SocketAddr, IpAddr},
+};
 
 use serde::Serialize;
 
@@ -39,10 +43,10 @@ const CHAINS: [(&str, &str); 3] = [
 ];
 
 pub struct Cx {
-    pub apps: BTreeMap<u32, (String, u16)>,
+    pub apps: BTreeMap<u32, (String, SocketAddr)>,
     pub db: DbFacade,
     pub stats: Stats,
-    pub stats_state: BTreeMap<u16, StatsState>,
+    pub stats_state: BTreeMap<SocketAddr, StatsState>,
     pub aggregator: Option<Aggregator>,
 }
 
@@ -111,12 +115,20 @@ impl P2pRecorder {
     }
 
     pub fn set_port(&mut self, pid: u32, port: u16) {
-        self.cx.apps.get_mut(&pid).map(|(_, p)| *p = port);
-        self.cx.stats_state.insert(port, StatsState::default());
+        self.cx
+            .apps
+            .get_mut(&pid)
+            .map(|(_, addr)| addr.set_port(port));
     }
 
     pub fn on_alias(&mut self, pid: u32, alias: String) {
-        self.cx.apps.insert(pid, (alias, 8302));
+        let ip = alias
+            .split('-')
+            .nth(1)
+            .unwrap_or("0.0.0.0")
+            .parse()
+            .unwrap_or(IpAddr::V4(0.into()));
+        self.cx.apps.insert(pid, (alias, SocketAddr::new(ip, 8302)));
     }
 
     pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata, buffered: usize) {
@@ -124,11 +136,12 @@ impl P2pRecorder {
             tester.on_connect(incoming, metadata);
             return;
         }
-        let (alias, _) = self
+        let alias = self
             .cx
             .apps
             .get(&metadata.id.pid)
             .cloned()
+            .map(|(a, _)| a)
             .unwrap_or_default();
         let mut it = alias.split('-');
         let network = it.next().expect("`split` must yield at least one");
@@ -165,11 +178,12 @@ impl P2pRecorder {
             tester.on_disconnect(metadata);
             return;
         }
-        let (alias, _) = self
+        let alias = self
             .cx
             .apps
             .get(&metadata.id.pid)
             .cloned()
+            .map(|(a, _)| a)
             .unwrap_or_default();
         let incoming = false; // warning, we really don't know at this point
         let id = DirectedId {
@@ -190,7 +204,10 @@ impl P2pRecorder {
             return;
         }
         if let Some((cn, group)) = self.cns.get_mut(&metadata.id) {
-            let (alias, _) = self.cx.apps.get(&metadata.id.pid).cloned().unwrap_or_default();
+            let alias = self.cx.apps.get(&metadata.id.pid)
+                .cloned()
+                .map(|(a, _)| a)
+                .unwrap_or_default();
             let id = DirectedId {
                 metadata,
                 alias,

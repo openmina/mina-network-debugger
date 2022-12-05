@@ -119,7 +119,9 @@ impl Database {
         })
     }
 
-    pub fn post_data(&self, node_addr: SocketAddr, debugger_name: &str, event: Event) {
+    pub fn post_data(&self, debugger_name: &str, event: Event) {
+        let node_addr = event.node_address;
+
         log::info!("got data from {debugger_name} at {node_addr}");
 
         let current = event.block_height;

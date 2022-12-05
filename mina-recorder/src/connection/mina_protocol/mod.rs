@@ -89,22 +89,21 @@ impl HandleData for State {
 }
 
 fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &mut Cx) {
-    let port = cx
+    let node_address = cx
         .apps
         .get(&id.metadata.id.pid)
         .map(|(_, p)| *p)
-        .unwrap_or(8302);
-    if let Some(st) = cx.stats_state.get_mut(&port) {
-        st.observe(
-            msg,
-            id.incoming,
-            id.metadata.time,
-            &cx.db,
-            id.metadata.id.addr,
-            &cx.aggregator,
-            port,
-        );
-    }
+        .unwrap_or("0.0.0.0:8302".parse().unwrap());
+    let st = cx.stats_state.entry(node_address).or_default();
+    st.observe(
+        msg,
+        id.incoming,
+        id.metadata.time,
+        &cx.db,
+        id.metadata.id.addr,
+        &cx.aggregator,
+        node_address,
+    );
     if let Err(err) = stream.add(id, StreamKind::Meshsub, msg) {
         log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
     }
