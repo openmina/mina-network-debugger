@@ -66,6 +66,15 @@ fn stats_latest(
     })
 }
 
+fn stats(
+    db: Database,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("block" / u32).map(move |height| -> WithStatus<Json> {
+        let v = db.by_height(height).map(|c| (height, c));
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
+
 pub fn routes(
     database: Database,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
@@ -77,7 +86,8 @@ pub fn routes(
         .build();
 
     let post = warp::post().and(register(database.clone()));
-    let get = warp::get().and(version().or(openapi()).or(stats_latest(database)));
+    let get = warp::get()
+        .and(version().or(openapi()).or(stats_latest(database.clone())).or(stats(database)));
 
     get.or(post)
         .with(with::header("Content-Type", "application/json"))

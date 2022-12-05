@@ -15,7 +15,7 @@ pub use self::connection::yamux;
 mod decode;
 pub use self::decode::{meshsub, meshsub_stats};
 
-mod custom_coding;
+pub mod custom_coding;
 
 pub mod database;
 

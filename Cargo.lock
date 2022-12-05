@@ -1318,8 +1318,11 @@ dependencies = [
  "libp2p-core",
  "log",
  "mina-recorder",
+ "radiation",
+ "rocksdb",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "warp",
 ]

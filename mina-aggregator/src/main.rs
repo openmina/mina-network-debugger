@@ -1,5 +1,6 @@
 mod routes;
 mod database;
+mod rocksdb;
 
 use std::{thread, env};
 
@@ -25,7 +26,7 @@ fn main() {
         }
     };
 
-    let database = Database::default();
+    let database = Database::open("/tmp/mina-aggregator-db").expect("open db");
 
     let _guard = rt.enter();
     let (tx, rx) = oneshot::channel();
