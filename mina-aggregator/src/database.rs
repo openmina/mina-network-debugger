@@ -10,7 +10,10 @@ use radiation::{Absorb, Emit};
 use serde::Serialize;
 use libp2p_core::PeerId;
 
-use mina_recorder::{meshsub_stats::{Event, Hash}, custom_coding};
+use mina_recorder::{
+    meshsub_stats::{Event, Hash},
+    custom_coding,
+};
 
 use super::rocksdb::{DbInner, DbError};
 
