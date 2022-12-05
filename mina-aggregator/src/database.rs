@@ -10,7 +10,7 @@ use radiation::{Absorb, Emit};
 use serde::Serialize;
 use libp2p_core::PeerId;
 
-use mina_recorder::{meshsub_stats::Event, custom_coding};
+use mina_recorder::{meshsub_stats::{Event, Hash}, custom_coding};
 
 use super::rocksdb::{DbInner, DbError};
 
@@ -19,10 +19,11 @@ pub struct GlobalEvent {
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
     pub producer_id: PeerId,
+    pub hash: Hash,
     pub block_height: u32,
     pub global_slot: u32,
     pub debugger_name: String,
-    pub received_message_id: u64,
+    pub received_message_id: Option<u64>,
     pub sent_message_id: Option<u64>,
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
@@ -30,7 +31,7 @@ pub struct GlobalEvent {
     #[custom_absorb(custom_coding::duration_opt_absorb)]
     #[custom_emit(custom_coding::duration_opt_emit)]
     pub latency: Option<Duration>,
-    pub source_addr: String,
+    pub source_addr: Option<String>,
     #[custom_absorb(custom_coding::addr_absorb)]
     #[custom_emit(custom_coding::addr_emit)]
     pub node_addr: SocketAddr,
@@ -49,19 +50,33 @@ impl GlobalEvent {
         if event.incoming {
             Some(GlobalEvent {
                 producer_id: event.producer_id,
+                hash: event.hash,
                 block_height: event.block_height,
                 global_slot: event.global_slot,
                 debugger_name,
-                received_message_id: event.message_id,
+                received_message_id: Some(event.message_id),
                 sent_message_id: None,
                 time: event.time,
                 latency: None,
-                source_addr: event.sender_addr,
+                source_addr: Some(event.sender_addr),
                 node_addr,
                 destination_addr: None,
             })
         } else {
-            None
+            Some(GlobalEvent {
+                producer_id: event.producer_id,
+                hash: event.hash,
+                block_height: event.block_height,
+                global_slot: event.global_slot,
+                debugger_name,
+                received_message_id: None,
+                sent_message_id: Some(event.message_id),
+                time: event.time,
+                latency: None,
+                source_addr: None,
+                node_addr,
+                destination_addr: Some(event.receiver_addr),
+            })
         }
     }
 
