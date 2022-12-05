@@ -45,6 +45,7 @@ pub struct Event {
     pub latency: Option<Duration>,
     pub sender_addr: String,
     pub receiver_addr: String,
+    pub node_port: u16,
 }
 
 #[derive(Clone, Absorb, Emit, Serialize)]

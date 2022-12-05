@@ -42,7 +42,7 @@ pub struct Cx {
     pub apps: BTreeMap<u32, (String, u16)>,
     pub db: DbFacade,
     pub stats: Stats,
-    pub stats_state: StatsState,
+    pub stats_state: BTreeMap<u16, StatsState>,
     pub aggregator: Option<Aggregator>,
 }
 
@@ -53,16 +53,15 @@ pub struct Aggregator {
 }
 
 impl Aggregator {
-    pub fn post_event<T>(&self, event: T, port: u16)
+    pub fn post_event<T>(&self, event: T)
     where
         T: Serialize,
     {
         let url = self.url.clone();
         let body = format!(
-            "{{\"alias\": \"{}\", \"event\": {}, \"port\": {} }}",
+            "{{\"alias\": \"{}\", \"event\": {} }}",
             self.debugger_name,
             serde_json::to_string(&event).unwrap(),
-            port,
         );
         if let Err(err) = self.client.post(url).body(body).send() {
             log::error!("failed to post event on aggregator {err}");
@@ -105,7 +104,7 @@ impl P2pRecorder {
                 apps: BTreeMap::default(),
                 db,
                 stats: Stats::default(),
-                stats_state: StatsState::default(),
+                stats_state: BTreeMap::default(),
                 aggregator,
             },
         }
@@ -113,6 +112,7 @@ impl P2pRecorder {
 
     pub fn set_port(&mut self, pid: u32, port: u16) {
         self.cx.apps.get_mut(&pid).map(|(_, p)| *p = port);
+        self.cx.stats_state.insert(port, StatsState::default());
     }
 
     pub fn on_alias(&mut self, pid: u32, alias: String) {

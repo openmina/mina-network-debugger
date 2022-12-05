@@ -39,7 +39,6 @@ fn register(
     struct Body {
         alias: String,
         event: Event,
-        port: u16,
     }
 
     warp::path!("new")
@@ -47,10 +46,10 @@ fn register(
         .and(warp::post())
         .and(warp::body::json())
         .map(
-            move |addr: Option<SocketAddr>, Body { alias, event, port }| {
+            move |addr: Option<SocketAddr>, Body { alias, event }| {
                 let ip = addr.map(|addr| addr.ip());
                 let ip = ip.unwrap_or_else(|| Ipv4Addr::UNSPECIFIED.into());
-                let node_addr = SocketAddr::new(ip, port);
+                let node_addr = SocketAddr::new(ip, event.node_port);
                 db.post_data(node_addr, &alias, event);
                 reply::with_status(reply::reply(), StatusCode::OK)
             },

@@ -94,15 +94,17 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &mu
         .get(&id.metadata.id.pid)
         .map(|(_, p)| *p)
         .unwrap_or(8302);
-    cx.stats_state.observe(
-        msg,
-        id.incoming,
-        id.metadata.time,
-        &cx.db,
-        id.metadata.id.addr,
-        &cx.aggregator,
-        port,
-    );
+    if let Some(st) = cx.stats_state.get_mut(&port) {
+        st.observe(
+            msg,
+            id.incoming,
+            id.metadata.time,
+            &cx.db,
+            id.metadata.id.addr,
+            &cx.aggregator,
+            port,
+        );
+    }
     if let Err(err) = stream.add(id, StreamKind::Meshsub, msg) {
         log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
     }

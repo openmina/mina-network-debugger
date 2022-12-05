@@ -216,9 +216,10 @@ impl StatsState {
                                 latency,
                                 sender_addr: sender_addr.clone(),
                                 receiver_addr: receiver_addr.clone(),
+                                node_port: port,
                             };
                             if let Some(aggregator) = aggregator {
-                                aggregator.post_event(&event, port);
+                                aggregator.post_event(&event);
                             }
                             self.block_stat.events.push(event);
                             block_stat_updated = true;
@@ -288,9 +289,10 @@ impl StatsState {
                                     latency: time.duration_since(first.time).ok(),
                                     sender_addr: sender_addr.clone(),
                                     receiver_addr: receiver_addr.clone(),
+                                    node_port: port,
                                 };
                                 if let Some(aggregator) = aggregator {
-                                    aggregator.post_event(&event, port);
+                                    aggregator.post_event(&event);
                                 }
                                 self.block_stat.events.push(event);
                                 block_stat_updated = true;
@@ -303,6 +305,7 @@ impl StatsState {
         }
         // if block_stat_updated {
         let _ = block_stat_updated;
+        // TODO: BUG, key must be pair (height, port), because now mina node overwrite other mina node data
         db.stats(self.block_stat.height, &self.block_stat).unwrap();
         // }
         if tx_stat_updated {
