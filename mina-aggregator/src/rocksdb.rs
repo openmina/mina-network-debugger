@@ -6,7 +6,7 @@ use std::{
 use radiation::{Collection, Emit, AbsorbExt, nom, ParseError};
 use thiserror::Error;
 
-use super::database::GlobalEvent;
+use super::database::GlobalBlockState;
 
 pub struct DbInner(rocksdb::DB);
 
@@ -48,7 +48,7 @@ impl DbInner {
     pub fn put_block(
         &self,
         height: u32,
-        value: impl IntoIterator<Item = GlobalEvent> + Clone,
+        value: impl IntoIterator<Item = GlobalBlockState> + Clone,
     ) -> Result<(), DbError> {
         let value = Collection(value);
         let bytes = value.chain(vec![]);
@@ -57,7 +57,7 @@ impl DbInner {
         Ok(())
     }
 
-    pub fn fetch_block(&self, height: u32) -> Result<Option<Vec<GlobalEvent>>, DbError> {
+    pub fn fetch_block(&self, height: u32) -> Result<Option<Vec<GlobalBlockState>>, DbError> {
         let b = match self.0.get_cf(self.block(), height.to_be_bytes())? {
             Some(v) => v,
             None => return Ok(None),

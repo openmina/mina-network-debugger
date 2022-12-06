@@ -18,6 +18,12 @@ use mina_recorder::{
 use super::rocksdb::{DbInner, DbError};
 
 #[derive(Serialize, Clone, Absorb, Emit)]
+pub struct GlobalBlockState {
+    hash: Hash,
+    events: Vec<GlobalEvent>,
+}
+
+#[derive(Serialize, Clone, Absorb, Emit)]
 pub struct GlobalEvent {
     #[custom_absorb(custom_coding::peer_id_absorb)]
     #[custom_emit(custom_coding::peer_id_emit)]
@@ -44,7 +50,6 @@ pub struct GlobalEvent {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct Key {
-    pub producer_id: PeerId,
     pub debugger_hostname: String,
     pub node_addr: SocketAddr,
 }
@@ -99,7 +104,7 @@ impl GlobalEvent {
 
 pub struct State {
     height: u32,
-    last: BTreeMap<Key, GlobalEvent>,
+    last: BTreeMap<Hash, BTreeMap<Key, GlobalEvent>>,
     ids: BTreeMap<SocketAddr, u32>,
     counter: u32,
 }
@@ -142,7 +147,6 @@ impl Database {
         }
 
         let key = Key {
-            producer_id: event.producer_id,
             debugger_hostname: debugger_name.to_owned(),
             node_addr: addr,
         };
@@ -156,23 +160,29 @@ impl Database {
             id
         };
 
-        if let Some(g_event) = database_lock.last.get_mut(&key) {
+        let block_storage = database_lock.last.entry(event.hash).or_default();
+
+        if let Some(g_event) = block_storage.get_mut(&key) {
             if g_event.sent_message_id.is_none() {
                 g_event.append(event);
             }
         } else if let Some(g_event) = GlobalEvent::new(event, addr, id, debugger_name.to_owned()) {
-            database_lock.last.insert(key, g_event);
+            block_storage.insert(key, g_event);
         }
-        let mut events = database_lock.last.values().cloned().collect::<Vec<_>>();
-        events.sort_by(|a, b| a.time.cmp(&b.time));
+
+        let value = database_lock.last.iter().map(|(&hash, events)| {
+            let mut events = events.values().cloned().collect::<Vec<_>>();
+            events.sort_by(|a, b| a.time.cmp(&b.time));
+            GlobalBlockState { hash, events }
+        }).collect::<Vec<_>>();
         drop(database_lock);
 
-        if let Err(err) = self.db.put_block(current, events) {
+        if let Err(err) = self.db.put_block(current, value) {
             log::error!("{err}");
         }
     }
 
-    pub fn by_height(&self, height: u32) -> Option<Vec<GlobalEvent>> {
+    pub fn by_height(&self, height: u32) -> Option<Vec<GlobalBlockState>> {
         match self.db.fetch_block(height) {
             Ok(v) => v,
             Err(err) => {
@@ -182,9 +192,17 @@ impl Database {
         }
     }
 
-    pub fn latest(&self) -> Option<(u32, Vec<GlobalEvent>)> {
+    pub fn latest(&self) -> Option<(u32, Vec<GlobalBlockState>)> {
         let lock = self.cache.lock().expect("poisoned");
-        let events = lock.last.values().cloned().collect();
+        let events = lock
+            .last
+            .iter()
+            .map(|(&hash, events)| {
+                let mut events = events.values().cloned().collect::<Vec<_>>();
+                events.sort_by(|a, b| a.time.cmp(&b.time));
+                GlobalBlockState { hash, events }
+            })
+            .collect();
 
         Some((lock.height, events))
     }
