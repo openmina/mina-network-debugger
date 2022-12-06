@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, Mutex},
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     time::{SystemTime, Duration},
     net::SocketAddr,
     path::Path,
@@ -39,6 +39,7 @@ pub struct GlobalEvent {
     #[custom_emit(custom_coding::addr_emit)]
     pub node_addr: SocketAddr,
     pub destination_addr: Option<String>,
+    pub node_id: u32,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -49,7 +50,7 @@ pub struct Key {
 }
 
 impl GlobalEvent {
-    pub fn new(event: Event, node_addr: SocketAddr, debugger_name: String) -> Option<Self> {
+    pub fn new(event: Event, addr: SocketAddr, id: u32, debugger_name: String) -> Option<Self> {
         if event.incoming {
             Some(GlobalEvent {
                 producer_id: event.producer_id,
@@ -62,8 +63,9 @@ impl GlobalEvent {
                 time: event.time,
                 latency: None,
                 source_addr: Some(event.sender_addr),
-                node_addr,
+                node_addr: addr,
                 destination_addr: None,
+                node_id: id,
             })
         } else {
             Some(GlobalEvent {
@@ -77,8 +79,9 @@ impl GlobalEvent {
                 time: event.time,
                 latency: None,
                 source_addr: None,
-                node_addr,
+                node_addr: addr,
                 destination_addr: Some(event.receiver_addr),
+                node_id: id,
             })
         }
     }
@@ -97,6 +100,7 @@ impl GlobalEvent {
 pub struct State {
     height: u32,
     last: BTreeMap<Key, GlobalEvent>,
+    ids: BTreeSet<SocketAddr>,
 }
 
 #[derive(Clone)]
@@ -114,15 +118,16 @@ impl Database {
             cache: Arc::new(Mutex::new(State {
                 height: 0,
                 last: BTreeMap::new(),
+                ids: BTreeSet::new(),
             })),
             db: Arc::new(DbInner::open(path)?),
         })
     }
 
     pub fn post_data(&self, debugger_name: &str, event: Event) {
-        let node_addr = event.node_address;
+        let addr = event.node_address;
 
-        log::info!("got data from {debugger_name} at {node_addr}");
+        log::info!("got data from {debugger_name} at {addr}");
 
         let current = event.block_height;
 
@@ -137,14 +142,17 @@ impl Database {
         let key = Key {
             producer_id: event.producer_id,
             debugger_hostname: debugger_name.to_owned(),
-            node_addr,
+            node_addr: addr,
         };
+
+        database_lock.ids.insert(addr);
+        let id = database_lock.ids.len() as u32 - 1;
 
         if let Some(g_event) = database_lock.last.get_mut(&key) {
             if g_event.sent_message_id.is_none() {
                 g_event.append(event);
             }
-        } else if let Some(g_event) = GlobalEvent::new(event, node_addr, debugger_name.to_owned()) {
+        } else if let Some(g_event) = GlobalEvent::new(event, addr, id, debugger_name.to_owned()) {
             database_lock.last.insert(key, g_event);
         }
         let mut events = database_lock.last.values().cloned().collect::<Vec<_>>();
