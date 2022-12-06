@@ -147,7 +147,8 @@ impl Database {
         } else if let Some(g_event) = GlobalEvent::new(event, node_addr, debugger_name.to_owned()) {
             database_lock.last.insert(key, g_event);
         }
-        let events = database_lock.last.values().cloned().collect::<Vec<_>>();
+        let mut events = database_lock.last.values().cloned().collect::<Vec<_>>();
+        events.sort_by(|a, b| a.time.cmp(&b.time));
         drop(database_lock);
 
         if let Err(err) = self.db.put_block(current, events) {
