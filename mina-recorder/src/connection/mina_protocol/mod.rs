@@ -97,16 +97,19 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
     };
     let mut lock = cx.stats_state.lock();
     let st = lock.entry(node_address).or_default();
-    st.observe(
-        msg,
-        id.incoming,
-        id.metadata.time,
-        &cx.db,
-        id.metadata.id.addr,
-        &cx.aggregator,
-        node_address,
-    );
-    if let Err(err) = stream.add(id, StreamKind::Meshsub, msg) {
-        log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
+    match stream.add(id, StreamKind::Meshsub, msg) {
+        Ok(message_id) => {
+            st.observe(
+                message_id.0,
+                msg,
+                id.incoming,
+                id.metadata.time,
+                &cx.db,
+                id.metadata.id.addr,
+                &cx.aggregator,
+                node_address,
+            );
+        }
+        Err(err) => log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg)),
     }
 }

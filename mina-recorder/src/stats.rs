@@ -55,6 +55,7 @@ struct TxDesc {
 impl StatsState {
     pub fn observe<'a>(
         &'a mut self,
+        message_id: u64,
         msg: &[u8],
         incoming: bool,
         time: SystemTime,
@@ -68,7 +69,6 @@ impl StatsState {
         } else {
             ("local node".to_string(), peer.to_string())
         };
-        let message_id = db.next_message_id();
         let mut block_stat_updated = false;
         let mut tx_stat_updated = true;
         for event in meshsub::parse_it(msg, false, true).unwrap() {

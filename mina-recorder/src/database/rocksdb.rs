@@ -222,7 +222,7 @@ impl DbStream {
         did: &DirectedId,
         stream_kind: StreamKind,
         bytes: &[u8],
-    ) -> Result<(), DbError> {
+    ) -> Result<MessageId, DbError> {
         let sb = self.inner.get_stream(self.id)?;
         let mut file = sb.lock().expect("poisoned");
         let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
@@ -266,6 +266,6 @@ impl DbStream {
             .put_message(&self.addr, id, v, tys, ledger_hashes)?;
         self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
-        Ok(())
+        Ok(id)
     }
 }
