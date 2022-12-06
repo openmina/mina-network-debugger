@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, Mutex},
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     time::{SystemTime, Duration},
     net::SocketAddr,
     path::Path,
@@ -100,7 +100,8 @@ impl GlobalEvent {
 pub struct State {
     height: u32,
     last: BTreeMap<Key, GlobalEvent>,
-    ids: BTreeSet<SocketAddr>,
+    ids: BTreeMap<SocketAddr, u32>,
+    counter: u32,
 }
 
 #[derive(Clone)]
@@ -118,7 +119,8 @@ impl Database {
             cache: Arc::new(Mutex::new(State {
                 height: 0,
                 last: BTreeMap::new(),
-                ids: BTreeSet::new(),
+                ids: BTreeMap::new(),
+                counter: 0,
             })),
             db: Arc::new(DbInner::open(path)?),
         })
@@ -145,8 +147,14 @@ impl Database {
             node_addr: addr,
         };
 
-        database_lock.ids.insert(addr);
-        let id = database_lock.ids.len() as u32 - 1;
+        let id = if let Some(id) = database_lock.ids.get(&addr) {
+            *id
+        } else {
+            let id = database_lock.counter;
+            database_lock.ids.insert(addr, id);
+            database_lock.counter += 1;
+            id
+        };
 
         if let Some(g_event) = database_lock.last.get_mut(&key) {
             if g_event.sent_message_id.is_none() {
