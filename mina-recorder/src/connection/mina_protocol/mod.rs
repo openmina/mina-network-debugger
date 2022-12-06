@@ -40,7 +40,7 @@ impl DynamicProtocol for State {
 
 impl HandleData for State {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
         let stream = db.get(self.stream_id);
         if self.kind == StreamKind::Rpc {
             let st = self.rpc_state.as_mut().expect("must exist");
@@ -88,13 +88,15 @@ impl HandleData for State {
     }
 }
 
-fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &mut Cx) {
-    let node_address = cx
-        .apps
-        .get(&id.metadata.id.pid)
-        .map(|(_, p)| *p)
-        .unwrap_or("0.0.0.0:8302".parse().unwrap());
-    let st = cx.stats_state.entry(node_address).or_default();
+fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx) {
+    let node_address = {
+        let lock = cx.apps.lock();
+        lock.get(&id.metadata.id.pid)
+            .map(|(_, p)| *p)
+            .unwrap_or("0.0.0.0:8302".parse().unwrap())
+    };
+    let mut lock = cx.stats_state.lock();
+    let st = lock.entry(node_address).or_default();
     st.observe(
         msg,
         id.incoming,

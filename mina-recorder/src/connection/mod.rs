@@ -10,7 +10,7 @@ pub trait DynamicProtocol {
 
 pub trait HandleData {
     // TODO: use Cow for bytes
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()>;
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()>;
 }
 
 mod accumulator;

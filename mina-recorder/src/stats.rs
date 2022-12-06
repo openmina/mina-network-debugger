@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::SystemTime, net::SocketAddr};
+use std::{collections::BTreeMap, time::SystemTime, net::SocketAddr, sync::atomic::AtomicUsize};
 
 use mina_p2p_messages::{gossip::GossipNetMessageV2, v2};
 use radiation::{Absorb, Emit};
@@ -14,8 +14,8 @@ use crate::decode::{
 
 #[derive(Default, Absorb, Emit)]
 pub struct Stats {
-    pub decrypted: usize,
-    pub failed_to_decrypt: usize,
+    pub decrypted: AtomicUsize,
+    pub failed_to_decrypt: AtomicUsize,
 }
 
 // #[derive(Default, Clone, Absorb, Emit, Serialize)]

@@ -19,7 +19,7 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData + From<StreamId>,
 {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
         match self {
             State::Mplex(state) => state.on_data(id, bytes, cx, db),
             State::Yamux(state) => state.on_data(id, bytes, cx, db),

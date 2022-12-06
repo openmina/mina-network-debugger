@@ -2,9 +2,11 @@ use std::{
     collections::BTreeMap,
     time::SystemTime,
     net::{SocketAddr, IpAddr},
+    sync::Arc,
 };
 
 use serde::Serialize;
+use parking_lot::Mutex;
 
 use super::{
     event::{EventMetadata, ConnectionInfo, DirectedId},
@@ -22,7 +24,7 @@ type Inner = multistream_select::State<mina_protocol::State>;
 pub struct P2pRecorder {
     tester: Option<Tester>,
     cns: BTreeMap<ConnectionInfo, (Cn, DbGroup)>,
-    cx: Cx,
+    cx: Arc<Cx>,
 }
 
 // my local sandbox
@@ -43,13 +45,14 @@ const CHAINS: [(&str, &str); 3] = [
 ];
 
 pub struct Cx {
-    pub apps: BTreeMap<u32, (String, SocketAddr)>,
+    pub apps: Mutex<BTreeMap<u32, (String, SocketAddr)>>,
+    pub stats_state: Mutex<BTreeMap<SocketAddr, StatsState>>,
     pub db: DbFacade,
     pub stats: Stats,
-    pub stats_state: BTreeMap<SocketAddr, StatsState>,
     pub aggregator: Option<Aggregator>,
 }
 
+#[derive(Clone)]
 pub struct Aggregator {
     pub client: reqwest::blocking::Client,
     pub url: reqwest::Url,
@@ -104,19 +107,20 @@ impl P2pRecorder {
         P2pRecorder {
             tester: if test { Some(Tester::default()) } else { None },
             cns: BTreeMap::default(),
-            cx: Cx {
-                apps: BTreeMap::default(),
+            cx: Arc::new(Cx {
+                apps: Mutex::default(),
                 db,
                 stats: Stats::default(),
-                stats_state: BTreeMap::default(),
+                stats_state: Mutex::default(),
                 aggregator,
-            },
+            }),
         }
     }
 
     pub fn set_port(&mut self, pid: u32, port: u16) {
         self.cx
             .apps
+            .lock()
             .get_mut(&pid)
             .map(|(_, addr)| addr.set_port(port));
     }
@@ -128,7 +132,10 @@ impl P2pRecorder {
             .unwrap_or("0.0.0.0")
             .parse()
             .unwrap_or(IpAddr::V4(0.into()));
-        self.cx.apps.insert(pid, (alias, SocketAddr::new(ip, 8302)));
+        self.cx
+            .apps
+            .lock()
+            .insert(pid, (alias, SocketAddr::new(ip, 8302)));
     }
 
     pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata, buffered: usize) {
@@ -136,13 +143,13 @@ impl P2pRecorder {
             tester.on_connect(incoming, metadata);
             return;
         }
-        let alias = self
-            .cx
-            .apps
-            .get(&metadata.id.pid)
-            .cloned()
-            .map(|(a, _)| a)
-            .unwrap_or_default();
+        let alias = {
+            let lock = self.cx.apps.lock();
+            lock.get(&metadata.id.pid)
+                .cloned()
+                .map(|(a, _)| a)
+                .unwrap_or_default()
+        };
         let mut it = alias.split('-');
         let network = it.next().expect("`split` must yield at least one");
         let chain_id = CHAINS
@@ -178,13 +185,13 @@ impl P2pRecorder {
             tester.on_disconnect(metadata);
             return;
         }
-        let alias = self
-            .cx
-            .apps
-            .get(&metadata.id.pid)
-            .cloned()
-            .map(|(a, _)| a)
-            .unwrap_or_default();
+        let alias = {
+            let lock = self.cx.apps.lock();
+            lock.get(&metadata.id.pid)
+                .cloned()
+                .map(|(a, _)| a)
+                .unwrap_or_default()
+        };
         let incoming = false; // warning, we really don't know at this point
         let id = DirectedId {
             metadata,
@@ -204,17 +211,20 @@ impl P2pRecorder {
             return;
         }
         if let Some((cn, group)) = self.cns.get_mut(&metadata.id) {
-            let alias = self.cx.apps.get(&metadata.id.pid)
-                .cloned()
-                .map(|(a, _)| a)
-                .unwrap_or_default();
+            let alias = {
+                let lock = self.cx.apps.lock();
+                lock.get(&metadata.id.pid)
+                    .cloned()
+                    .map(|(a, _)| a)
+                    .unwrap_or_default()
+            };
             let id = DirectedId {
                 metadata,
                 alias,
                 incoming,
                 buffered,
             };
-            if let Err(err) = cn.on_data(id.clone(), &mut bytes, &mut self.cx, &*group) {
+            if let Err(err) = cn.on_data(id.clone(), &mut bytes, &self.cx, &*group) {
                 log::error!("{id}: {err}");
             }
         }

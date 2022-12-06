@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{ops::Range, sync::atomic::Ordering};
 
 use curve25519_dalek::{
     scalar::Scalar, constants::ED25519_BASEPOINT_TABLE, montgomery::MontgomeryPoint,
@@ -48,7 +48,7 @@ where
     Inner: HandleData,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
         let accumulator = if id.incoming {
             &mut self.accumulator_incoming
         } else {
@@ -128,7 +128,7 @@ where
     Inner: HandleData,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
         enum Msg {
             First,
             Second,
@@ -147,7 +147,7 @@ where
                 Ok(range) => {
                     let bytes = &mut bytes[range];
                     self.decrypted += bytes.len();
-                    cx.stats.decrypted += bytes.len();
+                    cx.stats.decrypted.fetch_add(bytes.len(), Ordering::Relaxed);
                     db.update(
                         ConnectionStats {
                             total_bytes: bytes.len() as u64,
@@ -238,11 +238,13 @@ impl<Inner> NoiseState<Inner> {
         &mut self,
         id: DirectedId,
         bytes: &mut [u8],
-        cx: &mut Cx,
+        cx: &Cx,
         db: &Db,
         err: NoiseError,
     ) -> DbResult<()> {
-        cx.stats.failed_to_decrypt += bytes.len();
+        cx.stats
+            .failed_to_decrypt
+            .fetch_add(bytes.len(), Ordering::Relaxed);
         self.failed_to_decrypt += bytes.len();
         db.update(
             ConnectionStats {
@@ -257,8 +259,8 @@ impl<Inner> NoiseState<Inner> {
         log::error!(
             "{id} {}, total failed {}, total decrypted {}, {err}: {} {}...",
             db.id(),
-            cx.stats.failed_to_decrypt,
-            cx.stats.decrypted,
+            cx.stats.failed_to_decrypt.load(Ordering::Relaxed),
+            cx.stats.decrypted.load(Ordering::Relaxed),
             bytes.len(),
             hex::encode(&bytes[..32.min(bytes.len())])
         );
@@ -267,8 +269,13 @@ impl<Inner> NoiseState<Inner> {
         let mut b = b"mac_mismatch\x00\x00\x00\x00".to_vec();
         b.extend_from_slice(&self.decrypted.to_be_bytes());
         b.extend_from_slice(&self.failed_to_decrypt.to_be_bytes());
-        b.extend_from_slice(&cx.stats.decrypted.to_be_bytes());
-        b.extend_from_slice(&cx.stats.failed_to_decrypt.to_be_bytes());
+        b.extend_from_slice(&cx.stats.decrypted.load(Ordering::Relaxed).to_be_bytes());
+        b.extend_from_slice(
+            &cx.stats
+                .failed_to_decrypt
+                .load(Ordering::Relaxed)
+                .to_be_bytes(),
+        );
         stream.add(&id, StreamKind::Handshake, &b)?;
 
         Ok(())

@@ -358,7 +358,7 @@ where
     Inner: HandleData + From<StreamId>,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &mut Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
         for Output { stream_id, variant } in self.process(id.incoming, bytes) {
             let db_stream = db.get(stream_id);
 
