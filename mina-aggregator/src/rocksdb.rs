@@ -19,7 +19,7 @@ pub enum DbError {
 }
 
 impl DbInner {
-    const TTL: Duration = Duration::from_secs(120);
+    const TTL: Duration = Duration::from_secs(0);
 
     pub fn open<P>(path: P) -> Result<Self, DbError>
     where
