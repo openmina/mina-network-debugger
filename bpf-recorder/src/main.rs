@@ -334,7 +334,7 @@ impl App {
             }
             context::Variant::Accept {
                 listen_on_fd,
-                addr_len,
+                addr_len_ptr,
                 ..
             } => {
                 let _ = listen_on_fd;
@@ -347,6 +347,17 @@ impl App {
                     let socket_id = ((fd as u64) << 32) + (pid as u64);
                     self.connections
                         .insert(socket_id.to_ne_bytes(), 0x1_u32.to_ne_bytes())?;
+
+                    let mut addr_len_bytes = [0_u8; 8];
+                    let c = unsafe {
+                        let p = addr_len_bytes.as_mut_ptr() as *mut _;
+                        helpers::probe_read_user(p, 8, addr_len_ptr as _)
+                    };
+                    if c != 0 {
+                        return Err(0);
+                    }
+                    let addr_len = u64::from_ne_bytes(addr_len_bytes);
+
                     event.set_ok(addr_len)
                 }
             }
@@ -426,7 +437,7 @@ impl App {
         self.enter(context::Variant::Accept {
             listen_on_fd: ctx.read_here::<u64>(0x10) as u32,
             addr_ptr: ctx.read_here::<u64>(0x18),
-            addr_len: ctx.read_here::<u64>(0x20),
+            addr_len_ptr: ctx.read_here::<u64>(0x20),
         })
     }
 
