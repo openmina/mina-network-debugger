@@ -1,5 +1,8 @@
 #![cfg_attr(feature = "kern", no_std)]
 
+#[cfg(feature = "user")]
+pub mod proc;
+
 #[derive(Clone, Copy, Debug)]
 #[repr(packed)]
 pub struct Event {

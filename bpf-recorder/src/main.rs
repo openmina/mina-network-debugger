@@ -572,7 +572,7 @@ fn main() {
         thread,
     };
 
-    use bpf_recorder::sniffer_event::{SnifferEvent, SnifferEventVariant};
+    use bpf_recorder::{sniffer_event::{SnifferEvent, SnifferEventVariant}, proc};
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace};
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
@@ -693,9 +693,13 @@ fn main() {
     let test = env::var("TEST").is_ok();
     let strace = env::var("STRACE").is_ok();
 
+    let mut origin = proc::S::read().ok().and_then(|s| s.b_time);
+    if let Some(boot_time) = &origin {
+        log::info!("boot time: {boot_time:?}");
+    }
+
     let mut p2p_cns = BTreeMap::new();
     let mut recorder = P2pRecorder::new(db, test);
-    let mut origin = None::<SystemTime>;
     let mut last_ts = 0;
     let mut strace_running = None;
     let mut ptrace_task = ptrace::Task::new();
