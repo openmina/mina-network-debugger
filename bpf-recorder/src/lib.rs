@@ -164,6 +164,9 @@ pub mod sniffer_event {
                 std::process::exit(1);
             }
             let data = &slice[32..(32 + size)];
+            if let DataTag::Accept = &tag {
+                log::warn!("accept-syscall pid: {pid} fd: {fd}, size: {size}, data: {}", hex::encode(&data[..16]));
+            }
             if let DataTag::Accept | DataTag::Connect | DataTag::Bind = tag {
                 let address_family = u16::from_ne_bytes(data[0..2].try_into().unwrap());
                 let port = u16::from_be_bytes(data[2..4].try_into().unwrap());
