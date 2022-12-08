@@ -363,38 +363,54 @@ impl App {
             }
             context::Variant::Send { fd, .. } | context::Variant::Write { fd, .. } => {
                 let event = event.set_tag_fd(DataTag::Write, fd);
-                let socket_id = ((fd as u64) << 32) + (pid as u64);
-                if self.connections.get(&socket_id.to_ne_bytes()).is_none() {
-                    return Ok(());
-                }
-                if ret < 0 {
-                    if self.connections.remove(&socket_id.to_ne_bytes())?.is_none() {
+                if fd == 0 || fd == 1 {
+                    if ret >= 0 {
+                        event.set_ok(ret as _)
+                    } else {
+                        return Ok(())
+                    }
+                } else {
+                    let socket_id = ((fd as u64) << 32) + (pid as u64);
+                    if self.connections.get(&socket_id.to_ne_bytes()).is_none() {
                         return Ok(());
                     }
-                    let close_ev = event.set_tag_fd(DataTag::Close, fd);
-                    let event = event.set_err(ret);
-                    send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())?;
-                    close_ev
-                } else {
-                    event.set_ok(ret as _)
+                    if ret < 0 {
+                        if self.connections.remove(&socket_id.to_ne_bytes())?.is_none() {
+                            return Ok(());
+                        }
+                        let close_ev = event.set_tag_fd(DataTag::Close, fd);
+                        let event = event.set_err(ret);
+                        send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())?;
+                        close_ev
+                    } else {
+                        event.set_ok(ret as _)
+                    }
                 }
             }
             context::Variant::Recv { fd, .. } | context::Variant::Read { fd, .. } => {
                 let event = event.set_tag_fd(DataTag::Read, fd);
-                let socket_id = ((fd as u64) << 32) + (pid as u64);
-                if self.connections.get(&socket_id.to_ne_bytes()).is_none() {
-                    return Ok(());
-                }
-                if ret < 0 {
-                    if self.connections.remove(&socket_id.to_ne_bytes())?.is_none() {
+                if fd == 0 || fd == 1 {
+                    if ret >= 0 {
+                        event.set_ok(ret as _)
+                    } else {
+                        return Ok(())
+                    }
+                } else {
+                    let socket_id = ((fd as u64) << 32) + (pid as u64);
+                    if self.connections.get(&socket_id.to_ne_bytes()).is_none() {
                         return Ok(());
                     }
-                    let close_ev = event.set_tag_fd(DataTag::Close, fd);
-                    let event = event.set_err(ret);
-                    send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())?;
-                    close_ev
-                } else {
-                    event.set_ok(ret as _)
+                    if ret < 0 {
+                        if self.connections.remove(&socket_id.to_ne_bytes())?.is_none() {
+                            return Ok(());
+                        }
+                        let close_ev = event.set_tag_fd(DataTag::Close, fd);
+                        let event = event.set_err(ret);
+                        send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())?;
+                        close_ev
+                    } else {
+                        event.set_ok(ret as _)
+                    }
                 }
             }
             context::Variant::GetRandom { data_len, .. } => {
@@ -831,6 +847,10 @@ fn main() {
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
+                    if event.fd == 0 || event.fd == 1 {
+                        log::info!("read stdin, pid: {}, fd: {}, data: {}", event.pid, event.fd, hex::encode(data));
+                        continue;
+                    }
                     let key = (event.pid, event.fd);
                     if let Some(addr) = p2p_cns.get(&key) {
                         let metadata = EventMetadata {
@@ -853,6 +873,10 @@ fn main() {
                     }
                 }
                 SnifferEventVariant::OutgoingData(data) => {
+                    if event.fd == 0 || event.fd == 1 {
+                        log::info!("write stdout, pid: {}, fd: {}, data: {}", event.pid, event.fd, hex::encode(data));
+                        continue;
+                    }
                     let key = (event.pid, event.fd);
                     if let Some(addr) = p2p_cns.get(&key) {
                         let metadata = EventMetadata {
