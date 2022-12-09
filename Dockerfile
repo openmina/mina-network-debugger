@@ -18,6 +18,14 @@ RUN rustup component add rust-src \
         --toolchain nightly-2022-10-10-x86_64-unknown-linux-gnu
 RUN cargo install bpf-linker --git ${linker_src} --branch ${linker_branch}
 
+RUN curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
+  && cd capnproto-c++-0.10.2 \
+  && ./configure \
+  && make -j6 check \
+  && make install \
+  && cd .. \
+  && rm -rf capnproto-c++-0.10.2
+
 # RUN cargo install --git https://github.com/name-placeholder/mina-network-debugger bpf-recorder --bin bpf-recorder
 COPY . .
 RUN cargo install --path bpf-recorder bpf-recorder
