@@ -367,7 +367,7 @@ impl App {
                     if ret >= 0 {
                         event.set_ok(ret as _)
                     } else {
-                        return Ok(())
+                        return Ok(());
                     }
                 } else {
                     let socket_id = ((fd as u64) << 32) + (pid as u64);
@@ -393,7 +393,7 @@ impl App {
                     if ret >= 0 {
                         event.set_ok(ret as _)
                     } else {
-                        return Ok(())
+                        return Ok(());
                     }
                 } else {
                     let socket_id = ((fd as u64) << 32) + (pid as u64);
@@ -588,9 +588,14 @@ fn main() {
         thread,
     };
 
-    use bpf_recorder::{sniffer_event::{SnifferEvent, SnifferEventVariant}, proc};
+    use bpf_recorder::{
+        sniffer_event::{SnifferEvent, SnifferEventVariant},
+        proc,
+    };
     use bpf_ring_buffer::RingBuffer;
-    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace, libp2p_helper};
+    use mina_recorder::{
+        EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace, libp2p_helper,
+    };
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
     // let env = env_logger::Env::default().default_filter_or("warn");

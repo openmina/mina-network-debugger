@@ -1,5 +1,9 @@
 use core::time::Duration;
-use std::{time::SystemTime, io::{self, BufRead}, fs::File};
+use std::{
+    time::SystemTime,
+    io::{self, BufRead},
+    fs::File,
+};
 
 #[derive(Default)]
 pub struct S {
@@ -14,9 +18,12 @@ impl S {
             let mut it = line.split(' ');
             match it.next() {
                 Some("btime") => {
-                    s.b_time = it.next()
+                    s.b_time = it
+                        .next()
                         .and_then(|s| s.parse::<u64>().ok())
-                        .and_then(|secs| SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs)));
+                        .and_then(|secs| {
+                            SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs))
+                        });
                 }
                 _ => (),
             }

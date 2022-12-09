@@ -37,7 +37,10 @@ pub fn process_request(pid: u32, incoming: bool, data: Vec<u8>) -> capnp::Result
 
 pub fn process_response(pid: u32, incoming: bool, data: Vec<u8>) -> capnp::Result<()> {
     use capnp::serialize;
-    use crate::libp2p_ipc_capnp::{daemon_interface::{message, push_message}, libp2p_helper_interface::{rpc_response, rpc_response_success}};
+    use crate::libp2p_ipc_capnp::{
+        daemon_interface::{message, push_message},
+        libp2p_helper_interface::{rpc_response, rpc_response_success},
+    };
 
     let incoming = if incoming { "<-" } else { "->" };
 
@@ -57,7 +60,7 @@ pub fn process_response(pid: u32, incoming: bool, data: Vec<u8>) -> capnp::Resul
                 log::info!("capnp message {pid} {incoming} disconnected {id}");
             }
             _ => (),
-        }
+        },
         message::RpcResponse(Ok(response)) => match response.which() {
             Ok(rpc_response::Success(Ok(response))) => match response.which() {
                 Ok(rpc_response_success::Listen(Ok(addresses))) => {
@@ -65,11 +68,11 @@ pub fn process_response(pid: u32, incoming: bool, data: Vec<u8>) -> capnp::Resul
                         let addr = addr.get_representation().unwrap();
                         log::info!("capnp message {pid} {incoming} listen {addr}");
                     }
-                },
+                }
                 _ => (),
-            }
+            },
             _ => (),
-        }
+        },
         _ => (),
     }
 

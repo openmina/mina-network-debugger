@@ -170,11 +170,15 @@ impl Database {
             block_storage.insert(key, g_event);
         }
 
-        let value = database_lock.last.iter().map(|(&hash, events)| {
-            let mut events = events.values().cloned().collect::<Vec<_>>();
-            events.sort_by(|a, b| a.time.cmp(&b.time));
-            GlobalBlockState { hash, events }
-        }).collect::<Vec<_>>();
+        let value = database_lock
+            .last
+            .iter()
+            .map(|(&hash, events)| {
+                let mut events = events.values().cloned().collect::<Vec<_>>();
+                events.sort_by(|a, b| a.time.cmp(&b.time));
+                GlobalBlockState { hash, events }
+            })
+            .collect::<Vec<_>>();
         drop(database_lock);
 
         if let Err(err) = self.db.put_block(current, value) {
