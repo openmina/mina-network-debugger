@@ -23,11 +23,11 @@ pub fn process_request(pid: u32, incoming: bool, data: Vec<u8>) -> capnp::Result
     match t.which()? {
         rpc_request::AddPeer(Ok(peer)) => {
             let addr = peer.get_multiaddr().unwrap().get_representation().unwrap();
-            log::info!("capnp message {pid} {incoming} add_peer {addr}");
+            log::debug!("capnp message {pid} {incoming} add_peer {addr}");
         }
         rpc_request::Publish(Ok(msg)) => {
             let topic = msg.get_topic().unwrap();
-            log::info!("capnp message {pid} {incoming} publish {topic}");
+            log::debug!("capnp message {pid} {incoming} publish {topic}");
         }
         _ => (),
     }
@@ -53,11 +53,11 @@ pub fn process_response(pid: u32, incoming: bool, data: Vec<u8>) -> capnp::Resul
         message::PushMessage(Ok(msg)) => match msg.which() {
             Ok(push_message::PeerConnected(Ok(peer))) => {
                 let id = peer.get_peer_id().unwrap().get_id().unwrap();
-                log::info!("capnp message {pid} {incoming} connected {id}");
+                log::debug!("capnp message {pid} {incoming} connected {id}");
             }
             Ok(push_message::PeerDisconnected(Ok(peer))) => {
                 let id = peer.get_peer_id().unwrap().get_id().unwrap();
-                log::info!("capnp message {pid} {incoming} disconnected {id}");
+                log::debug!("capnp message {pid} {incoming} disconnected {id}");
             }
             _ => (),
         },
@@ -66,7 +66,7 @@ pub fn process_response(pid: u32, incoming: bool, data: Vec<u8>) -> capnp::Resul
                 Ok(rpc_response_success::Listen(Ok(addresses))) => {
                     for addr in addresses.get_result().unwrap() {
                         let addr = addr.get_representation().unwrap();
-                        log::info!("capnp message {pid} {incoming} listen {addr}");
+                        log::debug!("capnp message {pid} {incoming} listen {addr}");
                     }
                 }
                 _ => (),
