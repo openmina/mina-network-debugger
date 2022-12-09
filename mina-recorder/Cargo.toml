@@ -3,7 +3,7 @@ name = "mina-recorder"
 version = "0.1.0"
 authors = ["Vladislav Melnik <vladislav.melnik@viablesystems.io>"]
 edition = "2021"
-rust-version = "1.58.1"
+rust-version = "1.65.0"
 license = "MIT"
 
 [[bin]]
@@ -12,6 +12,7 @@ path = "src/bin/mina-viewer.rs"
 
 [build-dependencies]
 prost-build = { version = "0.11.3" }
+capnpc = { version = "0.15.1" }
 
 [dependencies]
 log = { version = "0.4.17" }
@@ -25,6 +26,7 @@ bitflags = { version = "1.3" }
 prost = { version = "0.11.3" }
 mina-p2p-messages = { git = "https://github.com/name-placeholder/mina-p2p-messages-rs.git", rev = "7d285766271d4800821333bc03ecff2f7f501ae7" }
 binprot = { git = "https://github.com/name-placeholder/binprot-rs", rev = "ead5ba916725abf8ab212b89985b47c79d1a006a" }
+capnp = { version = "0.15.2" }
 
 salsa20 = { version = "0.10.2" }
 blake2 = { version = "0.10.5" }

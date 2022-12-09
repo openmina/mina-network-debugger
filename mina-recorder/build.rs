@@ -19,4 +19,9 @@ fn main() {
         &["src/decode"],
     )
     .unwrap();
+
+    capnpc::CompilerCommand::new()
+        .file("libp2p_ipc.capnp")
+        .run()
+        .expect("compiling schema");
 }

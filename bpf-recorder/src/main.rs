@@ -590,7 +590,7 @@ fn main() {
 
     use bpf_recorder::{sniffer_event::{SnifferEvent, SnifferEventVariant}, proc};
     use bpf_ring_buffer::RingBuffer;
-    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace};
+    use mina_recorder::{EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace, libp2p_helper};
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
     // let env = env_logger::Env::default().default_filter_or("warn");
@@ -848,7 +848,7 @@ fn main() {
                 }
                 SnifferEventVariant::IncomingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        log::info!("read stdin, pid: {}, fd: {}, data: {}", event.pid, event.fd, hex::encode(data));
+                        libp2p_helper::process(event.pid, true, data).unwrap_or_default();
                         continue;
                     }
                     let key = (event.pid, event.fd);
@@ -874,7 +874,7 @@ fn main() {
                 }
                 SnifferEventVariant::OutgoingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        log::info!("write stdout, pid: {}, fd: {}, data: {}", event.pid, event.fd, hex::encode(data));
+                        libp2p_helper::process(event.pid, false, data).unwrap_or_default();
                         continue;
                     }
                     let key = (event.pid, event.fd);

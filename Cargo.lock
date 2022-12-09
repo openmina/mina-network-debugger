@@ -241,6 +241,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "capnp"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afaa14ddcf4553e700608c1c0ee3ca1f4cf673470462b99ff6dd6bedcdb6c6ce"
+
+[[package]]
+name = "capnpc"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c75a954b6ee17550b08c549cb6159ec7f905fe9a1ed4ba27b7d11353dc093710"
+dependencies = [
+ "capnp",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1350,6 +1365,8 @@ dependencies = [
  "binprot",
  "bitflags",
  "blake2",
+ "capnp",
+ "capnpc",
  "chacha20poly1305",
  "curve25519-dalek",
  "hex",
