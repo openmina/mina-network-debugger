@@ -41,6 +41,9 @@ pub struct Event {
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub better_time: SystemTime,
     #[custom_absorb(custom_coding::duration_opt_absorb)]
     #[custom_emit(custom_coding::duration_opt_emit)]
     pub latency: Option<Duration>,

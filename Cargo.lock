@@ -178,6 +178,7 @@ dependencies = [
  "env_logger",
  "hex",
  "libbpf-sys",
+ "libc",
  "log",
  "mina-recorder",
  "typenum",

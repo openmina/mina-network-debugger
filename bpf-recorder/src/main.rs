@@ -746,6 +746,16 @@ fn main() {
                 }
                 Some(origin) => *origin + Duration::from_nanos(event.ts0),
             };
+            let better_time = {
+                let instant_there = Duration::from_nanos(event.ts0);
+                let mut tp = libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: 0,
+                };
+                unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut tp) };
+                let instant_here = Duration::new(tp.tv_sec as _, tp.tv_nsec as _);
+                SystemTime::now() - instant_here + instant_there
+            };
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
@@ -783,6 +793,7 @@ fn main() {
                             fd: event.fd,
                         },
                         time,
+                        better_time,
                         duration,
                     };
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
@@ -803,6 +814,7 @@ fn main() {
                             fd: event.fd,
                         },
                         time,
+                        better_time,
                         duration,
                     };
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
@@ -823,6 +835,7 @@ fn main() {
                                 fd: event.fd,
                             },
                             time,
+                            better_time,
                             duration,
                         };
                         recorder.on_disconnect(metadata, buffered);
@@ -845,6 +858,7 @@ fn main() {
                                 fd: event.fd,
                             },
                             time,
+                            better_time,
                             duration,
                         };
 
@@ -865,6 +879,7 @@ fn main() {
                                 fd: event.fd,
                             },
                             time,
+                            better_time,
                             duration,
                         };
                         recorder.on_data(true, metadata, buffered, data);
@@ -891,6 +906,7 @@ fn main() {
                                 fd: event.fd,
                             },
                             time,
+                            better_time,
                             duration,
                         };
                         recorder.on_data(false, metadata, buffered, data);

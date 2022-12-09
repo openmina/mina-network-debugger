@@ -14,6 +14,7 @@ use crate::custom_coding;
 pub struct EventMetadata {
     pub id: ConnectionInfo,
     pub time: SystemTime,
+    pub better_time: SystemTime,
     pub duration: Duration,
 }
 
@@ -22,6 +23,7 @@ impl Default for EventMetadata {
         EventMetadata {
             id: ConnectionInfo::default(),
             time: SystemTime::UNIX_EPOCH,
+            better_time: SystemTime::UNIX_EPOCH,
             duration: Duration::from_secs(0),
         }
     }
@@ -69,7 +71,7 @@ impl fmt::Display for EventMetadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use time::OffsetDateTime;
 
-        let EventMetadata { id, time, duration } = self;
+        let EventMetadata { id, time, duration, .. } = self;
         let (hour, minute, second, nano) = OffsetDateTime::from(*time).time().as_hms_nano();
         let ConnectionInfo { pid, addr, fd } = id;
 
@@ -84,7 +86,7 @@ impl fmt::Display for DirectedId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use time::OffsetDateTime;
 
-        let EventMetadata { id, time, duration } = &self.metadata;
+        let EventMetadata { id, time, duration, .. } = &self.metadata;
         let (hour, minute, second, nano) = OffsetDateTime::from(*time).time().as_hms_nano();
         let ConnectionInfo { pid, addr, fd } = id;
 

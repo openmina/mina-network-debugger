@@ -32,6 +32,7 @@ fn main() {
             let metadata = EventMetadata {
                 id: ConnectionInfo::default(),
                 time: header.time,
+                better_time: header.time,
                 duration: Duration::from_secs(0),
             };
             recorder.on_data(

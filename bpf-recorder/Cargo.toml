@@ -29,6 +29,7 @@ log = { version = "0.4.17", optional = true }
 env_logger = { version = "0.10.0", default-features = false, optional = true }
 hex = { version = "0.4.3", optional = true }
 libbpf-sys = { version = "1.0.4", optional = true }
+libc = { version = "0.2.138", optional = true }
 
 # local
 bpf-ring-buffer = { version = "=0.1.0", path = "../bpf-ring-buffer", optional = true }
@@ -46,5 +47,6 @@ user = [
     "bpf-ring-buffer",
     "mina-recorder",
     "libbpf-sys",
+    "libc",
 ]
 client = []

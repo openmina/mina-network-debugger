@@ -104,6 +104,7 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
                 msg,
                 id.incoming,
                 id.metadata.time,
+                id.metadata.better_time,
                 &cx.db,
                 id.metadata.id.addr,
                 &cx.aggregator,
