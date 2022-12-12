@@ -17,6 +17,7 @@ capnpc = { version = "0.15.1" }
 [dependencies]
 log = { version = "0.4.17" }
 hex = { version = "0.4.3" }
+base64 = { version = "0.20.0" }
 time = { version = "0.3.17", features = ["formatting"] }
 unsigned-varint = { version = "0.7.1" }
 multiaddr = { version = "0.16.0" }
