@@ -152,7 +152,7 @@ impl DbCore {
         Self::LEDGER_HASH_INDEX,
     ];
 
-    const TTL: Duration = Duration::from_secs(120);
+    const TTL: Duration = Duration::from_secs(0);
 
     const CONNECTIONS: &'static str = "connections";
 

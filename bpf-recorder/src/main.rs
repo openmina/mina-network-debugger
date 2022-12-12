@@ -734,20 +734,20 @@ fn main() {
                 None => continue,
             };
 
-            if event.ts0 + 1_000_000_000 < last_ts {
-                log::error!("unordered {} < {last_ts}", event.ts0);
+            if event.ts1 + 1_000_000_000 < last_ts {
+                log::error!("unordered {} < {last_ts}", event.ts1);
             }
-            last_ts = event.ts0;
+            last_ts = event.ts1;
             let time = match &origin {
                 None => {
                     let now = SystemTime::now();
-                    origin = Some(now - Duration::from_nanos(event.ts0));
+                    origin = Some(now - Duration::from_nanos(event.ts1));
                     now
                 }
-                Some(origin) => *origin + Duration::from_nanos(event.ts0),
+                Some(origin) => *origin + Duration::from_nanos(event.ts1),
             };
             let better_time = {
-                let instant_there = Duration::from_nanos(event.ts0);
+                let instant_there = Duration::from_nanos(event.ts1);
                 let mut tp = libc::timespec {
                     tv_sec: 0,
                     tv_nsec: 0,
@@ -867,7 +867,9 @@ fn main() {
                 }
                 SnifferEventVariant::IncomingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        libp2p_helper::process(event.pid, true, data).unwrap_or_default();
+                        if let Err(err) = libp2p_helper::process(event.pid, true, data.clone()) {
+                            log::debug!("capnp {} <- {err}, {}", event.pid, hex::encode(&data));
+                        }
                         continue;
                     }
                     let key = (event.pid, event.fd);
@@ -894,7 +896,9 @@ fn main() {
                 }
                 SnifferEventVariant::OutgoingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        libp2p_helper::process(event.pid, false, data).unwrap_or_default();
+                        if let Err(err) = libp2p_helper::process(event.pid, false, data) {
+                            log::debug!("capnp {} -> {err}", event.pid);
+                        }
                         continue;
                     }
                     let key = (event.pid, event.fd);
