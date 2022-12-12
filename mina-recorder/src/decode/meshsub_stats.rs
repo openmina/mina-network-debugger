@@ -116,7 +116,7 @@ impl Serialize for Hash {
     where
         S: serde::Serializer,
     {
-        hex::encode(&self.0).serialize(serializer)
+        base64::encode(&self.0).serialize(serializer)
     }
 }
 
