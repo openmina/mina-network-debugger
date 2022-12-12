@@ -242,13 +242,15 @@ fn routes(
 
     let cors_filter = warp::cors()
         .allow_any_origin()
-        .allow_methods(["OPTIONS", "GET", "POST", "DELETE", "PUT"])
+        .allow_methods(["OPTIONS", "GET", "POST", "DELETE", "PUT", "HEAD"])
+        .allow_credentials(true)
+        .allow_headers(["Accept", "Authorization", "baggage", "Cache-Control", "Content-Type", "DNT", "If-Modified-Since", "Keep-Alive", "Origin", "sentry-trace", "User-Agent", "X-Requested-With", "X-Cache-Hash"])
         .build();
 
     let binary = warp::get()
         .and(message_bin(db.clone()))
         .with(with::header("Content-Type", "application/octet-stream"))
-        .with(with::header("Access-Control-Allow-Origin", "*"))
+        // .with(with::header("Access-Control-Allow-Origin", "*"))
         .with(cors_filter.clone());
 
     warp::get()
@@ -268,7 +270,7 @@ fn routes(
                 .or(version().or(openapi())),
         )
         .with(with::header("Content-Type", "application/json"))
-        .with(with::header("Access-Control-Allow-Origin", "*"))
+        // .with(with::header("Access-Control-Allow-Origin", "*"))
         .with(cors_filter)
         .or(binary)
 }
