@@ -423,3 +423,17 @@ impl Serialize for Time {
         self.to_string().serialize(serializer)
     }
 }
+
+#[derive(Emit, Absorb)]
+pub struct StatsDbKey {
+    pub height: u32,
+    #[custom_emit(custom_coding::addr_emit)]
+    #[custom_absorb(custom_coding::addr_absorb)]
+    pub node_address: SocketAddr,
+}
+
+impl fmt::Display for StatsDbKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.height, self.node_address)
+    }
+}

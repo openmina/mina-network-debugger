@@ -175,7 +175,7 @@ fn check_cleanup() {
         assert_eq!(stat.events.len(), 1);
         assert_eq!(stat.events[0].latency, None);
 
-        let (_, stat) = db.core().fetch_stats(id - 1).unwrap().unwrap();
+        let (_, stat) = db.core().fetch_stats(id.height - 1).unwrap();
         assert_eq!(stat.events.len(), 5);
         assert_eq!(stat.events[0].latency, None);
         assert_eq!(stat.events[1].latency, Some(Duration::from_secs(1)));

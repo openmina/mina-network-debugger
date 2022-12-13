@@ -66,9 +66,9 @@ impl StatsState {
         node_address: SocketAddr,
     ) {
         let (sender_addr, receiver_addr) = if incoming {
-            (peer.to_string(), "local node".to_string())
+            (peer, node_address)
         } else {
-            ("local node".to_string(), peer.to_string())
+            (node_address, peer)
         };
         let mut block_stat_updated = false;
         let mut tx_stat_updated = true;
@@ -216,9 +216,8 @@ impl StatsState {
                                 time,
                                 better_time,
                                 latency,
-                                sender_addr: sender_addr.clone(),
-                                receiver_addr: receiver_addr.clone(),
-                                node_address,
+                                sender_addr,
+                                receiver_addr,
                             };
                             if let Some(aggregator) = aggregator {
                                 aggregator.post_event(&event);
@@ -290,9 +289,8 @@ impl StatsState {
                                     time,
                                     better_time,
                                     latency: time.duration_since(first.time).ok(),
-                                    sender_addr: sender_addr.clone(),
-                                    receiver_addr: receiver_addr.clone(),
-                                    node_address,
+                                    sender_addr,
+                                    receiver_addr,
                                 };
                                 if let Some(aggregator) = aggregator {
                                     aggregator.post_event(&event);
@@ -308,8 +306,7 @@ impl StatsState {
         }
         // if block_stat_updated {
         let _ = block_stat_updated;
-        // TODO: BUG, key must be pair (height, port), because now mina node overwrite other mina node data
-        db.stats(self.block_stat.height, &self.block_stat).unwrap();
+        db.stats(self.block_stat.height, node_address, &self.block_stat).unwrap();
         // }
         if tx_stat_updated {
             if let Some(stat) = &self.tx_stat {

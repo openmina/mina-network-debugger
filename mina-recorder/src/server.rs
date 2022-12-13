@@ -141,17 +141,8 @@ fn stats(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("block" / u32).map(move |id| -> WithStatus<Json> {
-        let v = db.fetch_stats(id);
-        match v {
-            Ok(v) => {
-                let v = v.map(|(_, v)| v);
-                reply::with_status(reply::json(&v), StatusCode::OK)
-            }
-            Err(err) => reply::with_status(
-                reply::json(&err.to_string()),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
-        }
+        let v = db.fetch_stats(id).map(|(_, v)| v);
+        reply::with_status(reply::json(&v), StatusCode::OK)
     })
 }
 

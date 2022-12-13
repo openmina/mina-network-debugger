@@ -67,7 +67,7 @@ impl GlobalEvent {
                 sent_message_id: None,
                 time: event.better_time,
                 latency: None,
-                source_addr: Some(event.sender_addr),
+                source_addr: Some(event.sender_addr.to_string()),
                 node_addr: addr,
                 destination_addr: None,
                 node_id: id,
@@ -85,7 +85,7 @@ impl GlobalEvent {
                 latency: None,
                 source_addr: None,
                 node_addr: addr,
-                destination_addr: Some(event.receiver_addr),
+                destination_addr: Some(event.receiver_addr.to_string()),
                 node_id: id,
             })
         }
@@ -96,7 +96,7 @@ impl GlobalEvent {
             if !event.incoming {
                 self.sent_message_id = Some(event.message_id);
                 self.latency = Some(latency);
-                self.destination_addr = Some(event.receiver_addr);
+                self.destination_addr = Some(event.receiver_addr.to_string());
             }
         }
     }
@@ -132,7 +132,7 @@ impl Database {
     }
 
     pub fn post_data(&self, debugger_name: &str, event: Event) {
-        let addr = event.node_address;
+        let addr = event.node_address();
 
         log::info!("got data from {debugger_name} at {addr}");
 

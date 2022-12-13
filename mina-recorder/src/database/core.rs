@@ -20,7 +20,7 @@ use thiserror::Error;
 use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-        Timestamp,
+        Timestamp, StatsDbKey,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
     index::{
@@ -208,7 +208,8 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[1], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[2], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[3], Default::default()),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], Default::default()),
+            // STATS
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(4)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(8)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(16)),
@@ -376,9 +377,19 @@ impl DbCore {
         Ok(())
     }
 
-    pub fn put_stats(&self, height: u32, bytes: Vec<u8>) -> Result<(), DbError> {
+    pub fn put_stats(
+        &self,
+        height: u32,
+        node_address: SocketAddr,
+        bytes: Vec<u8>,
+    ) -> Result<(), DbError> {
+        let key = StatsDbKey {
+            height,
+            node_address,
+        };
+
         self.inner
-            .put_cf(self.stats(), height.to_be_bytes(), bytes)?;
+            .put_cf(self.stats(), key.chain(vec![]), bytes)?;
 
         Ok(())
     }
@@ -909,20 +920,27 @@ impl DbCore {
         Ok(it)
     }
 
-    pub fn fetch_last_stat(&self) -> Option<(u32, BlockStat)> {
+    pub fn fetch_last_stat(&self) -> Option<(StatsDbKey, BlockStat)> {
         use rocksdb::IteratorMode;
 
-        self.inner
+       let (k, _) = self.inner
             .iterator_cf(self.stats(), IteratorMode::End)
             .next()
-            .and_then(Self::decode)
+            .and_then(Self::decode::<StatsDbKey, BlockStat>)?;
+        self.fetch_stats(k.height)
     }
 
-    pub fn fetch_stats(&self, id: u32) -> Result<Option<(u32, BlockStat)>, DbError> {
-        match self.inner.get_cf(self.stats(), id.to_be_bytes())? {
-            None => Ok(None),
-            Some(v) => Ok(Some((id, AbsorbExt::absorb_ext(&v)?))),
-        }
+    pub fn fetch_stats(&self, id: u32) -> Option<(StatsDbKey, BlockStat)> {
+        let id_bytes = id.to_be_bytes();
+        let mode = rocksdb::IteratorMode::From(&id_bytes, rocksdb::Direction::Forward);
+        self.inner.iterator_cf(self.stats(), mode)
+            .filter_map(Self::decode::<StatsDbKey, BlockStat>)
+            .take_while(|(key, _)| key.height == id)
+            .fold(None, |mut acc, (k, mut v)| {
+                let (_, current) = acc.get_or_insert((k, BlockStat::default()));
+                current.events.append(&mut v.events);
+                acc
+            })
     }
 
     pub fn fetch_last_stat_tx(&self) -> Option<(u32, TxStat)> {

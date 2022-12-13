@@ -1,8 +1,7 @@
 use std::{
     time::{SystemTime, Duration},
     fmt,
-    str::FromStr,
-    net::SocketAddr,
+    str::FromStr, net::SocketAddr,
 };
 
 use libp2p_core::PeerId;
@@ -47,11 +46,22 @@ pub struct Event {
     #[custom_absorb(custom_coding::duration_opt_absorb)]
     #[custom_emit(custom_coding::duration_opt_emit)]
     pub latency: Option<Duration>,
-    pub sender_addr: String,
-    pub receiver_addr: String,
     #[custom_absorb(custom_coding::addr_absorb)]
     #[custom_emit(custom_coding::addr_emit)]
-    pub node_address: SocketAddr,
+    pub sender_addr: SocketAddr,
+    #[custom_absorb(custom_coding::addr_absorb)]
+    #[custom_emit(custom_coding::addr_emit)]
+    pub receiver_addr: SocketAddr,
+}
+
+impl Event {
+    pub fn node_address(&self) -> SocketAddr {
+        if self.incoming {
+            self.receiver_addr
+        } else {
+            self.sender_addr
+        }
+    }
 }
 
 #[derive(Clone, Absorb, Emit, Serialize)]
