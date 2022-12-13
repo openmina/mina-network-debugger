@@ -235,7 +235,21 @@ fn routes(
         .allow_any_origin()
         .allow_methods(["OPTIONS", "GET", "POST", "DELETE", "PUT", "HEAD"])
         .allow_credentials(true)
-        .allow_headers(["Accept", "Authorization", "baggage", "Cache-Control", "Content-Type", "DNT", "If-Modified-Since", "Keep-Alive", "Origin", "sentry-trace", "User-Agent", "X-Requested-With", "X-Cache-Hash"])
+        .allow_headers([
+            "Accept",
+            "Authorization",
+            "baggage",
+            "Cache-Control",
+            "Content-Type",
+            "DNT",
+            "If-Modified-Since",
+            "Keep-Alive",
+            "Origin",
+            "sentry-trace",
+            "User-Agent",
+            "X-Requested-With",
+            "X-Cache-Hash",
+        ])
         .build();
 
     let binary = warp::get()

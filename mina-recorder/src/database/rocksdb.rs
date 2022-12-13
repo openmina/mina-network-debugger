@@ -54,8 +54,14 @@ impl DbFacade {
         })
     }
 
-    pub fn stats(&self, height: u32, node_address: SocketAddr, value: &BlockStat) -> Result<(), DbError> {
-        self.inner.put_stats(height, node_address, value.chain(vec![]))
+    pub fn stats(
+        &self,
+        height: u32,
+        node_address: SocketAddr,
+        value: &BlockStat,
+    ) -> Result<(), DbError> {
+        self.inner
+            .put_stats(height, node_address, value.chain(vec![]))
     }
 
     pub fn stats_tx(&self, height: u32, value: &TxStat) -> Result<(), DbError> {

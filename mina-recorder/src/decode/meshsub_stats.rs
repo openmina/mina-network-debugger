@@ -1,7 +1,8 @@
 use std::{
     time::{SystemTime, Duration},
     fmt,
-    str::FromStr, net::SocketAddr,
+    str::FromStr,
+    net::SocketAddr,
 };
 
 use libp2p_core::PeerId;

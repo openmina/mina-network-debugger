@@ -306,7 +306,8 @@ impl StatsState {
         }
         // if block_stat_updated {
         let _ = block_stat_updated;
-        db.stats(self.block_stat.height, node_address, &self.block_stat).unwrap();
+        db.stats(self.block_stat.height, node_address, &self.block_stat)
+            .unwrap();
         // }
         if tx_stat_updated {
             if let Some(stat) = &self.tx_stat {

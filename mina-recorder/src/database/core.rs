@@ -388,8 +388,7 @@ impl DbCore {
             node_address,
         };
 
-        self.inner
-            .put_cf(self.stats(), key.chain(vec![]), bytes)?;
+        self.inner.put_cf(self.stats(), key.chain(vec![]), bytes)?;
 
         Ok(())
     }
@@ -923,7 +922,8 @@ impl DbCore {
     pub fn fetch_last_stat(&self) -> Option<(StatsDbKey, BlockStat)> {
         use rocksdb::IteratorMode;
 
-       let (k, _) = self.inner
+        let (k, _) = self
+            .inner
             .iterator_cf(self.stats(), IteratorMode::End)
             .next()
             .and_then(Self::decode::<StatsDbKey, BlockStat>)?;
@@ -933,7 +933,8 @@ impl DbCore {
     pub fn fetch_stats(&self, id: u32) -> Option<(StatsDbKey, BlockStat)> {
         let id_bytes = id.to_be_bytes();
         let mode = rocksdb::IteratorMode::From(&id_bytes, rocksdb::Direction::Forward);
-        self.inner.iterator_cf(self.stats(), mode)
+        self.inner
+            .iterator_cf(self.stats(), mode)
             .filter_map(Self::decode::<StatsDbKey, BlockStat>)
             .take_while(|(key, _)| key.height == id)
             .fold(None, |mut acc, (k, mut v)| {

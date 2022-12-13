@@ -71,7 +71,9 @@ impl fmt::Display for EventMetadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use time::OffsetDateTime;
 
-        let EventMetadata { id, time, duration, .. } = self;
+        let EventMetadata {
+            id, time, duration, ..
+        } = self;
         let (hour, minute, second, nano) = OffsetDateTime::from(*time).time().as_hms_nano();
         let ConnectionInfo { pid, addr, fd } = id;
 
@@ -86,7 +88,9 @@ impl fmt::Display for DirectedId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use time::OffsetDateTime;
 
-        let EventMetadata { id, time, duration, .. } = &self.metadata;
+        let EventMetadata {
+            id, time, duration, ..
+        } = &self.metadata;
         let (hour, minute, second, nano) = OffsetDateTime::from(*time).time().as_hms_nano();
         let ConnectionInfo { pid, addr, fd } = id;
 
