@@ -1,7 +1,7 @@
 use std::{
     sync::{Arc, Mutex},
     collections::BTreeMap,
-    time::{SystemTime, Duration},
+    time::SystemTime,
     net::SocketAddr,
     path::Path,
 };
@@ -34,12 +34,8 @@ pub struct GlobalEvent {
     pub debugger_name: String,
     pub received_message_id: Option<u64>,
     pub sent_message_id: Option<u64>,
-    #[custom_absorb(custom_coding::time_absorb)]
-    #[custom_emit(custom_coding::time_emit)]
-    pub time: SystemTime,
-    #[custom_absorb(custom_coding::duration_opt_absorb)]
-    #[custom_emit(custom_coding::duration_opt_emit)]
-    pub latency: Option<Duration>,
+    pub receiving_time_microseconds: Option<u64>,
+    pub sending_time_microseconds: Option<u64>,
     pub source_addr: Option<String>,
     #[custom_absorb(custom_coding::addr_absorb)]
     #[custom_emit(custom_coding::addr_emit)]
@@ -55,9 +51,11 @@ pub struct Key {
 }
 
 impl GlobalEvent {
-    pub fn new(event: Event, addr: SocketAddr, id: u32, debugger_name: String) -> Option<Self> {
+    pub fn new(event: Event, addr: SocketAddr, id: u32, debugger_name: String) -> Self {
+        let time = event.better_time.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+        let time_microseconds = time.as_micros() as u64;
         if event.incoming {
-            Some(GlobalEvent {
+            GlobalEvent {
                 producer_id: event.producer_id,
                 hash: event.hash,
                 block_height: event.block_height,
@@ -65,15 +63,15 @@ impl GlobalEvent {
                 debugger_name,
                 received_message_id: Some(event.message_id),
                 sent_message_id: None,
-                time: event.better_time,
-                latency: None,
+                receiving_time_microseconds: Some(time_microseconds),
+                sending_time_microseconds: None,
                 source_addr: Some(event.sender_addr.to_string()),
                 node_addr: addr,
                 destination_addr: None,
                 node_id: id,
-            })
+            }
         } else {
-            Some(GlobalEvent {
+            GlobalEvent {
                 producer_id: event.producer_id,
                 hash: event.hash,
                 block_height: event.block_height,
@@ -81,21 +79,23 @@ impl GlobalEvent {
                 debugger_name,
                 received_message_id: None,
                 sent_message_id: Some(event.message_id),
-                time: event.better_time,
-                latency: None,
+                receiving_time_microseconds: None,
+                sending_time_microseconds: Some(time_microseconds),
                 source_addr: None,
                 node_addr: addr,
                 destination_addr: Some(event.receiver_addr.to_string()),
                 node_id: id,
-            })
+            }
         }
     }
 
     pub fn append(&mut self, event: Event) {
         if let Some(latency) = event.latency {
             if !event.incoming {
+                let time = (event.time + latency).duration_since(SystemTime::UNIX_EPOCH).unwrap();
+                let time_microseconds = time.as_micros() as u64;
                 self.sent_message_id = Some(event.message_id);
-                self.latency = Some(latency);
+                self.sending_time_microseconds = Some(time_microseconds);
                 self.destination_addr = Some(event.receiver_addr.to_string());
             }
         }
@@ -166,7 +166,8 @@ impl Database {
             if g_event.sent_message_id.is_none() {
                 g_event.append(event);
             }
-        } else if let Some(g_event) = GlobalEvent::new(event, addr, id, debugger_name.to_owned()) {
+        } else {
+            let g_event = GlobalEvent::new(event, addr, id, debugger_name.to_owned());
             block_storage.insert(key, g_event);
         }
 
@@ -175,7 +176,7 @@ impl Database {
             .iter()
             .map(|(&hash, events)| {
                 let mut events = events.values().cloned().collect::<Vec<_>>();
-                events.sort_by(|a, b| a.time.cmp(&b.time));
+                events.sort_by(|a, b| a.receiving_time_microseconds.cmp(&b.receiving_time_microseconds));
                 GlobalBlockState { hash, events }
             })
             .collect::<Vec<_>>();
@@ -203,7 +204,7 @@ impl Database {
             .iter()
             .map(|(&hash, events)| {
                 let mut events = events.values().cloned().collect::<Vec<_>>();
-                events.sort_by(|a, b| a.time.cmp(&b.time));
+                events.sort_by(|a, b| a.receiving_time_microseconds.cmp(&b.receiving_time_microseconds));
                 GlobalBlockState { hash, events }
             })
             .collect();
