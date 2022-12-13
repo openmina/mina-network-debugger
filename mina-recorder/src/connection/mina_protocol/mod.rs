@@ -99,17 +99,33 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
     let st = lock.entry(node_address).or_default();
     match stream.add(id, StreamKind::Meshsub, msg) {
         Ok(message_id) => {
-            st.observe(
+            let (b, t, events) = st.observe(
                 message_id.0,
                 msg,
                 id.incoming,
                 id.metadata.time,
                 id.metadata.better_time,
-                &cx.db,
                 id.metadata.id.addr,
-                &cx.aggregator,
                 node_address,
             );
+            let block_stat = st.block_stat();
+            let tx_state = st.tx_stat();
+            drop(st);
+            drop(lock);
+            // perform io, after lock is dropped and mutex unlock
+            if let Some(aggregator) = &cx.aggregator {
+                for event in events {
+                    aggregator.post_event(&event);
+                }
+            }
+            if b {
+                cx.db.stats(block_stat.height, node_address, &block_stat).unwrap();
+            }
+            if t {
+                if let Some(stat) = tx_state {
+                    cx.db.stats_tx(block_stat.height, &stat).unwrap();
+                }
+            }
         }
         Err(err) => log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg)),
     }

@@ -52,7 +52,10 @@ pub struct Key {
 
 impl GlobalEvent {
     pub fn new(event: Event, addr: SocketAddr, id: u32, debugger_name: String) -> Self {
-        let time = event.better_time.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+        let time = event
+            .better_time
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
         let time_microseconds = time.as_micros() as u64;
         if event.incoming {
             GlobalEvent {
@@ -92,7 +95,9 @@ impl GlobalEvent {
     pub fn append(&mut self, event: Event) {
         if let Some(latency) = event.latency {
             if !event.incoming {
-                let time = (event.time + latency).duration_since(SystemTime::UNIX_EPOCH).unwrap();
+                let time = (event.time + latency)
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap();
                 let time_microseconds = time.as_micros() as u64;
                 self.sent_message_id = Some(event.message_id);
                 self.sending_time_microseconds = Some(time_microseconds);
@@ -176,7 +181,10 @@ impl Database {
             .iter()
             .map(|(&hash, events)| {
                 let mut events = events.values().cloned().collect::<Vec<_>>();
-                events.sort_by(|a, b| a.receiving_time_microseconds.cmp(&b.receiving_time_microseconds));
+                events.sort_by(|a, b| {
+                    a.receiving_time_microseconds
+                        .cmp(&b.receiving_time_microseconds)
+                });
                 GlobalBlockState { hash, events }
             })
             .collect::<Vec<_>>();
@@ -204,7 +212,10 @@ impl Database {
             .iter()
             .map(|(&hash, events)| {
                 let mut events = events.values().cloned().collect::<Vec<_>>();
-                events.sort_by(|a, b| a.receiving_time_microseconds.cmp(&b.receiving_time_microseconds));
+                events.sort_by(|a, b| {
+                    a.receiving_time_microseconds
+                        .cmp(&b.receiving_time_microseconds)
+                });
                 GlobalBlockState { hash, events }
             })
             .collect();

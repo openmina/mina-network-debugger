@@ -4,8 +4,6 @@ use mina_p2p_messages::{gossip::GossipNetMessageV2, v2};
 use radiation::{Absorb, Emit};
 use libp2p_core::PeerId;
 
-use super::{database::DbFacade, recorder::Aggregator};
-
 use crate::decode::{
     meshsub_stats::{BlockStat, TxStat, Hash, Event, Signature, Tx, Snark},
     meshsub::{self, ControlIHave, ControlIWant},
@@ -53,18 +51,44 @@ struct TxDesc {
 }
 
 impl StatsState {
-    pub fn observe<'a>(
-        &'a mut self,
+    #[cfg(test)]
+    pub fn observe_w(
+        &mut self,
+        message_id: u64,
+        msg: &[u8],
+        incoming: bool,
+        time: SystemTime,
+        db: &crate::database::DbFacade,
+        peer: SocketAddr,
+    ) {
+        let node_address = "0.0.0.0:0".parse().unwrap();
+        let _ = self.observe(
+            message_id,
+            msg,
+            incoming,
+            time,
+            time,
+            peer,
+            node_address,
+        );
+        let block_stat = self.block_stat();
+        db.stats(block_stat.height, node_address, &block_stat).unwrap();
+        if let Some(stat) = self.tx_stat() {
+            db.stats_tx(self.block_stat.height, &stat).unwrap();
+        }
+    }
+
+    pub fn observe(
+        &mut self,
         message_id: u64,
         msg: &[u8],
         incoming: bool,
         time: SystemTime,
         better_time: SystemTime,
-        db: &DbFacade,
         peer: SocketAddr,
-        aggregator: &Option<Aggregator>,
         node_address: SocketAddr,
-    ) {
+    ) -> (bool, bool, Vec<Event>) {
+        let mut events_for_aggregator = vec![];
         let (sender_addr, receiver_addr) = if incoming {
             (peer, node_address)
         } else {
@@ -120,15 +144,14 @@ impl StatsState {
                                         "sending block, did not received it before {}",
                                         message_id
                                     );
-                                } else {
-                                    let v = Description {
-                                        time,
-                                        producer_id,
-                                        block_height,
-                                        global_slot,
-                                    };
-                                    self.first.insert(hash, v);
                                 }
+                                let v = Description {
+                                    time,
+                                    producer_id,
+                                    block_height,
+                                    global_slot,
+                                };
+                                self.first.insert(hash, v);
 
                                 let tx_stat = self.tx_stat.get_or_insert_with(|| TxStat {
                                     block_time: time,
@@ -219,9 +242,7 @@ impl StatsState {
                                 sender_addr,
                                 receiver_addr,
                             };
-                            if let Some(aggregator) = aggregator {
-                                aggregator.post_event(&event);
-                            }
+                            events_for_aggregator.push(event.clone());
                             self.block_stat.events.push(event);
                             block_stat_updated = true;
                         }
@@ -292,9 +313,7 @@ impl StatsState {
                                     sender_addr,
                                     receiver_addr,
                                 };
-                                if let Some(aggregator) = aggregator {
-                                    aggregator.post_event(&event);
-                                }
+                                events_for_aggregator.push(event.clone());
                                 self.block_stat.events.push(event);
                                 block_stat_updated = true;
                             }
@@ -304,15 +323,15 @@ impl StatsState {
                 _ => (),
             }
         }
-        // if block_stat_updated {
-        let _ = block_stat_updated;
-        db.stats(self.block_stat.height, node_address, &self.block_stat)
-            .unwrap();
-        // }
-        if tx_stat_updated {
-            if let Some(stat) = &self.tx_stat {
-                db.stats_tx(self.block_stat.height, stat).unwrap();
-            }
-        }
+
+        (block_stat_updated, tx_stat_updated, events_for_aggregator)
+    }
+
+    pub fn block_stat(&self) -> BlockStat {
+        self.block_stat.clone()
+    }
+
+    pub fn tx_stat(&self) -> Option<TxStat> {
+        self.tx_stat.clone()
     }
 }
