@@ -6,11 +6,13 @@ use std::{
     ops::AddAssign,
 };
 
+use binprot::BinProtRead;
+use mina_p2p_messages::{v2, gossip::GossipNetMessageV2};
 use radiation::{Absorb, Emit};
 
 use serde::{Serialize, Deserialize};
 
-use crate::{event::ConnectionInfo, custom_coding, strace::StraceLine};
+use crate::{event::ConnectionInfo, custom_coding, strace::StraceLine, libp2p_helper::CapnpEvent, meshsub_stats::Hash};
 
 #[derive(
     Clone, Copy, Debug, Absorb, Emit, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
@@ -435,5 +437,150 @@ pub struct StatsDbKey {
 impl fmt::Display for StatsDbKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.height, self.node_address)
+    }
+}
+
+#[derive(Emit, Absorb)]
+pub struct CapnpEventWithMetadataKey {
+    pub height: u32,
+    #[custom_emit(custom_coding::time_emit)]
+    #[custom_absorb(custom_coding::time_absorb)]
+    pub time: SystemTime,
+}
+
+impl fmt::Display for CapnpEventWithMetadataKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.time)
+    }
+}
+
+#[derive(Emit, Absorb)]
+pub struct CapnpEventWithMetadata {
+    #[custom_emit(custom_coding::addr_emit)]
+    #[custom_absorb(custom_coding::addr_absorb)]
+    pub node_address: SocketAddr,
+    pub events: Vec<CapnpEvent>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum GossipNetMessageV2Short {
+    NewState {
+        height: u32,
+    },
+    SnarkPoolDiff,
+    TransactionPoolDiff {
+        inner: v2::NetworkPoolTransactionPoolDiffVersionedStableV2,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum CapnpEventDecoded {
+    ReceivedGossip {
+        peer_id: String,
+        peer_address: String,
+        msg: GossipNetMessageV2Short,
+        hash: Hash,
+    },
+    PublishGossip {
+        msg: GossipNetMessageV2Short,
+        hash: Hash,
+    },
+}
+
+#[derive(Serialize)]
+pub struct CapnpTableRow {
+    pub time_microseconds: u64,
+    pub node_address: SocketAddr,
+    pub events: Vec<CapnpEventDecoded>,
+}
+
+impl CapnpTableRow {
+    pub fn transform(k: CapnpEventWithMetadataKey, v: CapnpEventWithMetadata) -> Self {
+        CapnpTableRow {
+            time_microseconds: k.time.duration_since(SystemTime::UNIX_EPOCH).expect("msg").as_micros() as u64,
+            node_address: v.node_address,
+            events: v.events.into_iter().filter_map(|event| match event {
+                CapnpEvent::Publish { msg, hash } => {
+                    let mut slice = msg.as_slice();
+                    match GossipNetMessageV2::binprot_read(&mut slice) {
+                        Ok(GossipNetMessageV2::NewState(block)) => {
+                            let height = block
+                                .header
+                                .protocol_state
+                                .body
+                                .consensus_state
+                                .blockchain_length
+                                .0
+                                .0 as u32;
+                            let msg = GossipNetMessageV2Short::NewState { height };
+                            let hash = Hash(hash);
+                            Some(CapnpEventDecoded::PublishGossip { msg, hash })
+                        },
+                        Ok(GossipNetMessageV2::SnarkPoolDiff(_)) => {
+                            let msg = GossipNetMessageV2Short::SnarkPoolDiff;
+                            let hash = Hash(hash);
+                            Some(CapnpEventDecoded::PublishGossip { msg, hash })
+                        }
+                        Ok(GossipNetMessageV2::TransactionPoolDiff(inner)) => {
+                            let msg = GossipNetMessageV2Short::TransactionPoolDiff { inner };
+                            let hash = Hash(hash);
+                            Some(CapnpEventDecoded::PublishGossip { msg, hash })
+                        }
+                        Err(err) => {
+                            log::error!("capnp decode {err}");
+                            None
+                        },
+                    }
+                }
+                CapnpEvent::ReceivedGossip { peer_id, peer_host, peer_port, msg, hash } => {
+                    let mut slice = msg.as_slice();
+                    match GossipNetMessageV2::binprot_read(&mut slice) {
+                        Ok(GossipNetMessageV2::NewState(block)) => {
+                            let height = block
+                                .header
+                                .protocol_state
+                                .body
+                                .consensus_state
+                                .blockchain_length
+                                .0
+                                .0 as u32;
+                            let msg = GossipNetMessageV2Short::NewState { height };
+                            Some(CapnpEventDecoded::ReceivedGossip {
+                                peer_id,
+                                peer_address: format!("{peer_host}:{peer_port}"),
+                                msg,
+                                hash: Hash(hash),
+                            })
+                        },
+                        Ok(GossipNetMessageV2::SnarkPoolDiff(_)) => {
+                            let msg = GossipNetMessageV2Short::SnarkPoolDiff;
+                            Some(CapnpEventDecoded::ReceivedGossip {
+                                peer_id,
+                                peer_address: format!("{peer_host}:{peer_port}"),
+                                msg,
+                                hash: Hash(hash),
+                            })
+                        }
+                        Ok(GossipNetMessageV2::TransactionPoolDiff(inner)) => {
+                            let msg = GossipNetMessageV2Short::TransactionPoolDiff { inner };
+                            Some(CapnpEventDecoded::ReceivedGossip {
+                                peer_id,
+                                peer_address: format!("{peer_host}:{peer_port}"),
+                                msg,
+                                hash: Hash(hash),
+                            })
+                        }
+                        Err(err) => {
+                            log::error!("capnp decode {err}");
+                            None
+                        },
+                    }
+                }
+            }).collect()
+        }
     }
 }

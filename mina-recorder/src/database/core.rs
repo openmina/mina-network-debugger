@@ -20,7 +20,7 @@ use thiserror::Error;
 use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-        Timestamp, StatsDbKey,
+        Timestamp, StatsDbKey, CapnpEventWithMetadata, CapnpEventWithMetadataKey, CapnpTableRow,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
     index::{
@@ -137,13 +137,14 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 12] = [
+    const CFS: [&'static str; 13] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::RANDOMNESS,
         Self::STRACE,
         Self::STATS,
         Self::STATS_TX,
+        Self::CAPNP,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
@@ -173,6 +174,8 @@ impl DbCore {
     const STATS: &'static str = "stats";
 
     const STATS_TX: &'static str = "stats_tx";
+
+    const CAPNP: &'static str = "capnp_data";
 
     // indexes
 
@@ -211,12 +214,15 @@ impl DbCore {
             // STATS
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[4], opts_with_prefix_extractor(4)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[5], Default::default()),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], opts_with_prefix_extractor(8)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(16)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(2)),
+            // CAPNP
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], Default::default()),
+
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(8)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(2)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(18)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[11], opts_with_prefix_extractor(32)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[11], opts_with_prefix_extractor(18)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[12], opts_with_prefix_extractor(32)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -260,6 +266,10 @@ impl DbCore {
 
     fn stats_tx(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::STATS_TX).expect("must exist")
+    }
+
+    fn capnp(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::CAPNP).expect("must exist")
     }
 
     fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
@@ -396,6 +406,13 @@ impl DbCore {
     pub fn put_stats_tx(&self, height: u32, bytes: Vec<u8>) -> Result<(), DbError> {
         self.inner
             .put_cf(self.stats_tx(), height.to_be_bytes(), bytes)?;
+
+        Ok(())
+    }
+
+    pub fn put_capnp(&self, key: CapnpEventWithMetadataKey, event: CapnpEventWithMetadata) -> Result<(), DbError> {
+        self.inner
+            .put_cf(self.capnp(), key.chain(vec![]), event.chain(vec![]))?;
 
         Ok(())
     }
@@ -1059,6 +1076,24 @@ impl DbCore {
             middle: o(LedgerHashIdx::middle(h.clone()).chain(vec![]))?,
             second_target: o(LedgerHashIdx::second_target(h).chain(vec![]))?,
         })
+    }
+
+    pub fn fetch_capnp_latest(&self) -> Option<Vec<CapnpTableRow>> {
+        let (k, _) = self.inner
+            .iterator_cf(self.capnp(), rocksdb::IteratorMode::End)
+            .next()
+            .and_then(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)?;
+        Some(self.fetch_capnp(k.height))
+    }
+
+    pub fn fetch_capnp(&self, height: u32) -> Vec<CapnpTableRow> {
+        let key = height.to_be_bytes();
+        self.inner
+            .iterator_cf(self.capnp(), rocksdb::IteratorMode::From(&key, rocksdb::Direction::Forward))
+            .filter_map(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)
+            .take_while(|(k, _)| k.height == height)
+            .map(|(k, v)| CapnpTableRow::transform(k, v))
+            .collect()
     }
 }
 

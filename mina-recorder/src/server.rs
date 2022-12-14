@@ -205,6 +205,24 @@ fn snark(
     })
 }
 
+fn capnp(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("capnp" / "block" / u32).map(move |height| -> WithStatus<Json> {
+        let v = db.fetch_capnp(height);
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
+
+fn capnp_latest(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("capnp" / "block" / "latest").map(move || -> WithStatus<Json> {
+        let v = db.fetch_capnp_latest();
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
+
 fn version(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("version")
@@ -271,7 +289,9 @@ fn routes(
                 .or(stats_latest(db.clone()))
                 .or(stats_tx(db.clone()))
                 .or(stats_tx_latest(db.clone()))
-                .or(snark(db))
+                .or(snark(db.clone()))
+                .or(capnp_latest(db.clone()))
+                .or(capnp(db))
                 .or(version().or(openapi())),
         )
         .with(with::header("Content-Type", "application/json"))

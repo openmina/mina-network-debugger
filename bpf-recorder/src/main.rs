@@ -363,7 +363,7 @@ impl App {
             }
             context::Variant::Send { fd, .. } | context::Variant::Write { fd, .. } => {
                 let event = event.set_tag_fd(DataTag::Write, fd);
-                if fd == 0 || fd == 1 {
+                if fd == 0 || fd == 1 || fd == 2 {
                     if ret >= 0 {
                         event.set_ok(ret as _)
                     } else {
@@ -389,7 +389,7 @@ impl App {
             }
             context::Variant::Recv { fd, .. } | context::Variant::Read { fd, .. } => {
                 let event = event.set_tag_fd(DataTag::Read, fd);
-                if fd == 0 || fd == 1 {
+                if fd == 0 || fd == 1 || fd == 2 {
                     if ret >= 0 {
                         event.set_ok(ret as _)
                     } else {
@@ -576,7 +576,7 @@ impl App {
 #[cfg(feature = "user")]
 fn main() {
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, BTreeSet},
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc, mpsc,
@@ -594,7 +594,7 @@ fn main() {
     };
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
-        EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace, libp2p_helper,
+        EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace, libp2p_helper::CapnpReader,
     };
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
@@ -624,7 +624,6 @@ fn main() {
     env_logger::init();
 
     let (db, callback, server_thread) = server::spawn(port, db_path, key_path, cert_path);
-    let mut db_strace = Some(db.strace().expect("cannot add strace db link"));
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
@@ -641,6 +640,9 @@ fn main() {
             return;
         }
     }
+
+    let mut db_strace = Some(db.strace().expect("cannot add strace db link"));
+    let db_capnp = db.core();
 
     struct Source {
         _skeleton: SkeletonEmpty,
@@ -725,6 +727,8 @@ fn main() {
     let mut strace_running = None;
     let mut ptrace_task = ptrace::Task::new();
     const THRESHOLD: usize = 1 << 20;
+    let mut capnp_readers = BTreeMap::<_, CapnpReader>::new();
+    let mut capnp_blacklist = BTreeSet::new();
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             ptrace_task.set_running(buffered <= THRESHOLD);
@@ -867,9 +871,21 @@ fn main() {
                 }
                 SnifferEventVariant::IncomingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        if let Err(err) = libp2p_helper::process(event.pid, true, data.clone()) {
-                            log::debug!("capnp {} <- {err}, {}", event.pid, hex::encode(&data));
+                        let key = (event.pid, true);
+                        if capnp_blacklist.contains(&key) {
+                            continue;
                         }
+                        let reader = capnp_readers.entry(key).or_default();
+                        reader.extend_from_slice(&data);
+                        let local_node_address = recorder.cx.pid_to_addr(event.pid);
+                        if !reader.process(event.pid, true, local_node_address, time, &db_capnp) {
+                            capnp_readers.remove(&key);
+                            capnp_blacklist.insert(key);
+                        }
+                        continue;
+                    }
+                    if event.fd == 2 {
+                        // TODO:
                         continue;
                     }
                     let key = (event.pid, event.fd);
@@ -896,9 +912,21 @@ fn main() {
                 }
                 SnifferEventVariant::OutgoingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        if let Err(err) = libp2p_helper::process(event.pid, false, data) {
-                            log::debug!("capnp {} -> {err}", event.pid);
+                        let key = (event.pid, false);
+                        if capnp_blacklist.contains(&key) {
+                            continue;
                         }
+                        let reader = capnp_readers.entry(key).or_default();
+                        reader.extend_from_slice(&data);
+                        let local_node_address = recorder.cx.pid_to_addr(event.pid);
+                        if !reader.process(event.pid, false, local_node_address, time, &db_capnp) {
+                            capnp_readers.remove(&key);
+                            capnp_blacklist.insert(key);
+                        }
+                        continue;
+                    }
+                    if event.fd == 2 {
+                        // TODO:
                         continue;
                     }
                     let key = (event.pid, event.fd);

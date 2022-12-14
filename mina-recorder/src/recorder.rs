@@ -25,7 +25,9 @@ type Inner = multistream_select::State<mina_protocol::State>;
 pub struct P2pRecorder {
     tester: Option<Tester>,
     cns: BTreeMap<ConnectionInfo, ThreadContext>,
-    cx: Arc<Cx>,
+    // this is used by capnp reader
+    // TODO: split
+    pub cx: Arc<Cx>,
 }
 
 pub struct ThreadContext {
@@ -63,6 +65,17 @@ pub struct Cx {
     pub db: DbFacade,
     pub stats: Stats,
     pub aggregator: Option<Aggregator>,
+}
+
+impl Cx {
+    pub fn pid_to_addr(&self, pid: u32) -> SocketAddr {
+        self.apps
+            .lock()
+            .get(&pid)
+            .as_ref()
+            .map(|(_, addr)| addr.clone())
+            .unwrap_or(SocketAddr::new(IpAddr::V4(0.into()), 0))
+    }
 }
 
 #[derive(Clone)]
