@@ -938,7 +938,11 @@ impl DbCore {
             .filter_map(Self::decode::<StatsDbKey, BlockStat>)
             .take_while(|(key, _)| key.height == id)
             .fold(None, |mut acc, (k, mut v)| {
-                let (_, current) = acc.get_or_insert((k, BlockStat::default()));
+                let (_, current) = acc.get_or_insert_with(|| {
+                    let mut v = BlockStat::default();
+                    v.height = k.height;
+                    (k, v)
+                });
                 current.events.append(&mut v.events);
                 acc
             })
