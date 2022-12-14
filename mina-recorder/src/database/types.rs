@@ -434,9 +434,23 @@ pub struct StatsDbKey {
     pub node_address: SocketAddr,
 }
 
+#[derive(Emit, Absorb)]
+pub struct StatsV2DbKey {
+    pub height: u32,
+    #[custom_emit(custom_coding::time_emit)]
+    #[custom_absorb(custom_coding::time_absorb)]
+    pub time: SystemTime,
+}
+
 impl fmt::Display for StatsDbKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.height, self.node_address)
+    }
+}
+
+impl fmt::Display for StatsV2DbKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.height, self.time.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos())
     }
 }
 

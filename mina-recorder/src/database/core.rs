@@ -20,7 +20,7 @@ use thiserror::Error;
 use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-        Timestamp, StatsDbKey, CapnpEventWithMetadata, CapnpEventWithMetadataKey, CapnpTableRow,
+        Timestamp, StatsDbKey, StatsV2DbKey, CapnpEventWithMetadata, CapnpEventWithMetadataKey, CapnpTableRow,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
     index::{
@@ -36,7 +36,7 @@ use crate::{
         meshsub_stats::{BlockStat, TxStat},
     },
     strace::StraceLine,
-    meshsub::{SnarkByHash, Event, SnarkWithHash},
+    meshsub::{SnarkByHash, Event, SnarkWithHash}, meshsub_stats,
 };
 
 #[derive(Debug, Error)]
@@ -137,7 +137,7 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 13] = [
+    const CFS: [&'static str; 14] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::RANDOMNESS,
@@ -151,6 +151,7 @@ impl DbCore {
         Self::MESSAGE_KIND_INDEX,
         Self::ADDR_INDEX,
         Self::LEDGER_HASH_INDEX,
+        Self::STATS_BLOCK_V2,
     ];
 
     const TTL: Duration = Duration::from_secs(0);
@@ -172,6 +173,8 @@ impl DbCore {
     pub const STRACE_CNT: u8 = 3;
 
     const STATS: &'static str = "stats";
+
+    const STATS_BLOCK_V2: &'static str = "stats_block_v2";
 
     const STATS_TX: &'static str = "stats_tx";
 
@@ -223,6 +226,7 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(2)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[11], opts_with_prefix_extractor(18)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[12], opts_with_prefix_extractor(32)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[13], opts_with_prefix_extractor(4)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -262,6 +266,10 @@ impl DbCore {
 
     fn stats(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::STATS).expect("must exist")
+    }
+
+    fn stats_block_v2(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::STATS_BLOCK_V2).expect("must exist")
     }
 
     fn stats_tx(&self) -> &rocksdb::ColumnFamily {
@@ -399,6 +407,20 @@ impl DbCore {
         };
 
         self.inner.put_cf(self.stats(), key.chain(vec![]), bytes)?;
+
+        Ok(())
+    }
+
+    pub fn put_stats_block_v2(
+        &self,
+        event: meshsub_stats::Event,
+    ) -> Result<(), DbError> {
+        let key = StatsV2DbKey {
+            height: event.block_height,
+            time: event.better_time,
+        };
+
+        self.inner.put_cf(self.stats_block_v2(), key.chain(vec![]), event.chain(vec![]))?;
 
         Ok(())
     }
@@ -947,6 +969,17 @@ impl DbCore {
         self.fetch_stats(k.height)
     }
 
+    pub fn fetch_last_stat_block_v2(&self) -> Option<(u32, Vec<meshsub_stats::Event>)> {
+        use rocksdb::IteratorMode;
+
+        self
+            .inner
+            .iterator_cf(self.stats_block_v2(), IteratorMode::End)
+            .next()
+            .and_then(Self::decode::<StatsV2DbKey, meshsub_stats::Event>)
+            .map(|(k, _)| (k.height, self.fetch_stats_block_v2(k.height)))
+    }
+
     pub fn fetch_stats(&self, id: u32) -> Option<(StatsDbKey, BlockStat)> {
         let id_bytes = id.to_be_bytes();
         let mode = rocksdb::IteratorMode::From(&id_bytes, rocksdb::Direction::Forward);
@@ -963,6 +996,17 @@ impl DbCore {
                 current.events.append(&mut v.events);
                 acc
             })
+    }
+
+    pub fn fetch_stats_block_v2(&self, id: u32) -> Vec<meshsub_stats::Event> {
+        let id_bytes = id.to_be_bytes();
+        let mode = rocksdb::IteratorMode::From(&id_bytes, rocksdb::Direction::Forward);
+        self.inner
+            .iterator_cf(self.stats_block_v2(), mode)
+            .filter_map(Self::decode::<StatsV2DbKey, meshsub_stats::Event>)
+            .take_while(|(key, _)| key.height == id)
+            .map(|(_, v)| v)
+            .collect()
     }
 
     pub fn fetch_last_stat_tx(&self) -> Option<(u32, TxStat)> {

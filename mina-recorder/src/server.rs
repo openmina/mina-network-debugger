@@ -6,6 +6,8 @@ use warp::{
     http::StatusCode,
 };
 
+use crate::meshsub_stats::BlockStat;
+
 use super::database::{DbCore, DbFacade, Params};
 
 fn connection(
@@ -140,8 +142,18 @@ fn strace(
 fn stats(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("block" / u32).map(move |id| -> WithStatus<Json> {
+    warp::path!("block_v1" / u32).map(move |id| -> WithStatus<Json> {
         let v = db.fetch_stats(id).map(|(_, v)| v);
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
+
+fn stats_block_v2(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("block" / u32).map(move |height| -> WithStatus<Json> {
+        let events = db.fetch_stats_block_v2(height);
+        let v = BlockStat { height, events };
         reply::with_status(reply::json(&v), StatusCode::OK)
     })
 }
@@ -149,7 +161,7 @@ fn stats(
 fn stats_last(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("block" / "last").map(move || -> WithStatus<Json> {
+    warp::path!("block_v1" / "last").map(move || -> WithStatus<Json> {
         let v = db.fetch_last_stat().map(|(_, v)| v);
         reply::with_status(reply::json(&v), StatusCode::OK)
     })
@@ -158,8 +170,19 @@ fn stats_last(
 fn stats_latest(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("block" / "latest").map(move || -> WithStatus<Json> {
+    warp::path!("block_v1" / "latest").map(move || -> WithStatus<Json> {
         let v = db.fetch_last_stat().map(|(_, v)| v);
+        reply::with_status(reply::json(&v), StatusCode::OK)
+    })
+}
+
+fn stats_block_v2_latest(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("block" / "latest").map(move || -> WithStatus<Json> {
+        let v = db
+            .fetch_last_stat_block_v2()
+            .map(|(height, events)| BlockStat { height, events });
         reply::with_status(reply::json(&v), StatusCode::OK)
     })
 }
@@ -305,6 +328,8 @@ fn routes(
                 .or(stats(db.clone()))
                 .or(stats_last(db.clone()))
                 .or(stats_latest(db.clone()))
+                .or(stats_block_v2(db.clone()))
+                .or(stats_block_v2_latest(db.clone()))
                 .or(stats_tx(db.clone()))
                 .or(stats_tx_latest(db.clone()))
                 .or(snark(db.clone()))
