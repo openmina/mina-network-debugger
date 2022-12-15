@@ -21,7 +21,7 @@ use crate::{
         MessageType,
         meshsub_stats::{BlockStat, TxStat},
     },
-    strace::StraceLine,
+    strace::StraceLine, meshsub_stats::Event,
 };
 
 use super::{
@@ -62,6 +62,10 @@ impl DbFacade {
     ) -> Result<(), DbError> {
         self.inner
             .put_stats(height, node_address, value.chain(vec![]))
+    }
+
+    pub fn stats_block_v2(&self, event: Event) -> Result<(), DbError> {
+        self.inner.put_stats_block_v2(event)
     }
 
     pub fn stats_tx(&self, height: u32, value: &TxStat) -> Result<(), DbError> {

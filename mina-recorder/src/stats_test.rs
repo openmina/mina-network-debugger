@@ -1,11 +1,12 @@
 use std::{
     time::{SystemTime, Duration},
-    thread, fs,
     net::SocketAddr,
-    path::PathBuf,
+    thread::scope,
 };
 
-use crate::database::DbFacade;
+use temp_dir::TempDir;
+
+use crate::{database::DbFacade, stats::update_block_stats};
 
 use super::stats::StatsState;
 
@@ -24,25 +25,21 @@ fn peer(port: u16) -> SocketAddr {
     ([1, 1, 1, 1], port).into()
 }
 
-fn generic<const ID: usize, F>(f: F)
+fn generic<F>(f: F)
 where
     F: Fn(SystemTime, &DbFacade, &mut StatsState),
 {
-    let path = PathBuf::from("/tmp/stats_test_db").join(ID.to_string());
-    if path.exists() {
-        fs::remove_dir_all(&path).unwrap();
-    }
+    let d = TempDir::new().expect("cannot create temporary directory");
+    let path = d.path();
     let db = DbFacade::open(&path).unwrap();
     let mut state = StatsState::default();
 
     f(SystemTime::now(), &db, &mut state);
-    fs::remove_dir_all(path).unwrap();
-    thread::sleep(Duration::from_secs(1));
 }
 
 #[test]
 fn check_latency_simple() {
-    generic::<0, _>(|now, db, state| {
+    generic(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
         state.observe_w(0, FILES[0], true, time(1), &db, peer(100));
@@ -57,7 +54,7 @@ fn check_latency_simple() {
 
 #[test]
 fn check_latency_outgoing_simple() {
-    generic::<1, _>(|now, db, state| {
+    generic(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
         state.observe_w(0, FILES[0], false, time(1), &db, peer(100));
@@ -72,7 +69,7 @@ fn check_latency_outgoing_simple() {
 
 #[test]
 fn check_mixed_hashes() {
-    generic::<2, _>(|now, db, state| {
+    generic(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
         state.observe_w(0, FILES[2], true, time(0), &db, peer(1000));
@@ -93,7 +90,7 @@ fn check_mixed_hashes() {
 
 #[test]
 fn check_multiple() {
-    generic::<3, _>(|now, db, state| {
+    generic(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
         for i in 0..7 {
@@ -121,7 +118,7 @@ fn check_multiple() {
 
 #[test]
 fn check_mixed_hashes_outgoing() {
-    generic::<4, _>(|now, db, state| {
+    generic(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
         state.observe_w(0, FILES[2], false, time(0), &db, peer(1000));
@@ -142,7 +139,7 @@ fn check_mixed_hashes_outgoing() {
 
 #[test]
 fn check_cleanup() {
-    generic::<5, _>(|now, db, state| {
+    generic(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
         state.observe_w(0, FILES[2], true, time(0), &db, peer(1000));
@@ -168,7 +165,7 @@ fn check_cleanup() {
 
 #[test]
 fn check_cleanup_obsolete() {
-    generic::<6, _>(|now, db, state| {
+    generic(|now, db, state| {
         let time = |d| now + Duration::from_secs(d);
 
         state.observe_w(0, FILES[2], true, time(0), &db, peer(1000));
@@ -186,5 +183,77 @@ fn check_cleanup_obsolete() {
         let (_, stat) = db.core().fetch_last_stat().unwrap();
         assert_eq!(stat.events.len(), 1);
         assert_eq!(stat.events[0].latency, None);
+    })
+}
+
+#[test]
+fn check_block_v2_latest() {
+    generic(|now, db, _state| {
+        update_block_stats(0, FILES[0], true, now, now, peer(1), peer(2), db).unwrap();
+        update_block_stats(1, FILES[1], true, now, now, peer(1), peer(2), db).unwrap();
+        update_block_stats(0, FILES[0], true, now, now, peer(1), peer(2), db).unwrap();
+
+        let (height, events) = db.core().fetch_last_stat_block_v2().unwrap();
+        assert_eq!(height, 638);
+        assert_eq!(events.len(), 1);
+    })
+}
+
+#[test]
+fn check_order_block_v2() {
+    generic(|now, db, _state| {
+        for (i, d) in [0_i8, -1, 2, -3].into_iter().enumerate() {
+            let t = if d < 0 {
+                now - Duration::from_nanos((-d) as u64)
+            } else {
+                now + Duration::from_nanos(d as u64)
+            };
+
+            update_block_stats(i as u64, FILES[0], true, t, t, peer(1), peer(2), db).unwrap();
+        }
+
+        let (_, events) = db.core().fetch_last_stat_block_v2().unwrap();
+
+        events
+            .into_iter()
+            .scan(None, |prev_time, event| {
+                if let Some(prev_time) = prev_time.replace(event.better_time) {
+                    assert!(prev_time <= event.better_time);
+                }
+                Some(())
+            })
+            .for_each(|_| {});
+    })
+}
+
+#[test]
+fn check_mt_order_block_v2() {
+    generic(|now, db, _state| {
+        scope(|s| {
+            for (i, d) in [0_i8, -1, 2, -3].into_iter().enumerate() {
+                let t = if d < 0 {
+                    now - Duration::from_nanos((-d) as u64)
+                } else {
+                    now + Duration::from_nanos(d as u64)
+                };
+
+                s.spawn(move || {
+                    update_block_stats(i as u64, FILES[0], true, t, t, peer(1), peer(2), db)
+                        .unwrap();
+                });
+            }
+        });
+
+        let (_, events) = db.core().fetch_last_stat_block_v2().unwrap();
+
+        events
+            .into_iter()
+            .scan(None, |prev_time, event| {
+                if let Some(prev_time) = prev_time.replace(event.better_time) {
+                    assert!(prev_time <= event.better_time);
+                }
+                Some(())
+            })
+            .for_each(|_| {});
     })
 }

@@ -4,10 +4,13 @@ use mina_p2p_messages::{gossip::GossipNetMessageV2, v2};
 use radiation::{Absorb, Emit};
 use libp2p_core::PeerId;
 
-use crate::decode::{
-    meshsub_stats::{BlockStat, TxStat, Hash, Event, Signature, Tx, Snark},
-    meshsub::{self, ControlIHave, ControlIWant},
-    MessageType,
+use crate::{
+    decode::{
+        meshsub_stats::{BlockStat, TxStat, Hash, Event, Signature, Tx, Snark},
+        meshsub::{self, ControlIHave, ControlIWant},
+        MessageType,
+    },
+    database::{DbFacade, DbError},
 };
 
 #[derive(Default, Absorb, Emit)]
@@ -62,17 +65,10 @@ impl StatsState {
         peer: SocketAddr,
     ) {
         let node_address = "0.0.0.0:0".parse().unwrap();
-        let _ = self.observe(
-            message_id,
-            msg,
-            incoming,
-            time,
-            time,
-            peer,
-            node_address,
-        );
+        let _ = self.observe(message_id, msg, incoming, time, time, peer, node_address);
         let block_stat = self.block_stat();
-        db.stats(block_stat.height, node_address, &block_stat).unwrap();
+        db.stats(block_stat.height, node_address, &block_stat)
+            .unwrap();
         if let Some(stat) = self.tx_stat() {
             db.stats_tx(self.block_stat.height, &stat).unwrap();
         }
@@ -334,4 +330,65 @@ impl StatsState {
     pub fn tx_stat(&self) -> Option<TxStat> {
         self.tx_stat.clone()
     }
+}
+
+pub fn update_block_stats(
+    message_id: u64,
+    msg: &[u8],
+    incoming: bool,
+    time: SystemTime,
+    better_time: SystemTime,
+    peer: SocketAddr,
+    node_address: SocketAddr,
+    db: &DbFacade,
+) -> Result<(), DbError> {
+    let (sender_addr, receiver_addr) = if incoming {
+        (peer, node_address)
+    } else {
+        (node_address, peer)
+    };
+    for event in meshsub::parse_it(msg, false, true).unwrap() {
+        match event {
+            meshsub::Event::PublishV2 {
+                from: Some(producer_id),
+                message,
+                hash,
+                ..
+            } => match message.as_ref() {
+                GossipNetMessageV2::NewState(block) => {
+                    let (block_height, global_slot) = {
+                        let consensus_state = &block.header.protocol_state.body.consensus_state;
+                        (
+                            consensus_state.blockchain_length.0.0 as u32,
+                            consensus_state.global_slot_since_genesis.0.0 as u32,
+                        )
+                    };
+                    let event = Event {
+                        producer_id,
+                        hash: Hash(hash),
+                        block_height,
+                        global_slot,
+                        incoming,
+                        message_kind: MessageType::PublishNewState,
+                        message_id,
+                        time,
+                        better_time,
+                        latency: None,
+                        sender_addr,
+                        receiver_addr,
+                    };
+                    db.stats_block_v2(event)?;
+                }
+                _ => {}
+            },
+            meshsub::Event::Control {
+                ihave: _,
+                iwant: _,
+                graft: _,
+                prune: _,
+            } => {}
+            _ => {}
+        }
+    }
+    Ok(())
 }
