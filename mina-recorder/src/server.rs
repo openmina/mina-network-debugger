@@ -210,6 +210,12 @@ pub struct BlockParams {
     all: Option<bool>,
 }
 
+impl BlockParams {
+    // default is show all without filtering
+    fn all(&self) -> bool {
+        self.all.unwrap_or(true)
+    }
+}
 
 fn capnp(
     db: DbCore,
@@ -217,7 +223,7 @@ fn capnp(
     warp::path!("capnp" / "block" / u32)
         .and(warp::query::query())
         .map(move |height, params: BlockParams| -> WithStatus<Json> {
-            let v = db.fetch_capnp(height, params.all.unwrap_or(false)).collect::<Vec<_>>();
+            let v = db.fetch_capnp(height, params.all()).collect::<Vec<_>>();
             reply::with_status(reply::json(&v), StatusCode::OK)
         })
 }
@@ -228,7 +234,7 @@ fn libp2p_ipc(
     warp::path!("libp2p_ipc" / "block" / u32)
         .and(warp::query::query())
         .map(move |height, params: BlockParams| -> WithStatus<Json> {
-            let v = db.fetch_capnp(height, params.all.unwrap_or(false)).collect::<Vec<_>>();
+            let v = db.fetch_capnp(height, params.all()).collect::<Vec<_>>();
             reply::with_status(reply::json(&v), StatusCode::OK)
         })
 }
@@ -239,7 +245,7 @@ fn capnp_latest(
     warp::path!("capnp" / "block" / "latest")
         .and(warp::query::query())
         .map(move |params: BlockParams| -> WithStatus<Json> {
-            let all = params.all.unwrap_or(false);
+            let all = params.all();
             let v = db.fetch_capnp_latest(all).map(|it| it.collect::<Vec<_>>());
             reply::with_status(reply::json(&v), StatusCode::OK)
         })
@@ -251,7 +257,7 @@ fn libp2p_ipc_latest(
     warp::path!("libp2p_ipc" / "block" / "latest")
         .and(warp::query::query())
         .map(move |params: BlockParams| -> WithStatus<Json> {
-            let all = params.all.unwrap_or(false);
+            let all = params.all();
             let v = db.fetch_capnp_latest(all).map(|it| it.collect::<Vec<_>>());
             reply::with_status(reply::json(&v), StatusCode::OK)
         })
