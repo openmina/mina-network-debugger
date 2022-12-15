@@ -456,6 +456,9 @@ impl fmt::Display for CapnpEventWithMetadataKey {
 
 #[derive(Emit, Absorb)]
 pub struct CapnpEventWithMetadata {
+    #[custom_emit(custom_coding::time_emit)]
+    #[custom_absorb(custom_coding::time_absorb)]
+    pub real_time: SystemTime,
     #[custom_emit(custom_coding::addr_emit)]
     #[custom_absorb(custom_coding::addr_absorb)]
     pub node_address: SocketAddr,
@@ -494,6 +497,7 @@ pub enum CapnpEventDecoded {
 #[derive(Serialize)]
 pub struct CapnpTableRow {
     pub time_microseconds: u64,
+    pub real_time_microseconds: u64,
     pub node_address: SocketAddr,
     pub events: Vec<CapnpEventDecoded>,
 }
@@ -502,6 +506,7 @@ impl CapnpTableRow {
     pub fn transform(k: CapnpEventWithMetadataKey, v: CapnpEventWithMetadata) -> Self {
         CapnpTableRow {
             time_microseconds: k.time.duration_since(SystemTime::UNIX_EPOCH).expect("msg").as_micros() as u64,
+            real_time_microseconds: v.real_time.duration_since(SystemTime::UNIX_EPOCH).expect("msg").as_micros() as u64,
             node_address: v.node_address,
             events: v.events.into_iter().filter_map(|event| match event {
                 CapnpEvent::Publish { msg, hash } => {

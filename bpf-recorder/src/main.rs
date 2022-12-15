@@ -164,7 +164,7 @@ impl App {
                 let x = unsafe { helpers::get_current_pid_tgid() };
                 let pid = (x >> 32) as u32;
 
-                let ts = unsafe { helpers::ktime_get_ns() };
+                let ts = unsafe { helpers::ktime_get_boot_ns() };
                 let event = Event::new(pid, ts, ts);
                 let event = event.set_tag_fd(DataTag::Alias, 0).set_ok(len as u64);
                 let name = unsafe { entry.offset(10) };
@@ -205,7 +205,7 @@ impl App {
             let x = unsafe { helpers::get_current_pid_tgid() };
             ((x >> 32) as u32, (x & 0xffffffff) as u32)
         };
-        let ts = unsafe { helpers::ktime_get_ns() };
+        let ts = unsafe { helpers::ktime_get_boot_ns() };
 
         let mut context = context::Parameters {
             data: context::Variant::Empty { ptr: 0, len: 0 },
@@ -229,7 +229,7 @@ impl App {
             let x = unsafe { helpers::get_current_pid_tgid() };
             ((x >> 32) as u32, (x & 0xffffffff) as u32)
         };
-        let ts1 = unsafe { helpers::ktime_get_ns() };
+        let ts1 = unsafe { helpers::ktime_get_boot_ns() };
 
         match self
             .context_parameters
@@ -474,7 +474,7 @@ impl App {
             let x = unsafe { helpers::get_current_pid_tgid() };
             ((x >> 32) as u32, (x & 0xffffffff) as u32)
         };
-        let ts = unsafe { helpers::ktime_get_ns() };
+        let ts = unsafe { helpers::ktime_get_boot_ns() };
 
         let socket_id = ((fd as u64) << 32) + (pid as u64);
         if self.connections.remove(&socket_id.to_ne_bytes())?.is_none() {
@@ -878,7 +878,7 @@ fn main() {
                         let reader = capnp_readers.entry(key).or_default();
                         reader.extend_from_slice(&data);
                         let local_node_address = recorder.cx.pid_to_addr(event.pid);
-                        if !reader.process(event.pid, true, local_node_address, time, &db_capnp) {
+                        if !reader.process(event.pid, true, local_node_address, time, better_time, &db_capnp) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);
                         }
@@ -919,7 +919,7 @@ fn main() {
                         let reader = capnp_readers.entry(key).or_default();
                         reader.extend_from_slice(&data);
                         let local_node_address = recorder.cx.pid_to_addr(event.pid);
-                        if !reader.process(event.pid, false, local_node_address, time, &db_capnp) {
+                        if !reader.process(event.pid, false, local_node_address, time, better_time, &db_capnp) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);
                         }

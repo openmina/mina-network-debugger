@@ -127,17 +127,17 @@ impl Serialize for Hash {
     where
         S: serde::Serializer,
     {
-        base64::encode(&self.0).serialize(serializer)
+        hex::encode(&self.0).serialize(serializer)
     }
 }
 
 impl FromStr for Hash {
-    type Err = base64::DecodeError;
+    type Err = hex::FromHexError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let v = base64::decode(s)?;
+        let v = hex::decode(s)?;
         if v.len() != 32 {
-            Err(base64::DecodeError::InvalidLength)
+            Err(hex::FromHexError::InvalidStringLength)
         } else {
             let mut s = Hash([0; 32]);
             s.0.clone_from_slice(&v);
@@ -157,7 +157,7 @@ impl<'de> Deserialize<'de> for Hash {
 
 impl fmt::Debug for Hash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", base64::encode(&self.0))
+        write!(f, "{}", hex::encode(&self.0))
     }
 }
 

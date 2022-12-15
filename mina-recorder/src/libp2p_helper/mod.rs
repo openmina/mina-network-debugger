@@ -29,7 +29,7 @@ impl CapnpReader {
         self.0.extend_from_slice(other);
     }
 
-    pub fn process(&mut self, pid: u32, incoming: bool, node_address: SocketAddr, time: SystemTime, db: &DbCore) -> bool {
+    pub fn process(&mut self, pid: u32, incoming: bool, node_address: SocketAddr, time: SystemTime, real_time: SystemTime, db: &DbCore) -> bool {
         let mut events = vec![];
         let should_continue = loop {
             if !self.0.is_empty() {
@@ -90,6 +90,7 @@ impl CapnpReader {
             if let Some(height) = height {
                 let key = CapnpEventWithMetadataKey { height, time };
                 let value = CapnpEventWithMetadata {
+                    real_time,
                     node_address,
                     events,
                 };
