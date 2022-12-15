@@ -174,7 +174,7 @@ impl<'de> Deserialize<'de> for StreamKind {
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer).map(|s| s.parse().unwrap())
+        String::deserialize(deserializer).map(|s| s.parse().expect("cannot fail"))
     }
 }
 

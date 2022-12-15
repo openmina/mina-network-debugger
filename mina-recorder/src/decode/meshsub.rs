@@ -388,7 +388,7 @@ pub fn parse_it(
                                 key.as_slice()
                             };
                             blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
-                                .unwrap()
+                                .expect("cannot fail, length is statically known")
                                 .chain(data)
                                 .finalize_fixed()
                                 .into()
