@@ -3,7 +3,7 @@ use std::{
     time::{Duration, SystemTime},
     cmp::Ordering,
     sync::{Mutex, Arc},
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashSet, BTreeSet},
     fs::{self, File},
     io::{self, Write},
     os::unix::prelude::FileExt,
@@ -20,7 +20,7 @@ use thiserror::Error;
 use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-        Timestamp, StatsDbKey, CapnpEventWithMetadata, CapnpEventWithMetadataKey, CapnpTableRow,
+        Timestamp, StatsDbKey, CapnpEventWithMetadata, CapnpEventWithMetadataKey, CapnpTableRow, CapnpEventDecoded,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
     index::{
@@ -36,7 +36,7 @@ use crate::{
         meshsub_stats::{BlockStat, TxStat},
     },
     strace::StraceLine,
-    meshsub::{SnarkByHash, Event, SnarkWithHash},
+    meshsub::{SnarkByHash, Event, SnarkWithHash}, meshsub_stats::Hash,
 };
 
 #[derive(Debug, Error)]
@@ -1078,22 +1078,39 @@ impl DbCore {
         })
     }
 
-    pub fn fetch_capnp_latest(&self) -> Option<Vec<CapnpTableRow>> {
+    pub fn fetch_capnp_latest(&self, all: bool) -> Option<impl Iterator<Item = CapnpTableRow> + '_> {
         let (k, _) = self.inner
             .iterator_cf(self.capnp(), rocksdb::IteratorMode::End)
             .next()
             .and_then(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)?;
-        Some(self.fetch_capnp(k.height))
+        Some(self.fetch_capnp(k.height, all))
     }
 
-    pub fn fetch_capnp(&self, height: u32) -> Vec<CapnpTableRow> {
+    pub fn fetch_capnp(&self, height: u32, all: bool) -> impl Iterator<Item = CapnpTableRow> + '_ {
+        type State = BTreeMap<SocketAddr, (BTreeSet<Hash>, BTreeSet<Hash>)>;
+
         let key = height.to_be_bytes();
         self.inner
             .iterator_cf(self.capnp(), rocksdb::IteratorMode::From(&key, rocksdb::Direction::Forward))
             .filter_map(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)
-            .take_while(|(k, _)| k.height == height)
+            .take_while(move |(k, _)| k.height == height)
             .map(|(k, v)| CapnpTableRow::transform(k, v))
-            .collect()
+            .scan(State::default(), move |state, mut v| {
+                if all {
+                    Some(v)
+                } else {
+                    let (sent, received) = state.entry(v.node_address).or_default();
+                    v.events.retain(|x| match x {
+                        CapnpEventDecoded::PublishGossip { hash, .. } => sent.insert(*hash),
+                        CapnpEventDecoded::ReceivedGossip { hash, .. } => received.insert(*hash),
+                    });
+                    if v.events.is_empty() {
+                        None
+                    } else {
+                        Some(v)
+                    }
+                }
+            })
     }
 }
 
@@ -1110,4 +1127,121 @@ impl RandomnessDatabase for DbCore {
             .map(|(_, v)| v);
         Box::new(it)
     }
+}
+
+#[cfg(test)]
+#[test]
+fn duplicates_removed() {
+    use crate::libp2p_helper::CapnpEvent;
+
+    let b0 = include_bytes!("../test_data/block_1a57e382e918e0cde7cdd7493cf9b6b755299a785c1b97ddc2bc1cf66e91e647");
+    let h0 = hex::decode("1a57e382e918e0cde7cdd7493cf9b6b755299a785c1b97ddc2bc1cf66e91e647").unwrap().try_into().unwrap();
+    let b1 = include_bytes!("../test_data/block_03d1a805254741ed5ad8b056e64b121f465323041d1f41d9df3db58b87670460");
+    let h1 = hex::decode("03d1a805254741ed5ad8b056e64b121f465323041d1f41d9df3db58b87670460").unwrap().try_into().unwrap();
+
+    fs::remove_dir_all("/tmp/test_duplicates_removed").unwrap_or_default();
+    let db = DbCore::open("/tmp/test_duplicates_removed").unwrap();
+    let node_address = "0.0.0.0:0".parse().unwrap();
+
+    // put only b0
+    let time = SystemTime::now();
+    let key = CapnpEventWithMetadataKey { height: 5, time };
+    let value = CapnpEventWithMetadata {
+        real_time: time,
+        node_address,
+        events: vec![
+            CapnpEvent::ReceivedGossip {
+                peer_id: String::new(),
+                peer_host: "0.1.2.3".to_string(),
+                peer_port: 1,
+                msg: b0[8..].to_vec(),
+                hash: h0,
+            },
+        ],
+    };
+    db.put_capnp(key, value).unwrap();
+
+    // put single b0 and two b1
+    let time = time + Duration::from_secs(1);
+    let key = CapnpEventWithMetadataKey { height: 5, time };
+    let value = CapnpEventWithMetadata {
+        real_time: time,
+        node_address,
+        events: vec![
+            CapnpEvent::ReceivedGossip {
+                peer_id: String::new(),
+                peer_host: "0.1.2.4".to_string(),
+                peer_port: 1,
+                msg: b0[8..].to_vec(),
+                hash: h0,
+            },
+            CapnpEvent::ReceivedGossip {
+                peer_id: String::new(),
+                peer_host: "0.1.2.5".to_string(),
+                peer_port: 1,
+                msg: b1[8..].to_vec(),
+                hash: h1,
+            },
+            CapnpEvent::ReceivedGossip {
+                peer_id: String::new(),
+                peer_host: "0.1.2.6".to_string(),
+                peer_port: 1,
+                msg: b1[8..].to_vec(),
+                hash: h1,
+            },
+        ],
+    };
+    db.put_capnp(key, value).unwrap();
+
+    // put only b0, but for different node, check it is not filtered out
+    let time = time + Duration::from_secs(2);
+    let key = CapnpEventWithMetadataKey { height: 5, time };
+    let value = CapnpEventWithMetadata {
+        real_time: time,
+        node_address: "0.0.0.0:1".parse().unwrap(),
+        events: vec![
+            CapnpEvent::ReceivedGossip {
+                peer_id: String::new(),
+                peer_host: "0.1.2.4".to_string(),
+                peer_port: 1,
+                msg: b0[8..].to_vec(),
+                hash: h0,
+            },
+        ],
+    };
+    db.put_capnp(key, value).unwrap();
+
+    // put only b0, check empty array is eliminated
+    let time = time + Duration::from_secs(3);
+    let key = CapnpEventWithMetadataKey { height: 5, time };
+    let value = CapnpEventWithMetadata {
+        real_time: time,
+        node_address,
+        events: vec![
+            CapnpEvent::ReceivedGossip {
+                peer_id: String::new(),
+                peer_host: "0.1.2.4".to_string(),
+                peer_port: 1,
+                msg: b0[8..].to_vec(),
+                hash: h0,
+            },
+        ],
+    };
+    db.put_capnp(key, value).unwrap();
+
+    db.inner.flush().unwrap();
+
+    // fetch all
+    let mut result = db.fetch_capnp(5, true);
+    assert_eq!(result.next().unwrap().events.len(), 1);
+    assert_eq!(result.next().unwrap().events.len(), 3);
+    assert_eq!(result.next().unwrap().events.len(), 1);
+    assert_eq!(result.next().unwrap().events.len(), 1);
+
+    // fetch deduplicated
+    let mut result = db.fetch_capnp(5, false);
+    assert_eq!(result.next().unwrap().events.len(), 1);
+    assert_eq!(result.next().unwrap().events.len(), 1);
+    assert_eq!(result.next().unwrap().events.len(), 1);
+    assert!(result.next().is_none());
 }

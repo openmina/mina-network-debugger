@@ -205,40 +205,56 @@ fn snark(
     })
 }
 
+#[derive(serde::Deserialize)]
+pub struct BlockParams {
+    all: Option<bool>,
+}
+
+
 fn capnp(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("capnp" / "block" / u32).map(move |height| -> WithStatus<Json> {
-        let v = db.fetch_capnp(height);
-        reply::with_status(reply::json(&v), StatusCode::OK)
-    })
+    warp::path!("capnp" / "block" / u32)
+        .and(warp::query::query())
+        .map(move |height, params: BlockParams| -> WithStatus<Json> {
+            let v = db.fetch_capnp(height, params.all.unwrap_or(false)).collect::<Vec<_>>();
+            reply::with_status(reply::json(&v), StatusCode::OK)
+        })
 }
 
 fn libp2p_ipc(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("libp2p_ipc" / "block" / u32).map(move |height| -> WithStatus<Json> {
-        let v = db.fetch_capnp(height);
-        reply::with_status(reply::json(&v), StatusCode::OK)
-    })
+    warp::path!("libp2p_ipc" / "block" / u32)
+        .and(warp::query::query())
+        .map(move |height, params: BlockParams| -> WithStatus<Json> {
+            let v = db.fetch_capnp(height, params.all.unwrap_or(false)).collect::<Vec<_>>();
+            reply::with_status(reply::json(&v), StatusCode::OK)
+        })
 }
 
 fn capnp_latest(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("capnp" / "block" / "latest").map(move || -> WithStatus<Json> {
-        let v = db.fetch_capnp_latest();
-        reply::with_status(reply::json(&v), StatusCode::OK)
-    })
+    warp::path!("capnp" / "block" / "latest")
+        .and(warp::query::query())
+        .map(move |params: BlockParams| -> WithStatus<Json> {
+            let all = params.all.unwrap_or(false);
+            let v = db.fetch_capnp_latest(all).map(|it| it.collect::<Vec<_>>());
+            reply::with_status(reply::json(&v), StatusCode::OK)
+        })
 }
 
 fn libp2p_ipc_latest(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("libp2p_ipc" / "block" / "latest").map(move || -> WithStatus<Json> {
-        let v = db.fetch_capnp_latest();
-        reply::with_status(reply::json(&v), StatusCode::OK)
-    })
+    warp::path!("libp2p_ipc" / "block" / "latest")
+        .and(warp::query::query())
+        .map(move |params: BlockParams| -> WithStatus<Json> {
+            let all = params.all.unwrap_or(false);
+            let v = db.fetch_capnp_latest(all).map(|it| it.collect::<Vec<_>>());
+            reply::with_status(reply::json(&v), StatusCode::OK)
+        })
 }
 
 fn version(
