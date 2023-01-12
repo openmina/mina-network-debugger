@@ -348,15 +348,15 @@ impl App {
                     self.connections
                         .insert(socket_id.to_ne_bytes(), 0x1_u32.to_ne_bytes())?;
 
-                    let mut addr_len_bytes = [0_u8; 8];
+                    let mut addr_len_bytes = [0_u8; 4];
                     let c = unsafe {
                         let p = addr_len_bytes.as_mut_ptr() as *mut _;
-                        helpers::probe_read_user(p, 8, addr_len_ptr as _)
+                        helpers::probe_read_user(p, 4, addr_len_ptr as _)
                     };
                     if c != 0 {
                         return Err(0);
                     }
-                    let addr_len = u64::from_ne_bytes(addr_len_bytes);
+                    let addr_len = u32::from_ne_bytes(addr_len_bytes) as u64;
 
                     event.set_ok(addr_len)
                 }
