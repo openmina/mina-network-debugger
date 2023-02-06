@@ -17,7 +17,19 @@ cargo install bpf-linker --git https://github.com/vlad9486/bpf-linker --branch k
 Need dependencies, on ubuntu:
 
 ```
-sudo apt install libelf-dev protobuf-compiler
+sudo apt install libelf-dev protobuf-compiler clang libssl-dev pkg-config libbpf-dev make
+```
+
+and capnproto
+
+```
+curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
+  && cd capnproto-c++-0.10.2 \
+  && ./configure \
+  && make -j6 check \
+  && sudo make install \
+  && cd .. \
+  && rm -rf capnproto-c++-0.10.2
 ```
 
 ## Build and Run

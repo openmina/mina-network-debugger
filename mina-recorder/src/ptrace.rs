@@ -17,7 +17,7 @@ pub struct Task {
 }
 
 #[derive(Debug)]
-pub enum Act {
+enum Act {
     Terminate,
     Suspend,
     Resume,
@@ -169,10 +169,6 @@ impl Task {
             }
             self.running_state = running;
         }
-    }
-
-    pub fn is_running(&self) -> bool {
-        self.running_state
     }
 
     pub fn join(mut self) -> Result<(), Error> {

@@ -579,13 +579,11 @@ fn main() {
         collections::{BTreeMap, BTreeSet},
         sync::{
             atomic::{AtomicBool, Ordering},
-            Arc, mpsc,
+            Arc,
         },
         time::{SystemTime, Duration},
         env,
         path::PathBuf,
-        process::{Command, Stdio},
-        thread,
     };
 
     use bpf_recorder::{
@@ -594,7 +592,7 @@ fn main() {
     };
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
-        EventMetadata, ConnectionInfo, server, P2pRecorder, strace, ptrace, libp2p_helper::CapnpReader,
+        EventMetadata, ConnectionInfo, server, P2pRecorder, ptrace, libp2p_helper::CapnpReader,
     };
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
@@ -641,7 +639,6 @@ fn main() {
         }
     }
 
-    let mut db_strace = Some(db.strace().expect("cannot add strace db link"));
     let db_capnp = db.core();
 
     struct Source {
@@ -714,7 +711,6 @@ fn main() {
     };
 
     let test = env::var("TEST").is_ok();
-    let strace = env::var("STRACE").is_ok();
 
     let mut origin = proc::S::read().ok().and_then(|s| s.b_time);
     if let Some(boot_time) = &origin {
@@ -724,7 +720,6 @@ fn main() {
     let mut p2p_cns = BTreeMap::new();
     let mut recorder = P2pRecorder::new(db, test);
     let mut last_ts = 0;
-    let mut strace_running = None;
     let mut ptrace_task = ptrace::Task::new();
     const THRESHOLD: usize = 1 << 20;
     let mut capnp_readers = BTreeMap::<_, CapnpReader>::new();
@@ -768,27 +763,9 @@ fn main() {
                 }
                 SnifferEventVariant::Bind(addr) => {
                     recorder.set_port(event.pid, addr.port());
-                    let matches_port = matches!(addr.port(), 8302 | 8303);
-                    if strace && strace_running.is_none() && matches_port {
-                        if let Some(db_strace) = db_strace.take() {
-                            let child = Command::new("strace")
-                                .env("TZ", "UTC")
-                                .args(["-f", "-tt", "-p"])
-                                .arg(event.pid.to_string())
-                                .stdout(Stdio::piped())
-                                .stderr(Stdio::piped())
-                                .spawn()
-                                .expect("cannot run strace");
-                            let (tx, rx) = mpsc::channel();
-                            let handle = thread::spawn(move || {
-                                strace::process(child, db_strace, rx);
-                            });
-                            strace_running = Some((handle, tx));
-                        }
-                    }
                 }
                 SnifferEventVariant::OutgoingConnection(addr) => {
-                    ptrace_task.attach(event.pid);
+                    // ptrace_task.attach(event.pid);
 
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
@@ -809,7 +786,7 @@ fn main() {
                     recorder.on_connect(false, metadata, buffered);
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
-                    ptrace_task.attach(event.pid);
+                    // ptrace_task.attach(event.pid);
 
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
@@ -963,10 +940,6 @@ fn main() {
     }
     log::info!("terminated");
     drop(source);
-    if let Some((strace_running, tx)) = strace_running {
-        tx.send(()).unwrap_or_default();
-        strace_running.join().expect("cannot kill strace");
-    }
     if let Err(err) = ptrace_task.join() {
         log::error!("join ptrace with error: {err:?}");
     }
