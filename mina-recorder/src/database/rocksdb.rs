@@ -21,7 +21,8 @@ use crate::{
         MessageType,
         meshsub_stats::{BlockStat, TxStat},
     },
-    strace::StraceLine, meshsub_stats::Event,
+    strace::StraceLine,
+    meshsub_stats::Event,
 };
 
 use super::{

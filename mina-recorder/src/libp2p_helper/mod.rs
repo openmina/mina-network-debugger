@@ -29,7 +29,15 @@ impl CapnpReader {
         self.0.extend_from_slice(other);
     }
 
-    pub fn process(&mut self, pid: u32, incoming: bool, node_address: SocketAddr, time: SystemTime, real_time: SystemTime, db: &DbCore) -> bool {
+    pub fn process(
+        &mut self,
+        pid: u32,
+        incoming: bool,
+        node_address: SocketAddr,
+        time: SystemTime,
+        real_time: SystemTime,
+        db: &DbCore,
+    ) -> bool {
         let mut events = vec![];
         let should_continue = loop {
             if !self.0.is_empty() {
@@ -42,13 +50,16 @@ impl CapnpReader {
                 };
                 match r {
                     Ok(()) => {
-                        log::debug!("capnp {pid} {incoming} consumed: {}", self.0.len() - slice.len());
+                        log::debug!(
+                            "capnp {pid} {incoming} consumed: {}",
+                            self.0.len() - slice.len()
+                        );
                         self.0 = slice.to_vec();
-                    },
+                    }
                     Err(err) if err.description == "failed to fill the whole buffer" => {
                         log::debug!("capnp {pid} {incoming} waiting more data");
                         break true;
-                    },
+                    }
                     Err(err) => {
                         let s0 = err.description.starts_with("Too many segments:");
                         let s1 = err.description.starts_with("Too few segments:");
@@ -56,7 +67,7 @@ impl CapnpReader {
                             log::error!("capnp {pid} {incoming} {err} {}", hex::encode(slice));
                         }
                         break false;
-                    },
+                    }
                 }
             } else {
                 break true;
@@ -77,7 +88,7 @@ impl CapnpReader {
                                     .consensus_state
                                     .blockchain_length
                                     .0
-                                    .0 as u32;
+                                     .0 as u32;
                                 Some(height)
                             }
                             _ => None,
@@ -125,7 +136,12 @@ fn calc_hash(data: &[u8]) -> [u8; 32] {
 }
 
 // TODO: figure out how to capture this, doesn't work for now
-pub fn process_request<R>(pid: u32, incoming: &str, reader: R, events: &mut Vec<CapnpEvent>) -> capnp::Result<()>
+pub fn process_request<R>(
+    pid: u32,
+    incoming: &str,
+    reader: R,
+    events: &mut Vec<CapnpEvent>,
+) -> capnp::Result<()>
 where
     R: io::Read,
 {
@@ -169,23 +185,31 @@ where
                 let msg = msg.get_msg().unwrap();
                 let id = msg.get_stream_id().unwrap().get_id();
                 let data = msg.get_data().unwrap();
-                log::debug!("capnp message {pid} {incoming} send stream {id} data size: {}", data.len());
+                log::debug!(
+                    "capnp message {pid} {incoming} send stream {id} data size: {}",
+                    data.len()
+                );
             }
             _ => (),
-        }
+        },
         message::PushMessage(Ok(msg)) => match msg.which() {
             Ok(push_message::AddResource(Ok(resource))) => {
                 let _ = resource;
             }
             _ => (),
-        }
+        },
         _ => (),
     }
 
     Ok(())
 }
 
-pub fn process_response<R>(pid: u32, incoming: &str, reader: R, events: &mut Vec<CapnpEvent>) -> capnp::Result<()>
+pub fn process_response<R>(
+    pid: u32,
+    incoming: &str,
+    reader: R,
+    events: &mut Vec<CapnpEvent>,
+) -> capnp::Result<()>
 where
     R: io::Read,
 {
@@ -210,7 +234,13 @@ where
                 log::info!("capnp message {pid} {incoming} disconnected {id}");
             }
             Ok(push_message::IncomingStream(Ok(stream))) => {
-                let peer = stream.get_peer().unwrap().get_peer_id().unwrap().get_id().unwrap();
+                let peer = stream
+                    .get_peer()
+                    .unwrap()
+                    .get_peer_id()
+                    .unwrap()
+                    .get_id()
+                    .unwrap();
                 let protocol = stream.get_protocol().unwrap();
                 let id = stream.get_stream_id().unwrap().get_id();
                 log::debug!("capnp message {pid} {incoming} open stream {peer} {protocol} {id}");

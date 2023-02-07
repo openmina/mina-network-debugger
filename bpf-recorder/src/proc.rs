@@ -14,7 +14,7 @@ pub fn cmd_prefix_matches(pid: u32, pattern: &str) -> io::Result<bool> {
         let mut s = String::new();
         f.read_to_string(&mut s)?;
         if s.starts_with(pattern) {
-            return Ok(true)
+            return Ok(true);
         }
     }
     Ok(false)

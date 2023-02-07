@@ -3,7 +3,10 @@ use super::accumulator;
 mod meshsub;
 mod rpc;
 
-use crate::{database::{StreamId, StreamKind, ConnectionStats, DbStream}, stats::update_block_stats};
+use crate::{
+    database::{StreamId, StreamKind, ConnectionStats, DbStream},
+    stats::update_block_stats,
+};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -106,7 +109,7 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
                 id.metadata.better_time,
                 id.metadata.id.addr,
                 node_address,
-                &cx.db
+                &cx.db,
             ) {
                 log::error!("{id} {}: {err}, {}", db.id(), hex::encode(msg));
             }
@@ -131,7 +134,9 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
                 }
             }
             if b {
-                cx.db.stats(block_stat.height, node_address, &block_stat).unwrap();
+                cx.db
+                    .stats(block_stat.height, node_address, &block_stat)
+                    .unwrap();
             }
             if t {
                 if let Some(stat) = tx_state {

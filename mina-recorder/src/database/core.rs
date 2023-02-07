@@ -20,7 +20,8 @@ use thiserror::Error;
 use super::{
     types::{
         Connection, ConnectionId, StreamFullId, Message, StreamKind, FullMessage, MessageId,
-        Timestamp, StatsDbKey, StatsV2DbKey, CapnpEventWithMetadata, CapnpEventWithMetadataKey, CapnpTableRow, CapnpEventDecoded,
+        Timestamp, StatsDbKey, StatsV2DbKey, CapnpEventWithMetadata, CapnpEventWithMetadataKey,
+        CapnpTableRow, CapnpEventDecoded,
     },
     params::{ValidParams, Coordinate, StreamFilter, Direction, KindFilter, ValidParamsConnection},
     index::{
@@ -220,7 +221,6 @@ impl DbCore {
             // CAPNP
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(4)),
-
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(8)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(2)),
@@ -269,7 +269,9 @@ impl DbCore {
     }
 
     fn stats_block_v2(&self) -> &rocksdb::ColumnFamily {
-        self.inner.cf_handle(Self::STATS_BLOCK_V2).expect("must exist")
+        self.inner
+            .cf_handle(Self::STATS_BLOCK_V2)
+            .expect("must exist")
     }
 
     fn stats_tx(&self) -> &rocksdb::ColumnFamily {
@@ -411,16 +413,17 @@ impl DbCore {
         Ok(())
     }
 
-    pub fn put_stats_block_v2(
-        &self,
-        event: meshsub_stats::Event,
-    ) -> Result<(), DbError> {
+    pub fn put_stats_block_v2(&self, event: meshsub_stats::Event) -> Result<(), DbError> {
         let key = StatsV2DbKey {
             height: event.block_height,
             time: event.better_time,
         };
 
-        self.inner.put_cf(self.stats_block_v2(), key.chain(vec![]), event.chain(vec![]))?;
+        self.inner.put_cf(
+            self.stats_block_v2(),
+            key.chain(vec![]),
+            event.chain(vec![]),
+        )?;
 
         Ok(())
     }
@@ -432,7 +435,11 @@ impl DbCore {
         Ok(())
     }
 
-    pub fn put_capnp(&self, key: CapnpEventWithMetadataKey, event: CapnpEventWithMetadata) -> Result<(), DbError> {
+    pub fn put_capnp(
+        &self,
+        key: CapnpEventWithMetadataKey,
+        event: CapnpEventWithMetadata,
+    ) -> Result<(), DbError> {
         self.inner
             .put_cf(self.capnp(), key.chain(vec![]), event.chain(vec![]))?;
 
@@ -972,8 +979,7 @@ impl DbCore {
     pub fn fetch_last_stat_block_v2(&self) -> Option<(u32, Vec<meshsub_stats::Event>)> {
         use rocksdb::IteratorMode;
 
-        self
-            .inner
+        self.inner
             .iterator_cf(self.stats_block_v2(), IteratorMode::End)
             .next()
             .and_then(Self::decode::<StatsV2DbKey, meshsub_stats::Event>)
@@ -1122,8 +1128,12 @@ impl DbCore {
         })
     }
 
-    pub fn fetch_capnp_latest(&self, all: bool) -> Option<impl Iterator<Item = CapnpTableRow> + '_> {
-        let (k, _) = self.inner
+    pub fn fetch_capnp_latest(
+        &self,
+        all: bool,
+    ) -> Option<impl Iterator<Item = CapnpTableRow> + '_> {
+        let (k, _) = self
+            .inner
             .iterator_cf(self.capnp(), rocksdb::IteratorMode::End)
             .next()
             .and_then(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)?;
@@ -1135,7 +1145,10 @@ impl DbCore {
 
         let key = height.to_be_bytes();
         self.inner
-            .iterator_cf(self.capnp(), rocksdb::IteratorMode::From(&key, rocksdb::Direction::Forward))
+            .iterator_cf(
+                self.capnp(),
+                rocksdb::IteratorMode::From(&key, rocksdb::Direction::Forward),
+            )
             .filter_map(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)
             .take_while(move |(k, _)| k.height == height)
             .map(|(k, v)| CapnpTableRow::transform(k, v))
@@ -1178,10 +1191,20 @@ impl RandomnessDatabase for DbCore {
 fn duplicates_removed() {
     use crate::libp2p_helper::CapnpEvent;
 
-    let b0 = include_bytes!("../test_data/block_1a57e382e918e0cde7cdd7493cf9b6b755299a785c1b97ddc2bc1cf66e91e647");
-    let h0 = hex::decode("1a57e382e918e0cde7cdd7493cf9b6b755299a785c1b97ddc2bc1cf66e91e647").unwrap().try_into().unwrap();
-    let b1 = include_bytes!("../test_data/block_03d1a805254741ed5ad8b056e64b121f465323041d1f41d9df3db58b87670460");
-    let h1 = hex::decode("03d1a805254741ed5ad8b056e64b121f465323041d1f41d9df3db58b87670460").unwrap().try_into().unwrap();
+    let b0 = include_bytes!(
+        "../test_data/block_1a57e382e918e0cde7cdd7493cf9b6b755299a785c1b97ddc2bc1cf66e91e647"
+    );
+    let h0 = hex::decode("1a57e382e918e0cde7cdd7493cf9b6b755299a785c1b97ddc2bc1cf66e91e647")
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let b1 = include_bytes!(
+        "../test_data/block_03d1a805254741ed5ad8b056e64b121f465323041d1f41d9df3db58b87670460"
+    );
+    let h1 = hex::decode("03d1a805254741ed5ad8b056e64b121f465323041d1f41d9df3db58b87670460")
+        .unwrap()
+        .try_into()
+        .unwrap();
 
     fs::remove_dir_all("/tmp/test_duplicates_removed").unwrap_or_default();
     let db = DbCore::open("/tmp/test_duplicates_removed").unwrap();
@@ -1193,15 +1216,13 @@ fn duplicates_removed() {
     let value = CapnpEventWithMetadata {
         real_time: time,
         node_address,
-        events: vec![
-            CapnpEvent::ReceivedGossip {
-                peer_id: String::new(),
-                peer_host: "0.1.2.3".to_string(),
-                peer_port: 1,
-                msg: b0[8..].to_vec(),
-                hash: h0,
-            },
-        ],
+        events: vec![CapnpEvent::ReceivedGossip {
+            peer_id: String::new(),
+            peer_host: "0.1.2.3".to_string(),
+            peer_port: 1,
+            msg: b0[8..].to_vec(),
+            hash: h0,
+        }],
     };
     db.put_capnp(key, value).unwrap();
 
@@ -1243,15 +1264,13 @@ fn duplicates_removed() {
     let value = CapnpEventWithMetadata {
         real_time: time,
         node_address: "0.0.0.0:1".parse().unwrap(),
-        events: vec![
-            CapnpEvent::ReceivedGossip {
-                peer_id: String::new(),
-                peer_host: "0.1.2.4".to_string(),
-                peer_port: 1,
-                msg: b0[8..].to_vec(),
-                hash: h0,
-            },
-        ],
+        events: vec![CapnpEvent::ReceivedGossip {
+            peer_id: String::new(),
+            peer_host: "0.1.2.4".to_string(),
+            peer_port: 1,
+            msg: b0[8..].to_vec(),
+            hash: h0,
+        }],
     };
     db.put_capnp(key, value).unwrap();
 
@@ -1261,15 +1280,13 @@ fn duplicates_removed() {
     let value = CapnpEventWithMetadata {
         real_time: time,
         node_address,
-        events: vec![
-            CapnpEvent::ReceivedGossip {
-                peer_id: String::new(),
-                peer_host: "0.1.2.4".to_string(),
-                peer_port: 1,
-                msg: b0[8..].to_vec(),
-                hash: h0,
-            },
-        ],
+        events: vec![CapnpEvent::ReceivedGossip {
+            peer_id: String::new(),
+            peer_host: "0.1.2.4".to_string(),
+            peer_port: 1,
+            msg: b0[8..].to_vec(),
+            hash: h0,
+        }],
     };
     db.put_capnp(key, value).unwrap();
 

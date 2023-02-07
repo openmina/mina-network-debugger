@@ -224,7 +224,6 @@ impl App {
         } else {
             Err(0)
         }
-
     }
 
     fn check_name(&mut self, argv: *const *const u8) -> Result<(), i32> {
@@ -682,13 +681,11 @@ fn main() {
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
     fn watch_pid(pid: u32, terminating: Arc<AtomicBool>) {
-        thread::spawn(move || {
-            loop {
-                thread::sleep(Duration::from_secs(5));
-                if !proc::cmd_prefix_matches(pid, "coda-libp2p_helper").unwrap_or_default() {
-                    terminating.store(true, Ordering::SeqCst);
-                    break;
-                }
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(5));
+            if !proc::cmd_prefix_matches(pid, "coda-libp2p_helper").unwrap_or_default() {
+                terminating.store(true, Ordering::SeqCst);
+                break;
             }
         });
     }
@@ -866,12 +863,15 @@ fn main() {
                 }
                 SnifferEventVariant::OutgoingConnection(addr) => {
                     if let Some(report) = watching.get_mut(&event.pid) {
-                        report.network.insert(addr.ip(), report::Connection {
-                            incoming: false,
-                            fd: event.fd as i32,
-                            checksum: report::ChecksumPair::default(),
-                            timestamp: better_time,
-                        });
+                        report.network.insert(
+                            addr.ip(),
+                            report::Connection {
+                                incoming: false,
+                                fd: event.fd as i32,
+                                checksum: report::ChecksumPair::default(),
+                                timestamp: better_time,
+                            },
+                        );
                     }
 
                     let metadata = EventMetadata {
@@ -894,12 +894,15 @@ fn main() {
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     if let Some(report) = watching.get_mut(&event.pid) {
-                        report.network.insert(addr.ip(), report::Connection {
-                            incoming: true,
-                            fd: event.fd as i32,
-                            checksum: report::ChecksumPair::default(),
-                            timestamp: better_time,
-                        });
+                        report.network.insert(
+                            addr.ip(),
+                            report::Connection {
+                                incoming: true,
+                                fd: event.fd as i32,
+                                checksum: report::ChecksumPair::default(),
+                                timestamp: better_time,
+                            },
+                        );
                     }
 
                     let metadata = EventMetadata {
@@ -962,7 +965,8 @@ fn main() {
                 }
                 SnifferEventVariant::IncomingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        watching.get_mut(&event.pid)
+                        watching
+                            .get_mut(&event.pid)
                             .map(|report| report.ipc.0 += &data);
 
                         let key = (event.pid, true);
@@ -972,7 +976,14 @@ fn main() {
                         let reader = capnp_readers.entry(key).or_default();
                         reader.extend_from_slice(&data);
                         let local_node_address = recorder.cx.pid_to_addr(event.pid);
-                        if !reader.process(event.pid, true, local_node_address, time, better_time, &db_capnp) {
+                        if !reader.process(
+                            event.pid,
+                            true,
+                            local_node_address,
+                            time,
+                            better_time,
+                            &db_capnp,
+                        ) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);
                         }
@@ -984,7 +995,8 @@ fn main() {
                     }
                     let key = (event.pid, event.fd);
                     if let Some(addr) = p2p_cns.get(&key) {
-                        watching.get_mut(&event.pid)
+                        watching
+                            .get_mut(&event.pid)
                             .and_then(|report| report.network.get_mut(&addr.ip()))
                             .map(|connection| connection.checksum.0 += &data);
 
@@ -1010,7 +1022,8 @@ fn main() {
                 }
                 SnifferEventVariant::OutgoingData(data) => {
                     if event.fd == 0 || event.fd == 1 {
-                        watching.get_mut(&event.pid)
+                        watching
+                            .get_mut(&event.pid)
                             .map(|report| report.ipc.1 += &data);
 
                         let key = (event.pid, false);
@@ -1020,7 +1033,14 @@ fn main() {
                         let reader = capnp_readers.entry(key).or_default();
                         reader.extend_from_slice(&data);
                         let local_node_address = recorder.cx.pid_to_addr(event.pid);
-                        if !reader.process(event.pid, false, local_node_address, time, better_time, &db_capnp) {
+                        if !reader.process(
+                            event.pid,
+                            false,
+                            local_node_address,
+                            time,
+                            better_time,
+                            &db_capnp,
+                        ) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);
                         }
@@ -1032,7 +1052,8 @@ fn main() {
                     }
                     let key = (event.pid, event.fd);
                     if let Some(addr) = p2p_cns.get(&key) {
-                        watching.get_mut(&event.pid)
+                        watching
+                            .get_mut(&event.pid)
                             .and_then(|report| report.network.get_mut(&addr.ip()))
                             .map(|connection| connection.checksum.1 += &data);
                         let metadata = EventMetadata {
@@ -1067,11 +1088,11 @@ fn main() {
             .timeout(Duration::from_secs(30))
             .build()
         {
-        
             for report in watching.values() {
                 let summary_json = serde_json::to_string(report).unwrap();
-    
-                client.post(format!("http://{host}:80/report/debugger"))
+
+                client
+                    .post(format!("http://{host}:80/report/debugger"))
                     .body(summary_json)
                     .send()
                     .unwrap()

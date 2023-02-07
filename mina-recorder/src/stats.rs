@@ -359,8 +359,8 @@ pub fn update_block_stats(
                     let (block_height, global_slot) = {
                         let consensus_state = &block.header.protocol_state.body.consensus_state;
                         (
-                            consensus_state.blockchain_length.0.0 as u32,
-                            consensus_state.global_slot_since_genesis.0.0 as u32,
+                            consensus_state.blockchain_length.0 .0 as u32,
+                            consensus_state.global_slot_since_genesis.0 .0 as u32,
                         )
                     };
                     let event = Event {
