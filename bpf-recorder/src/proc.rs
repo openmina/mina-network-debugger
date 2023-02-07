@@ -1,9 +1,24 @@
 use core::time::Duration;
 use std::{
     time::SystemTime,
-    io::{self, BufRead},
+    io::{self, BufRead, Read},
     fs::File,
 };
+
+pub fn cmd_prefix_matches(pid: u32, pattern: &str) -> io::Result<bool> {
+    let mut tries = 5;
+    while tries > 0 {
+        tries -= 1;
+
+        let mut f = File::open(format!("/proc/{pid}/cmdline"))?;
+        let mut s = String::new();
+        f.read_to_string(&mut s)?;
+        if s.starts_with(pattern) {
+            return Ok(true)
+        }
+    }
+    Ok(false)
+}
 
 #[derive(Default)]
 pub struct S {

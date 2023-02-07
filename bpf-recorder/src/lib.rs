@@ -3,6 +3,9 @@
 #[cfg(feature = "user")]
 pub mod proc;
 
+#[cfg(feature = "user")]
+pub mod report;
+
 #[derive(Clone, Copy, Debug)]
 #[repr(packed)]
 pub struct Event {
