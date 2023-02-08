@@ -4,8 +4,18 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Report {
+    pub version: String,
     pub ipc: ChecksumPair,
     pub network: BTreeMap<IpAddr, Connection>,
+}
+
+impl Report {
+    pub fn new(version: String) -> Self {
+        Report {
+            version,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

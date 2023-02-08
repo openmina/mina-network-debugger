@@ -852,7 +852,8 @@ fn main() {
                     log::info!("exec {alias} pid: {}", event.pid);
                     recorder.on_alias(event.pid, alias);
                     if !watching.contains_key(&event.pid) {
-                        watching.insert(event.pid, report::Report::default());
+                        let version = env::var("GIT_HASH").unwrap_or_default();
+                        watching.insert(event.pid, report::Report::new(version));
                         if env::var("TERMINATE").is_ok() {
                             watch_pid(event.pid, terminating.clone());
                         }
