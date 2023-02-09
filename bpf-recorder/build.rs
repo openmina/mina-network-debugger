@@ -7,6 +7,13 @@ fn main() {
 fn build_bpf() {
     use std::{env, process::Command};
 
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let git_hash = String::from_utf8(output.stdout).unwrap();
+    println!("cargo:rustc-env=GIT_HASH={}", git_hash);
+
     let target_dir = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "../target".to_string());
     let target_dir = format!("{}/bpf", target_dir);
 
