@@ -1,0 +1,18 @@
+# Default values for mina-debugger-test.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# run multiple mock nodes, must be bigger then 1
+parallelism: 4
+
+# the debugger image to test
+image:
+  repository: openminabot/mina-network-debugger
+  pullPolicy: Always
+  tag: "latest"
+
+# number of blocks mock node will be running to produce
+blocks: 20
+
+# time between blocks in seconds
+delay: 6

@@ -1,0 +1,42 @@
+kind: pipeline
+type: docker
+name: default
+
+steps:
+
+- name: publish-image
+  image: plugins/docker
+  settings:
+    dockerfile: Dockerfile
+    repo: openminabot/mina-network-debugger
+    tags:
+      - ${DRONE_COMMIT_SHA:0:8}
+    password:
+      from_secret: docker_hub_password
+    username:
+      from_secret: docker_hub_username
+
+- name: deploy-test-on-cluster
+  image: alpine/helm:3.8.1
+  environment:
+    DRONE_KUBECONFIG:
+      from_secret: k8s_config
+  commands:
+    - mkdir -p $HOME/.kube
+    - echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
+    - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=blocks=$BLOCKS --set=delay=$DELAY --set=image.tag=${DRONE_COMMIT_SHA:0:8}
+
+- name: check-test-result
+  image: alpine:latest
+  commands:
+    - apk update && apk add curl jq
+    - sleep $(( $BLOCKS * $DELAY ))
+    - while [ $(curl -s $URL | jq .success) == "null" ]; do sleep 1; done
+    - export RESULT=$(curl -s $URL)
+    - if [[ $(echo $RESULT | jq .success) == "true" ]]; then exit 0; else exit 1; fi
+    - echo $RESULT && exit 1
+
+environment:
+  BLOCKS: 20
+  DELAY: 6
+  URL: http://1.k8.openmina.com:31876/test
