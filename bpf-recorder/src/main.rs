@@ -12,7 +12,7 @@ ebpf::license!("GPL");
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
-    #[ringbuf(size = 0x80000000)]
+    #[ringbuf(size = 0x4000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
     // 0x1000 processes maximum
@@ -817,6 +817,7 @@ fn main() {
     let mut watching = BTreeMap::new();
     let mut capnp_readers = BTreeMap::<_, CapnpReader>::new();
     let mut capnp_blacklist = BTreeSet::new();
+    let mut max_buffered = 0;
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             let event = match event {
@@ -824,7 +825,12 @@ fn main() {
                 None => continue,
             };
 
-            if event.ts1 + 1_000_000_000 < last_ts {
+            if buffered > max_buffered {
+                max_buffered = buffered;
+                log::warn!("buffered: {buffered}");
+            }
+
+            if event.ts1 + 100_000 < last_ts {
                 log::error!("unordered {} < {last_ts}", event.ts1);
             }
             last_ts = event.ts1;
