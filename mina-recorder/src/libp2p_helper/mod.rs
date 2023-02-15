@@ -79,8 +79,8 @@ impl CapnpReader {
                 CapnpEvent::Publish { msg, .. } | CapnpEvent::ReceivedGossip { msg, .. } => {
                     if msg[0] == 0 {
                         let mut slice = msg.as_slice();
-                        match GossipNetMessageV2::binprot_read(&mut slice).unwrap() {
-                            GossipNetMessageV2::NewState(block) => {
+                        match GossipNetMessageV2::binprot_read(&mut slice) {
+                            Ok(GossipNetMessageV2::NewState(block)) => {
                                 let height = block
                                     .header
                                     .protocol_state
@@ -91,7 +91,11 @@ impl CapnpReader {
                                      .0 as u32;
                                 Some(height)
                             }
-                            _ => None,
+                            Ok(_) => None,
+                            Err(err) => {
+                                log::error!("decode binprot from IPC {err}");
+                                None
+                            },
                         }
                     } else {
                         None

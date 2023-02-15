@@ -130,7 +130,7 @@ dependencies = [
 [[package]]
 name = "binprot"
 version = "0.1.8"
-source = "git+https://github.com/name-placeholder/binprot-rs?rev=ead5ba916725abf8ab212b89985b47c79d1a006a#ead5ba916725abf8ab212b89985b47c79d1a006a"
+source = "git+https://github.com/openmina/binprot-rs?rev=ead5ba916725abf8ab212b89985b47c79d1a006a#ead5ba916725abf8ab212b89985b47c79d1a006a"
 dependencies = [
  "binprot_derive",
  "byteorder",
@@ -140,7 +140,7 @@ dependencies = [
 [[package]]
 name = "binprot_derive"
 version = "0.1.7"
-source = "git+https://github.com/name-placeholder/binprot-rs?rev=ead5ba916725abf8ab212b89985b47c79d1a006a#ead5ba916725abf8ab212b89985b47c79d1a006a"
+source = "git+https://github.com/openmina/binprot-rs?rev=ead5ba916725abf8ab212b89985b47c79d1a006a#ead5ba916725abf8ab212b89985b47c79d1a006a"
 dependencies = [
  "quote",
  "syn",
@@ -1368,7 +1368,7 @@ dependencies = [
 [[package]]
 name = "mina-p2p-messages"
 version = "0.6.4"
-source = "git+https://github.com/name-placeholder/mina-p2p-messages-rs.git?rev=7d285766271d4800821333bc03ecff2f7f501ae7#7d285766271d4800821333bc03ecff2f7f501ae7"
+source = "git+https://github.com/openmina/mina-p2p-messages-rs.git?rev=d6196bd717ce3b418a2a14ee8f4076ef186dd58b#d6196bd717ce3b418a2a14ee8f4076ef186dd58b"
 dependencies = [
  "base64 0.13.1",
  "binprot",
@@ -2452,7 +2452,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "strace-parse"
 version = "0.4.0"
-source = "git+https://github.com/name-placeholder/strace-parse.rs.git#7b9a9d62f4b8271e898ce40dc412aed562875f5d"
+source = "git+https://github.com/openmina/strace-parse.rs.git#7b9a9d62f4b8271e898ce40dc412aed562875f5d"
 dependencies = [
  "error-chain",
  "nom 5.1.2",

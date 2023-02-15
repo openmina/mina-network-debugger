@@ -26,7 +26,7 @@ RUN curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
   && cd .. \
   && rm -rf capnproto-c++-0.10.2
 
-# RUN cargo install --git https://github.com/name-placeholder/mina-network-debugger bpf-recorder --bin bpf-recorder
+# RUN cargo install --git https://github.com/openmina/mina-network-debugger bpf-recorder --bin bpf-recorder
 COPY . .
 RUN cargo install --path bpf-recorder bpf-recorder
 RUN cargo install --path mina-aggregator mina-aggregator
