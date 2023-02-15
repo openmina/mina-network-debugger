@@ -84,11 +84,11 @@ spec:
               name: sys-kernel-debug
             - mountPath: /proc
               name: proc
-          resources:
-            requests:
-              memory: 4G
-            limits:
-              memory: 8G
+          # resources:
+          #   requests:
+          #     memory: 4G
+          #   limits:
+          #     memory: 8G
         - name: mock-node
           image: vladsimplestakingcom/mina-tester-k:latest
           imagePullPolicy: Always
