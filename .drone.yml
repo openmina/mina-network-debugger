@@ -24,7 +24,7 @@ steps:
   commands:
     - mkdir -p $HOME/.kube
     - echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
-    - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=blocks=$BLOCKS --set=delay=$DELAY --set=image.tag=${DRONE_COMMIT_SHA:0:8}
+    - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=build_number=${DRONE_BUILD_NUMBER} --set=blocks=$BLOCKS --set=delay=$DELAY --set=image.tag=${DRONE_COMMIT_SHA:0:8}
 
 - name: check-test-result
   image: alpine:latest

@@ -16,3 +16,5 @@ blocks: 20
 
 # time between blocks in seconds
 delay: 6
+
+build_number: 0
