@@ -53,9 +53,6 @@ spec:
             limits:
               memory: 16G
         - name: mina-daemon
-            # 05c2f73
-            # 32a9161
-            # aebd4e5
           image: minaprotocol/mina-daemon:13faa3b-stretch-berkeley
           command:
           command: ["sh", "-c"]
@@ -81,11 +78,6 @@ spec:
               value: ""
             - name: VERBOSE
               value: "1"
-          resources:
-            requests:
-              memory: 4G
-            limits:
-              memory: 16G
       volumes:
         - name: sys-kernel-debug
           hostPath:

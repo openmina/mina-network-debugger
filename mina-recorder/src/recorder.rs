@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use super::{
     event::{EventMetadata, ConnectionInfo, DirectedId},
     connection::{HandleData, pnet, multistream_select, noise, mux, mina_protocol},
-    database::DbFacade,
+    database::{DbFacade, DbGroup},
     tester::Tester,
     stats::{Stats, StatsState},
 };
@@ -25,6 +25,7 @@ type Inner = multistream_select::State<mina_protocol::State>;
 pub struct P2pRecorder {
     tester: Option<Tester>,
     cns: BTreeMap<ConnectionInfo, ThreadContext>,
+    cns_main_thread: BTreeMap<ConnectionInfo, ConnectionContext>,
     // this is used by capnp reader
     // TODO: split
     pub cx: Arc<Cx>,
@@ -33,6 +34,11 @@ pub struct P2pRecorder {
 pub struct ThreadContext {
     handle: JoinHandle<()>,
     tx: mpsc::Sender<NetworkChunk>,
+}
+
+pub struct ConnectionContext {
+    cn: Cn,
+    db: DbGroup,
 }
 
 pub struct NetworkChunk {
@@ -133,6 +139,7 @@ impl P2pRecorder {
         P2pRecorder {
             tester: if test { Some(Tester::default()) } else { None },
             cns: BTreeMap::default(),
+            cns_main_thread: BTreeMap::default(),
             cx: Arc::new(Cx {
                 apps: Mutex::default(),
                 db,
@@ -164,7 +171,12 @@ impl P2pRecorder {
             .insert(pid, (alias, SocketAddr::new(ip, 8302)));
     }
 
-    pub fn on_connect(&mut self, incoming: bool, metadata: EventMetadata, buffered: usize) {
+    pub fn on_connect<const MAIN_THREAD: bool>(
+        &mut self,
+        incoming: bool,
+        metadata: EventMetadata,
+        buffered: usize,
+    ) {
         if let Some(tester) = &mut self.tester {
             tester.on_connect(incoming, metadata);
             return;
@@ -201,6 +213,17 @@ impl P2pRecorder {
                 let (tx, rx) = mpsc::channel();
                 let cx = self.cx.clone();
                 let mut cn = Cn::new(chain_id.as_bytes());
+
+                if MAIN_THREAD {
+                    self.cns_main_thread
+                        .insert(id.metadata.id, ConnectionContext {
+                            cn: Cn::new(chain_id.as_bytes()),
+                            db: group,
+                        });
+
+                    return;
+                }
+
                 let handle = thread::spawn(move || {
                     while let Ok(NetworkChunk {
                         metadata,
@@ -263,11 +286,19 @@ impl P2pRecorder {
                 Ok(()) => log::info!("{id} join thread"),
                 Err(err) => log::error!("{id} {err:?}"),
             }
+        } else if let Some(cn_cx) = self.cns_main_thread.remove(&id.metadata.id) {
+            log::info!("{id} {} disconnect", cn_cx.db.id());
         }
     }
 
     #[rustfmt::skip]
-    pub fn on_data(&mut self, incoming: bool, metadata: EventMetadata, buffered: usize, bytes: Vec<u8>) {
+    pub fn on_data(
+        &mut self,
+        incoming: bool,
+        metadata: EventMetadata,
+        buffered: usize,
+        mut bytes: Vec<u8>,
+    ) {
         if let Some(tester) = &mut self.tester {
             tester.on_data(incoming, metadata, bytes);
             return;
@@ -279,6 +310,23 @@ impl P2pRecorder {
                 incoming,
                 buffered,
             }).unwrap_or_default();
+        } else if let Some(cn_cx) = self.cns_main_thread.get_mut(&metadata.id) {
+            let alias = {
+                let lock = self.cx.apps.lock();
+                lock.get(&metadata.id.pid)
+                    .cloned()
+                    .map(|(a, _)| a)
+                    .unwrap_or_default()
+            };
+            let id = DirectedId {
+                metadata,
+                alias,
+                incoming,
+                buffered,
+            };
+            if let Err(err) = cn_cx.cn.on_data(id.clone(), &mut bytes, &self.cx, &cn_cx.db) {
+                log::error!("{id}: {err}");
+            }
         }
     }
 

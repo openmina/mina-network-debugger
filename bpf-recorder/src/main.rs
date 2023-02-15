@@ -12,7 +12,7 @@ ebpf::license!("GPL");
 #[derive(ebpf::BpfApp)]
 pub struct App {
     // output channel
-    #[ringbuf(size = 0x4000000)]
+    #[ringbuf(size = 0x8000000)]
     pub event_queue: ebpf::RingBufferRef,
     // track relevant pids
     // 0x1000 processes maximum
@@ -897,7 +897,7 @@ fn main() {
                         metadata.id.addr = old_addr;
                         recorder.on_disconnect(metadata, buffered);
                     }
-                    recorder.on_connect(false, metadata, buffered);
+                    recorder.on_connect::<true>(false, metadata, buffered);
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     if let Some(report) = watching.get_mut(&event.pid) {
@@ -928,7 +928,7 @@ fn main() {
                         metadata.id.addr = old_addr;
                         recorder.on_disconnect(metadata, buffered);
                     }
-                    recorder.on_connect(true, metadata, buffered);
+                    recorder.on_connect::<true>(true, metadata, buffered);
                 }
                 SnifferEventVariant::Disconnected => {
                     let key = (event.pid, event.fd);
