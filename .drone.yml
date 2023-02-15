@@ -16,7 +16,7 @@ steps:
     username:
       from_secret: docker_hub_username
 
-- name: deploy-test-on-cluster
+- name: test-on-cluster
   image: alpine/helm:3.8.1
   environment:
     DRONE_KUBECONFIG:
@@ -25,15 +25,13 @@ steps:
     - mkdir -p $HOME/.kube
     - echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
     - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=build_number=${DRONE_BUILD_NUMBER} --set=blocks=$BLOCKS --set=delay=$DELAY --set=image.tag=${DRONE_COMMIT_SHA:0:8}
-
-- name: check-test-result
-  image: alpine:latest
-  commands:
     - apk update && apk add curl jq
+    - echo "Simple test, 4 mock nodes exchange $BLOCKS blocks ..."
     - sleep $(( $BLOCKS * $DELAY ))
     - while [ $(curl -s $URL | jq .success) == "null" ]; do sleep 1; done
     - export RESULT=$(curl -s $URL)
-    - if [[ $(echo $RESULT | jq .success) == "true" ]]; then exit 0; else exit 1; fi
+    - echo "Debugger commit hash $(echo $RESULT | jq .debugger_version)"
+    - if [[ $(echo $RESULT | jq .success) == "true" ]]; then echo "Passed"; exit 0; else echo "Failed"; exit 1; fi
     - echo $RESULT && exit 1
 
 environment:
