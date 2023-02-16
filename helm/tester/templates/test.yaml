@@ -75,6 +75,8 @@ spec:
               value: "registry-svc"
             - name: TERMINATE
               value: "1"
+            - name: BUILD_NUMBER
+              value: "{{ .Values.build_number }}"
           ports:
             - name: http
               containerPort: 8000

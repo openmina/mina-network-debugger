@@ -672,7 +672,7 @@ fn main() {
 
     use bpf_recorder::{
         sniffer_event::{SnifferEvent, SnifferEventVariant},
-        proc, report,
+        proc,
     };
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
@@ -859,7 +859,11 @@ fn main() {
                     recorder.on_alias(event.pid, alias);
                     if !watching.contains_key(&event.pid) {
                         let version = env!("GIT_HASH");
-                        watching.insert(event.pid, report::Report::new(version.to_owned()));
+                        watching.insert(event.pid, tester_k::Report {
+                            version: version.to_owned(),
+                            ipc: Default::default(),
+                            network: BTreeMap::default(),
+                        });
                         if env::var("TERMINATE").is_ok() {
                             watch_pid(event.pid, terminating.clone());
                         }
@@ -872,10 +876,10 @@ fn main() {
                     if let Some(report) = watching.get_mut(&event.pid) {
                         report.network.insert(
                             addr.ip(),
-                            report::Connection {
+                            tester_k::ConnectionMetadata {
                                 incoming: false,
                                 fd: event.fd as i32,
-                                checksum: report::ChecksumPair::default(),
+                                checksum: tester_k::ChecksumPair::default(),
                                 timestamp: better_time,
                             },
                         );
@@ -903,10 +907,10 @@ fn main() {
                     if let Some(report) = watching.get_mut(&event.pid) {
                         report.network.insert(
                             addr.ip(),
-                            report::Connection {
+                            tester_k::ConnectionMetadata {
                                 incoming: true,
                                 fd: event.fd as i32,
-                                checksum: report::ChecksumPair::default(),
+                                checksum: tester_k::ChecksumPair::default(),
                                 timestamp: better_time,
                             },
                         );
@@ -1095,11 +1099,12 @@ fn main() {
             .timeout(Duration::from_secs(30))
             .build()
         {
+            let build_number = env::var("BUILD_NUMBER").ok().and_then(|s| s.parse::<u32>().ok()).unwrap_or_default();
             for report in watching.values() {
                 let summary_json = serde_json::to_string(report).unwrap();
 
                 client
-                    .post(format!("http://{host}:80/report/debugger"))
+                    .post(format!("http://{host}:80/report/debugger?build_number={build_number}"))
                     .body(summary_json)
                     .send()
                     .unwrap()
