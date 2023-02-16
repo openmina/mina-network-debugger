@@ -1524,7 +1524,6 @@ dependencies = [
 [[package]]
 name = "mina-ipc"
 version = "0.1.0"
-source = "git+https://github.com/openmina/simple-debugger#54f256f16966dc3a2ae3cae16ee4b9691a1be469"
 dependencies = [
  "binprot 0.1.8 (git+https://github.com/name-placeholder/binprot-rs?rev=ead5ba916725abf8ab212b89985b47c79d1a006a)",
  "blake2",
@@ -2780,7 +2779,6 @@ dependencies = [
 [[package]]
 name = "tester-k"
 version = "0.1.0"
-source = "git+https://github.com/openmina/simple-debugger#54f256f16966dc3a2ae3cae16ee4b9691a1be469"
 dependencies = [
  "anyhow",
  "env_logger",

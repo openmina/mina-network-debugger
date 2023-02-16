@@ -38,7 +38,7 @@ reqwest = { version = "0.11.14", features = ["blocking"], optional = true }
 # local
 bpf-ring-buffer = { version = "=0.1.0", path = "../bpf-ring-buffer", optional = true }
 mina-recorder = { path = "../mina-recorder", optional = true }
-tester-k = { git = "https://github.com/openmina/simple-debugger", optional = true }
+tester-k = { path = "../tester-k", optional = true }
 
 [features]
 default = ["user"]
