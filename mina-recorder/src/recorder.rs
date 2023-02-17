@@ -215,11 +215,13 @@ impl P2pRecorder {
                 let mut cn = Cn::new(chain_id.as_bytes());
 
                 if MAIN_THREAD {
-                    self.cns_main_thread
-                        .insert(id.metadata.id, ConnectionContext {
+                    self.cns_main_thread.insert(
+                        id.metadata.id,
+                        ConnectionContext {
                             cn: Cn::new(chain_id.as_bytes()),
                             db: group,
-                        });
+                        },
+                    );
 
                     return;
                 }

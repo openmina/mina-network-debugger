@@ -100,11 +100,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
 
     let netstat_json = serde_json::to_string(&netstat_report)?;
 
-    let summary_json = serde_json::to_string(&Report {
-        version: String::new(),
-        ipc,
-        network: Default::default(),
-    })?;
+    let summary_json = serde_json::to_string(&Report { ipc })?;
 
     let url = format!("http://{center_host}:{CENTER_PORT}/report/node?build_number={build_number}");
     // TODO: check

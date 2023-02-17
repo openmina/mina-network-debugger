@@ -165,7 +165,7 @@ impl App {
                     let x = unsafe { helpers::get_current_pid_tgid() };
                     ((x >> 32) as u32, (x & 0xffffffff) as u32)
                 };
-        
+
                 let ts = unsafe { helpers::ktime_get_boot_ns() };
                 let event = Event::new(pid, tid, ts, ts);
                 let event = event.set_tag_fd(DataTag::Alias, 0).set_ok(len as u64);
@@ -678,6 +678,7 @@ fn main() {
         sniffer_event::{SnifferEvent, SnifferEventVariant},
         proc,
     };
+    use tester_k::{DebuggerReport, ConnectionMetadata};
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
         EventMetadata, ConnectionInfo, server, P2pRecorder, libp2p_helper::CapnpReader,
@@ -839,7 +840,11 @@ fn main() {
             let last = last_ts.get(&event.tid).cloned().unwrap_or_default();
             if event.ts1 < last {
                 let unordered = last - event.ts1;
-                log::warn!("unordered {unordered}, {} < {last}, message id {}", event.ts1, counter.load(Ordering::Relaxed));
+                log::warn!(
+                    "unordered {unordered}, {} < {last}, message id {}",
+                    event.ts1,
+                    counter.load(Ordering::Relaxed)
+                );
                 let max_unordered_ns = max_unordered_ns.entry(event.tid).or_default();
                 if unordered > *max_unordered_ns {
                     *max_unordered_ns = unordered;
@@ -871,11 +876,14 @@ fn main() {
                     recorder.on_alias(event.pid, alias);
                     if !watching.contains_key(&event.pid) {
                         let version = env!("GIT_HASH");
-                        watching.insert(event.pid, tester_k::Report {
-                            version: version.to_owned(),
-                            ipc: Default::default(),
-                            network: BTreeMap::default(),
-                        });
+                        watching.insert(
+                            event.pid,
+                            DebuggerReport {
+                                version: version.to_owned(),
+                                ipc: Default::default(),
+                                network: BTreeMap::default(),
+                            },
+                        );
                         if env::var("TERMINATE").is_ok() {
                             watch_pid(event.pid, terminating.clone());
                         }
@@ -888,10 +896,10 @@ fn main() {
                     if let Some(report) = watching.get_mut(&event.pid) {
                         report.network.insert(
                             addr.ip(),
-                            tester_k::ConnectionMetadata {
+                            ConnectionMetadata {
                                 incoming: false,
                                 fd: event.fd as i32,
-                                checksum: tester_k::ChecksumPair::default(),
+                                checksum: Default::default(),
                                 timestamp: better_time,
                             },
                         );
@@ -919,10 +927,10 @@ fn main() {
                     if let Some(report) = watching.get_mut(&event.pid) {
                         report.network.insert(
                             addr.ip(),
-                            tester_k::ConnectionMetadata {
+                            ConnectionMetadata {
                                 incoming: true,
                                 fd: event.fd as i32,
-                                checksum: tester_k::ChecksumPair::default(),
+                                checksum: Default::default(),
                                 timestamp: better_time,
                             },
                         );
@@ -1111,12 +1119,17 @@ fn main() {
             .timeout(Duration::from_secs(30))
             .build()
         {
-            let build_number = env::var("BUILD_NUMBER").ok().and_then(|s| s.parse::<u32>().ok()).unwrap_or_default();
+            let build_number = env::var("BUILD_NUMBER")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or_default();
             for report in watching.values() {
                 let summary_json = serde_json::to_string(report).unwrap();
 
                 client
-                    .post(format!("http://{host}:80/report/debugger?build_number={build_number}"))
+                    .post(format!(
+                        "http://{host}:80/report/debugger?build_number={build_number}"
+                    ))
                     .body(summary_json)
                     .send()
                     .unwrap()

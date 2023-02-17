@@ -5,11 +5,11 @@ use std::{
     thread,
 };
 
-use crate::message::Report;
+use crate::message::DebuggerReport;
 
 pub struct Conntrack {
     child: Child,
-    thread: thread::JoinHandle<Report>,
+    thread: thread::JoinHandle<DebuggerReport>,
 }
 
 pub fn run() -> anyhow::Result<Conntrack> {
@@ -20,7 +20,7 @@ pub fn run() -> anyhow::Result<Conntrack> {
     let this = env::var("MY_POD_IP")?.parse::<IpAddr>()?;
     let (child, iter) = launch();
 
-    let thread = thread::spawn(move || Report {
+    let thread = thread::spawn(move || DebuggerReport {
         version: String::new(),
         ipc: Default::default(),
         network: {
@@ -49,7 +49,7 @@ pub fn run() -> anyhow::Result<Conntrack> {
 }
 
 impl Conntrack {
-    pub fn stop(mut self) -> Report {
+    pub fn stop(mut self) -> DebuggerReport {
         self.child.kill().unwrap();
         self.thread.join().unwrap()
     }

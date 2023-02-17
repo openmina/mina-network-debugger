@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct Summary {
     pub peer_id: String,
     pub node: Option<Report>,
-    pub debugger: Option<Report>,
+    pub debugger: Option<DebuggerReport>,
     pub net_report: Vec<NetReport>,
 }
 
@@ -31,6 +31,11 @@ pub struct PeerInfo {
 
 #[derive(Serialize, Deserialize)]
 pub struct Report {
+    pub ipc: ChecksumPair,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DebuggerReport {
     pub version: String,
     pub ipc: ChecksumPair,
     pub network: BTreeMap<IpAddr, ConnectionMetadata>,

@@ -18,9 +18,6 @@ fn main() -> anyhow::Result<()> {
 
     match Command::from_args() {
         Command::Registry => center::run(),
-        Command::Peer {
-            blocks,
-            delay,
-        } => peer::run(blocks, delay),
+        Command::Peer { blocks, delay } => peer::run(blocks, delay),
     }
 }

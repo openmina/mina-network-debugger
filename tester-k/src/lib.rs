@@ -12,5 +12,5 @@ mod message;
 pub mod netstat;
 mod test_state;
 
-pub use self::message::{ConnectionMetadata, Report};
+pub use self::message::{ConnectionMetadata, DebuggerReport};
 pub use mina_ipc::message::{Checksum, ChecksumPair};

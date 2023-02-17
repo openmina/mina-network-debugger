@@ -11,7 +11,7 @@ use mina_ipc::message::ChecksumPair;
 use crate::{
     constants,
     libp2p_helper::Process,
-    message::{NetReport, PeerInfo, Registered, Report, Summary},
+    message::{NetReport, PeerInfo, Registered, Report, DebuggerReport, Summary},
 };
 
 pub struct State {
@@ -129,7 +129,7 @@ impl State {
         self.perform_test();
     }
 
-    pub fn add_debugger_report(&mut self, addr: SocketAddr, report: Report) {
+    pub fn add_debugger_report(&mut self, addr: SocketAddr, report: DebuggerReport) {
         if let Some(summary) = self.summary.get_mut(&addr.ip()) {
             summary.debugger = Some(report);
         }

@@ -67,6 +67,7 @@ fn routes(
         .or(summary(state.clone()))
         .or(test(state.clone()));
     let p = report(state.clone())
+        .or(debugger_report(state.clone()))
         .or(net_report(state.clone()))
         .or(reset(state));
     warp::get()
@@ -153,13 +154,13 @@ fn net_report(
 fn report(
     state: Arc<Mutex<State>>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("report" / String)
+    warp::path!("report" / "node")
         .and(warp::filters::addr::remote())
         .and(warp::body::json())
         .and(warp::query())
         .and(warp::post())
         .map(
-            move |ty: String, addr: Option<SocketAddr>, report, Query { build_number }| {
+            move |addr: Option<SocketAddr>, report, Query { build_number }| {
                 let Some(addr) = addr else {
                     log::error!("could not determine registrant address");
                     return reply::with_status(
@@ -171,11 +172,34 @@ fn report(
                 if lock.build_number() != build_number {
                     return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
-                match ty.as_str() {
-                    "node" => lock.add_node_report(addr, report),
-                    "debugger" => lock.add_debugger_report(addr, report),
-                    c => log::warn!("posted report, unknown category {c}"),
+                lock.add_node_report(addr, report);
+                reply::with_status(reply::json(&""), StatusCode::OK)
+            },
+        )
+}
+
+fn debugger_report(
+    state: Arc<Mutex<State>>,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("report" / "debugger")
+        .and(warp::filters::addr::remote())
+        .and(warp::body::json())
+        .and(warp::query())
+        .and(warp::post())
+        .map(
+            move |addr: Option<SocketAddr>, report, Query { build_number }| {
+                let Some(addr) = addr else {
+                    log::error!("could not determine registrant address");
+                    return reply::with_status(
+                        reply::json(&"could not determine registrant address"),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    );
+                };
+                let mut lock = state.lock().expect("must not panic during mutex hold");
+                if lock.build_number() != build_number {
+                    return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
+                lock.add_debugger_report(addr, report);
                 reply::with_status(reply::json(&""), StatusCode::OK)
             },
         )

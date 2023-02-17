@@ -95,7 +95,7 @@ impl CapnpReader {
                             Err(err) => {
                                 log::error!("decode binprot from IPC {err}");
                                 None
-                            },
+                            }
                         }
                     } else {
                         None
