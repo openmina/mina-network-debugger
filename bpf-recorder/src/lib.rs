@@ -4,10 +4,11 @@
 pub mod proc;
 
 #[derive(Clone, Copy, Debug)]
-#[repr(packed)]
+#[repr(C)]
 pub struct Event {
     pub fd: u32,
     pub pid: u32,
+    pub tid: u32,
     pub ts0: u64,
     pub ts1: u64,
     pub tag: DataTag,
@@ -15,10 +16,11 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(pid: u32, ts0: u64, ts1: u64) -> Self {
+    pub fn new(pid: u32, tid: u32, ts0: u64, ts1: u64) -> Self {
         Event {
             fd: 0,
             pid,
+            tid,
             ts0,
             ts1,
             tag: DataTag::Debug,
@@ -40,22 +42,6 @@ impl Event {
     pub fn set_err(mut self, code: i64) -> Self {
         self.size = code as _;
         self
-    }
-
-    pub fn from_bytes(b: &[u8]) -> Self {
-        assert_eq!(b.len(), 32);
-        Event {
-            fd: u32::from_ne_bytes(b[0..4].try_into().expect("cannot fail, asserted above")),
-            pid: u32::from_ne_bytes(b[4..8].try_into().expect("cannot fail, asserted above")),
-            ts0: u64::from_ne_bytes(b[8..16].try_into().expect("cannot fail, asserted above")),
-            ts1: u64::from_ne_bytes(b[16..24].try_into().expect("cannot fail, asserted above")),
-            tag: {
-                let tag = b[24..28].try_into().expect("cannot fail, asserted above");
-                // TODO: handle
-                DataTag::from_u32(u32::from_ne_bytes(tag)).unwrap()
-            },
-            size: i32::from_ne_bytes(b[28..32].try_into().expect("cannot fail, asserted above")),
-        }
     }
 }
 
@@ -104,6 +90,7 @@ pub mod sniffer_event {
     #[derive(Debug)]
     pub struct SnifferEvent {
         pub pid: u32,
+        pub tid: u32,
         pub fd: u32,
         pub ts0: u64,
         pub ts1: u64,
@@ -130,17 +117,20 @@ pub mod sniffer_event {
         type Error = ErrorSliceTooShort;
 
         fn from_rb_slice(slice: &[u8]) -> Result<Option<Self>, Self::Error> {
+            use core::{mem, ptr};
+
             if slice.is_empty() {
                 return Ok(None);
             }
-            if slice.len() < 32 {
+            if slice.len() < mem::size_of::<Event>() {
                 log::error!("slice too short: {}", hex::encode(slice));
                 return Ok(None);
             }
-            let event = Event::from_bytes(&slice[..32]);
+            let event = unsafe { ptr::read::<Event>(slice.as_ptr() as *const _) };
             let Event {
                 fd,
                 pid,
+                tid,
                 ts0,
                 ts1,
                 tag,
@@ -149,6 +139,7 @@ pub mod sniffer_event {
             let ret = |variant| -> Result<Option<Self>, ErrorSliceTooShort> {
                 Ok(Some(SnifferEvent {
                     pid,
+                    tid,
                     fd,
                     ts0,
                     ts1,
@@ -159,14 +150,15 @@ pub mod sniffer_event {
                 return ret(SnifferEventVariant::Error(tag, size));
             }
             let size = size as usize;
-            if slice.len() < 32 + size {
+            if slice.len() < mem::size_of::<Event>() + size {
                 log::error!(
-                    "expected 32 bytes header + {size} bytes body, got {}, cannot recover",
+                    "expected {} bytes header + {size} bytes body, got {}, cannot recover",
+                    mem::size_of::<Event>(),
                     slice.len(),
                 );
                 std::process::exit(1);
             }
-            let data = &slice[32..(32 + size)];
+            let data = &slice[mem::size_of::<Event>()..(mem::size_of::<Event>() + size)];
             if let DataTag::Accept | DataTag::Connect | DataTag::Bind = tag {
                 let address_family = u16::from_ne_bytes(data[0..2].try_into().unwrap());
                 let port = u16::from_be_bytes(data[2..4].try_into().unwrap());

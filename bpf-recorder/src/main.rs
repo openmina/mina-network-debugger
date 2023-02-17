@@ -161,11 +161,13 @@ impl App {
 
             if let Ok(len) = self.check_env_entry(entry) {
                 env_str.discard();
-                let x = unsafe { helpers::get_current_pid_tgid() };
-                let pid = (x >> 32) as u32;
-
+                let (pid, tid) = {
+                    let x = unsafe { helpers::get_current_pid_tgid() };
+                    ((x >> 32) as u32, (x & 0xffffffff) as u32)
+                };
+        
                 let ts = unsafe { helpers::ktime_get_boot_ns() };
-                let event = Event::new(pid, ts, ts);
+                let event = Event::new(pid, tid, ts, ts);
                 let event = event.set_tag_fd(DataTag::Alias, 0).set_ok(len as u64);
                 let name = unsafe { entry.offset(10) };
                 send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, name)?;
@@ -380,10 +382,12 @@ impl App {
             Ok(())
         }
 
-        let x = unsafe { helpers::get_current_pid_tgid() };
-        let pid = (x >> 32) as u32;
+        let (pid, tid) = {
+            let x = unsafe { helpers::get_current_pid_tgid() };
+            ((x >> 32) as u32, (x & 0xffffffff) as u32)
+        };
 
-        let event = Event::new(pid, ts0, ts1);
+        let event = Event::new(pid, tid, ts0, ts1);
         let ptr = data.ptr();
         let event = match data {
             context::Variant::Empty { len, .. } => {
@@ -554,7 +558,7 @@ impl App {
         self.check_pid()?;
 
         let fd = ctx.read_here::<u64>(0x10) as u32;
-        let (pid, _) = {
+        let (pid, tid) = {
             let x = unsafe { helpers::get_current_pid_tgid() };
             ((x >> 32) as u32, (x & 0xffffffff) as u32)
         };
@@ -565,7 +569,7 @@ impl App {
             return Ok(());
         }
 
-        let event = Event::new(pid, ts, ts);
+        let event = Event::new(pid, tid, ts, ts);
         let event = event.set_tag_fd(DataTag::Close, fd);
         send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())
     }
@@ -812,12 +816,14 @@ fn main() {
     }
 
     let mut p2p_cns = BTreeMap::new();
+    let counter = db.messages.clone();
     let mut recorder = P2pRecorder::new(db, test);
-    let mut last_ts = 0;
     let mut watching = BTreeMap::new();
     let mut capnp_readers = BTreeMap::<_, CapnpReader>::new();
     let mut capnp_blacklist = BTreeSet::new();
     let mut max_buffered = 0;
+    let mut max_unordered_ns = BTreeMap::new();
+    let mut last_ts = BTreeMap::new();
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             let event = match event {
@@ -830,10 +836,16 @@ fn main() {
                 log::warn!("buffered: {buffered}");
             }
 
-            if event.ts1 + 100_000 < last_ts {
-                log::error!("unordered {} < {last_ts}", event.ts1);
+            let last = last_ts.get(&event.tid).cloned().unwrap_or_default();
+            if event.ts1 < last {
+                let unordered = last - event.ts1;
+                log::warn!("unordered {unordered}, {} < {last}, message id {}", event.ts1, counter.load(Ordering::Relaxed));
+                let max_unordered_ns = max_unordered_ns.entry(event.tid).or_default();
+                if unordered > *max_unordered_ns {
+                    *max_unordered_ns = unordered;
+                }
             }
-            last_ts = event.ts1;
+            last_ts.insert(event.tid, event.ts1);
             let time = match &origin {
                 None => {
                     let now = SystemTime::now();

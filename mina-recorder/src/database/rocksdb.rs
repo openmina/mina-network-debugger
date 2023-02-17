@@ -35,7 +35,7 @@ use super::{
 
 pub struct DbFacade {
     cns: AtomicU64,
-    messages: Arc<AtomicU64>,
+    pub messages: Arc<AtomicU64>,
     rnd_cnt: AtomicU64,
     inner: DbCore,
 }

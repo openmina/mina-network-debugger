@@ -211,11 +211,13 @@ impl RingBuffer {
                 let c_pos = self.consumer_pos_value;
                 log::debug!("SLICE: {c_pos:010x}, {pr_pos:010x}, length: 8 + {length:010x}");
 
-                // check length, valid lengths are 0x20 or (0x20 + (2 ^ n)), where 8 <= n < 28
-                if !(8..28).map(|n| 1 << n).any(|l| l + 0x20 == length) && (0x20 != length) {
-                    log::error!("invalid length {length}");
-                    return Err(Error::WouldBlock);
-                }
+                // check length, valid lengths are `header_size`
+                // or `(header_size + (2 ^ n))`, where 8 <= n < 28
+                // let header_size = 0x28;
+                // if !(8..28).map(|n| 1 << n).any(|l| l + header_size == length) && (header_size != length) {
+                //     log::error!("invalid length {length}");
+                //     return Err(Error::WouldBlock);
+                // }
             }
 
             // align the length by 8, and advance our position
