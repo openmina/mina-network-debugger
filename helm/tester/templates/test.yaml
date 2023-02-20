@@ -34,7 +34,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: RUST_LOG
-              value: info
+              value: debug
             - name: MY_POD_IP
               valueFrom:
                 fieldRef:

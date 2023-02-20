@@ -101,7 +101,6 @@ fn register(
         .and(warp::filters::addr::remote())
         .and(warp::query())
         .map(move |addr, Query { build_number }| -> WithStatus<Json> {
-            dbg!(build_number);
             let Some(addr) = addr else {
                 log::error!("could not determine registrant address");
                 return reply::with_status(
@@ -109,6 +108,7 @@ fn register(
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
             };
+            log::debug!("register {addr}, build {build_number}");
             match state
                 .lock()
                 .expect("must not panic during mutex hold")
@@ -140,9 +140,12 @@ fn net_report(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     );
                 };
+                log::debug!("receive net report from {addr}, build {build_number}");
+                log::debug!("{report:?}");
 
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
+                    log::debug!("ignore net report {build_number}, current {}", lock.build_number());
                     return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
                 lock.add_net_report(addr, report);
@@ -168,8 +171,12 @@ fn report(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     );
                 };
+                log::debug!("receive node report from {addr}, build {build_number}");
+                log::debug!("{report:?}");
+
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
+                    log::debug!("ignore node report {build_number}, current {}", lock.build_number());
                     return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
                 lock.add_node_report(addr, report);
@@ -195,8 +202,12 @@ fn debugger_report(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     );
                 };
+                log::debug!("receive debugger report from {addr}, build {build_number}");
+                log::debug!("{report:?}");
+
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
+                    log::debug!("ignore debugger report {build_number}, current {}", lock.build_number());
                     return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
                 lock.add_debugger_report(addr, report);

@@ -83,6 +83,11 @@ impl State {
 
     pub fn register(&mut self, addr: SocketAddr, build_number: u32) -> anyhow::Result<Registered> {
         if self.build_number != build_number {
+            log::warn!(
+                "current build: {}, this build: {}, cleanup",
+                self.build_number,
+                build_number,
+            );
             self.build_number = build_number;
             self.summary.clear();
             self.test_result = None;
@@ -90,6 +95,8 @@ impl State {
         let Some((peer_id, _, secret_key)) = self.process.generate_keypair()? else {
             return Err(anyhow::anyhow!("cannot generate key pair"));
         };
+
+        log::debug!("already registered {} nodes, new peer_id {peer_id}", self.summary.len());
 
         let info = PeerInfo {
             ip: addr.ip(),

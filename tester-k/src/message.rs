@@ -29,26 +29,26 @@ pub struct PeerInfo {
     pub peer_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Report {
     pub ipc: ChecksumPair,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DebuggerReport {
     pub version: String,
     pub ipc: ChecksumPair,
     pub network: BTreeMap<IpAddr, ConnectionMetadata>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct NetReport {
     pub local: SocketAddr,
     pub remote: SocketAddr,
     pub timestamp: SystemTime,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ConnectionMetadata {
     pub incoming: bool,
     pub fd: i32,
