@@ -94,6 +94,8 @@ spec:
         - name: mock-node
           image: vladsimplestakingcom/mina-tester-k:latest
           imagePullPolicy: Always
+          securityContext:
+            privileged: true
           command: [ "sh", "-c" ]
           args:
             # TODO: wait registry is ready inside mina-tester-k process

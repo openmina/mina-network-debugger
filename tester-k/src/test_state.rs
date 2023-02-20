@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::{IpAddr, SocketAddr},
-    time::SystemTime,
+    time::{SystemTime, Duration},
 };
 
 use serde::{Deserialize, Serialize};
@@ -96,7 +96,10 @@ impl State {
             return Err(anyhow::anyhow!("cannot generate key pair"));
         };
 
-        log::debug!("already registered {} nodes, new peer_id {peer_id}", self.summary.len());
+        log::debug!(
+            "already registered {} nodes, new peer_id {peer_id}",
+            self.summary.len()
+        );
 
         let info = PeerInfo {
             ip: addr.ip(),
@@ -158,7 +161,7 @@ impl State {
         };
         for (&ip, summary) in &self.summary {
             match (&summary.node, &summary.debugger) {
-                (Some(s_node), Some(s_debugger)) => {
+                (Some(s_node), Some(s_debugger)) if !summary.net_report.is_empty() => {
                     result.debugger_version = Some(s_debugger.version.clone());
 
                     let ipc_test_result = IpcTestResult {
@@ -177,6 +180,7 @@ impl State {
                     // must exist only one debugger who seen this connection as incoming
                     // must exist only one (distinct) debugger who seen this connection as outgoing
                     let mut duplicate_track = BTreeSet::new();
+                    // net_report must be sorted chronologically
                     for r in &summary.net_report {
                         let NetReport {
                             local,
@@ -243,7 +247,17 @@ impl State {
                             (None, None) => bucket.both_debuggers_missing.push(entry),
                         }
 
-                        result.success &= ok;
+                        let (order, _, _) = bucket.matches.iter().fold((true, Duration::default(), Duration::default()), |(is_ok, local_t, remote_t), a| {
+                            let this_local = a.local_time.and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok()).unwrap_or_default();
+                            let this_remote = a.remote_time.and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok()).unwrap_or_default();
+                            let is_ok = is_ok && this_local >= local_t && this_remote >= remote_t;
+                            (is_ok, this_local, this_remote)
+                        });
+                        if !order {
+                            log::error!("wrong order");
+                        }
+
+                        result.success &= ok && order;
                     }
                 }
                 // ensure every node and every debugger already reported

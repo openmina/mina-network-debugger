@@ -5,11 +5,13 @@ pub mod peer;
 
 #[allow(dead_code)]
 mod conntrack;
+#[allow(dead_code)]
+mod netstat;
 
 mod constants;
 mod libp2p_helper;
 mod message;
-pub mod netstat;
+pub mod tcpflow;
 mod test_state;
 
 pub use self::message::{ConnectionMetadata, DebuggerReport};

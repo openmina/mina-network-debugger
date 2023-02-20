@@ -1,4 +1,4 @@
-use std::{env, fs, path::Path, thread, time::Duration};
+use std::{env, fs, path::Path, thread, time::Duration, net::IpAddr};
 
 use reqwest::blocking::ClientBuilder;
 
@@ -8,14 +8,15 @@ use super::{
     constants::*,
     libp2p_helper::Process,
     message::{Registered, Report},
-    netstat::Netstat,
+    tcpflow::TcpFlow,
 };
 
 pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
     let center_host = env::var("REGISTRY")?;
     let build_number = env::var("BUILD_NUMBER")?.parse::<u32>()?;
+    let this_ip = env::var("MY_POD_IP")?.parse::<IpAddr>()?;
 
-    let netstat = Netstat::run()?;
+    let network = TcpFlow::run(this_ip)?;
 
     let client = ClientBuilder::new()
         .timeout(Duration::from_secs(30))
@@ -96,19 +97,17 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
     let (ipc, _status_code) = process.stop().expect("can check debuggers output");
     let recv_cnt = receiver.join().unwrap();
 
-    let netstat_report = netstat.stop();
-
-    let netstat_json = serde_json::to_string(&netstat_report)?;
-
     let summary_json = serde_json::to_string(&Report { ipc })?;
-
     let url = format!("http://{center_host}:{CENTER_PORT}/report/node?build_number={build_number}");
     // TODO: check
     let _status = client.post(url).body(summary_json).send()?.status();
 
-    let url = format!("http://{center_host}:{CENTER_PORT}/net_report?build_number={build_number}");
-    // TODO: check
-    let _status = client.post(url).body(netstat_json).send()?.status();
+    if let Some(network_report) = network.stop() {
+        let network_json = serde_json::to_string(&network_report)?;
+        let url = format!("http://{center_host}:{CENTER_PORT}/net_report?build_number={build_number}");
+        // TODO: check
+        let _status = client.post(url).body(network_json).send()?.status();
+    }
 
     log::info!("sent: {sent_cnt}, recv: {recv_cnt}");
 

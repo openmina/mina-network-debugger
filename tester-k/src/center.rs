@@ -145,7 +145,10 @@ fn net_report(
 
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
-                    log::debug!("ignore net report {build_number}, current {}", lock.build_number());
+                    log::debug!(
+                        "ignore net report {build_number}, current {}",
+                        lock.build_number()
+                    );
                     return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
                 lock.add_net_report(addr, report);
@@ -176,7 +179,10 @@ fn report(
 
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
-                    log::debug!("ignore node report {build_number}, current {}", lock.build_number());
+                    log::debug!(
+                        "ignore node report {build_number}, current {}",
+                        lock.build_number()
+                    );
                     return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
                 lock.add_node_report(addr, report);
@@ -207,7 +213,10 @@ fn debugger_report(
 
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
-                    log::debug!("ignore debugger report {build_number}, current {}", lock.build_number());
+                    log::debug!(
+                        "ignore debugger report {build_number}, current {}",
+                        lock.build_number()
+                    );
                     return reply::with_status(reply::json(&""), StatusCode::GONE);
                 }
                 lock.add_debugger_report(addr, report);

@@ -20,7 +20,7 @@ RUN cargo build --bin mina-tester-k --release
 
 FROM minaprotocol/mina-daemon:${mina_daemon_tag}
 
-RUN apt-get -y install conntrack net-tools
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install conntrack net-tools tcpflow
 
 COPY --from=builder /root/target/release/mina-tester-k /usr/local/bin/mina-tester-k
 

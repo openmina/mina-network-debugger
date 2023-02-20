@@ -12,6 +12,8 @@ env_logger = { version = "0.10.0" }
 anyhow = { version = "1.0" }
 hex = { version = "0.4.3" }
 rand = { version = "0.8.5" }
+roxmltree = { version = "0.18.0" }
+time = { version = "0.3.17", features = ["parsing"] }
 
 # http
 serde = { version = "1.0" }
