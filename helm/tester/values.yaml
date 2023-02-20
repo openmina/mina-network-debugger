@@ -7,7 +7,7 @@ parallelism: 4
 
 # the debugger image to test
 image:
-  repository: openminabot/mina-network-debugger
+  repository: openmina/mina-network-debugger
   pullPolicy: Always
   tag: "latest"
 

@@ -8,7 +8,7 @@ steps:
   image: plugins/docker
   settings:
     dockerfile: Dockerfile
-    repo: openminabot/mina-network-debugger
+    repo: openmina/mina-network-debugger
     tags:
       - ${DRONE_COMMIT_SHA:0:8}
     password:
