@@ -18,9 +18,20 @@ COPY . .
 
 RUN cargo build --bin mina-tester-k --release
 
+FROM minaprotocol/mina-daemon:${mina_daemon_tag} as builder-tcpflow
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    apt-get -y install git automake make gcc g++ zlib1g-dev libssl-dev libboost-dev libpcap-dev libcairo2 libcairo2-dev libpython2.7-dev && \
+    git clone --recursive --branch tcpflow-1.6.1 https://github.com/simsong/tcpflow.git && \
+    cd tcpflow && \
+    ./bootstrap.sh && \
+    ./configure && make
+
 FROM minaprotocol/mina-daemon:${mina_daemon_tag}
 
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install conntrack net-tools tcpflow
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install libpcap-dev libcairo2-dev
+
+COPY --from=builder-tcpflow /root/tcpflow/src/tcpflow /usr/local/bin/tcpflow
 
 COPY --from=builder /root/target/release/mina-tester-k /usr/local/bin/mina-tester-k
 

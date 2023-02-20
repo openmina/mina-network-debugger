@@ -2,7 +2,9 @@ use std::{
     process::{Command, Child, Stdio},
     fs,
     net::{SocketAddr, IpAddr},
-    time::{SystemTime, Duration}, thread::{self, JoinHandle}, io::Read,
+    time::{SystemTime, Duration},
+    thread::{self, JoinHandle},
+    io::Read,
 };
 
 use crate::message::NetReport;
@@ -35,7 +37,11 @@ impl TcpFlow {
             s
         });
 
-        Ok(TcpFlow { child, thread, this_ip })
+        Ok(TcpFlow {
+            child,
+            thread,
+            this_ip,
+        })
     }
 
     pub fn stop(mut self) -> Option<Vec<NetReport>> {
@@ -49,8 +55,8 @@ impl TcpFlow {
         self.child.wait().expect("cannot wait tcpflow subprocess");
 
         let report = self.thread.join().unwrap();
-        let mut cns = if let Ok(doc) = roxmltree::Document::parse(&report) {
-            doc
+        let mut cns = match roxmltree::Document::parse(&report) {
+            Ok(doc) => doc
                 .root_element()
                 .children()
                 .filter(|x| x.tag_name().name() == "configuration")
@@ -95,9 +101,11 @@ impl TcpFlow {
                         timestamp: SystemTime::from(date.assume_utc()),
                     })
                 })
-                .collect::<Vec<_>>()
-        } else {
-            vec![]
+                .collect::<Vec<_>>(),
+            Err(err) => {
+                log::error!("cannot parse xml report: {err}");
+                vec![]
+            }
         };
 
         if cns.is_empty() {
@@ -108,19 +116,19 @@ impl TcpFlow {
                     let mut pair = name.split('T');
                     let timestamp = pair.next()?;
                     let pair = pair.next()?;
-    
+
                     let srcport = pair[16..21].parse::<u16>().ok()?;
                     let dstport = pair[38..43].parse::<u16>().ok()?;
-    
+
                     let src_ip = parse_ip(&pair[..15])?;
                     let dst_ip = parse_ip(&pair[22..37])?;
-    
+
                     let src = SocketAddr::new(src_ip, srcport);
                     let dst = SocketAddr::new(dst_ip, dstport);
-    
+
                     let timestamp = SystemTime::UNIX_EPOCH
                         .checked_add(Duration::from_secs(timestamp.parse::<u64>().ok()?))?;
-    
+
                     cns.push(NetReport {
                         local: if self.this_ip == src_ip { src } else { dst },
                         remote: if self.this_ip == src_ip { dst } else { src },
