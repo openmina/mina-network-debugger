@@ -104,7 +104,8 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
 
     if let Some(network_report) = network.stop() {
         let network_json = serde_json::to_string(&network_report)?;
-        let url = format!("http://{center_host}:{CENTER_PORT}/net_report?build_number={build_number}");
+        let url =
+            format!("http://{center_host}:{CENTER_PORT}/net_report?build_number={build_number}");
         // TODO: check
         let _status = client.post(url).body(network_json).send()?.status();
     }

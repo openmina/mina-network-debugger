@@ -247,12 +247,22 @@ impl State {
                             (None, None) => bucket.both_debuggers_missing.push(entry),
                         }
 
-                        let (order, _, _) = bucket.matches.iter().fold((true, Duration::default(), Duration::default()), |(is_ok, local_t, remote_t), a| {
-                            let this_local = a.local_time.and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok()).unwrap_or_default();
-                            let this_remote = a.remote_time.and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok()).unwrap_or_default();
-                            let is_ok = is_ok && this_local >= local_t && this_remote >= remote_t;
-                            (is_ok, this_local, this_remote)
-                        });
+                        let (order, _, _) = bucket.matches.iter().fold(
+                            (true, Duration::default(), Duration::default()),
+                            |(is_ok, local_t, remote_t), a| {
+                                let this_local = a
+                                    .local_time
+                                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                                    .unwrap_or_default();
+                                let this_remote = a
+                                    .remote_time
+                                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                                    .unwrap_or_default();
+                                let is_ok =
+                                    is_ok && this_local >= local_t && this_remote >= remote_t;
+                                (is_ok, this_local, this_remote)
+                            },
+                        );
                         if !order {
                             log::error!("wrong order");
                         }
