@@ -74,6 +74,12 @@ impl TcpFlow {
                         .value()
                         .parse::<IpAddr>()
                         .ok()?;
+                    if self.this_ip != src_ip {
+                        // tcpflow counts each connection twice (from local to remote and vice versa)
+                        // let's ignore half of them
+                        return None;
+                    }
+
                     let srcport = a()
                         .find(|x| x.name() == "srcport")?
                         .value()
@@ -96,8 +102,8 @@ impl TcpFlow {
                     let date = PrimitiveDateTime::parse(start_time, &Iso8601::DEFAULT).ok()?;
 
                     Some(NetReport {
-                        local: if self.this_ip == src_ip { src } else { dst },
-                        remote: if self.this_ip == src_ip { dst } else { src },
+                        local: src,
+                        remote: dst,
                         timestamp: SystemTime::from(date.assume_utc()),
                     })
                 })

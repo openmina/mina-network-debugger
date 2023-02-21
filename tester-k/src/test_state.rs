@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     net::{IpAddr, SocketAddr},
     time::{SystemTime, Duration},
 };
@@ -83,7 +83,7 @@ impl State {
 
     pub fn register(&mut self, addr: SocketAddr, build_number: u32) -> anyhow::Result<Registered> {
         if self.build_number != build_number {
-            log::warn!(
+            log::info!(
                 "current build: {}, this build: {}, cleanup",
                 self.build_number,
                 build_number,
@@ -159,119 +159,124 @@ impl State {
             debugger_version: None,
             verbose: Verbose::default(),
         };
+        if !self
+            .summary
+            .values()
+            .all(|x| x.node.is_some() && x.debugger.is_some() && !x.net_report.is_empty())
+        {
+            return;
+        }
+
+        log::info!("collected all reports, checking...");
         for (&ip, summary) in &self.summary {
-            match (&summary.node, &summary.debugger) {
-                (Some(s_node), Some(s_debugger)) if !summary.net_report.is_empty() => {
-                    result.debugger_version = Some(s_debugger.version.clone());
+            let s_debugger = summary
+                .debugger
+                .as_ref()
+                .expect("cannot fail, checked above");
+            let s_node = summary.node.as_ref().expect("cannot fail, checked above");
 
-                    let ipc_test_result = IpcTestResult {
-                        ip,
-                        node_crc64: s_node.ipc.clone(),
-                        debugger_crc64: s_debugger.ipc.clone(),
-                    };
-                    if s_node.ipc.matches_(&s_debugger.ipc) {
-                        result.verbose.ipc_matches.push(ipc_test_result);
-                    } else {
+            if result.debugger_version.is_none() {
+                result.debugger_version = Some(s_debugger.version.clone());
+                log::info!("debugger version: {}", s_debugger.version);
+            }
+
+            let ipc_test_result = IpcTestResult {
+                ip,
+                node_crc64: s_node.ipc.clone(),
+                debugger_crc64: s_debugger.ipc.clone(),
+            };
+            if s_node.ipc.matches_(&s_debugger.ipc) {
+                result.verbose.ipc_matches.push(ipc_test_result);
+            } else {
+                log::error!("test failed, ipc checksum mismatch at {ip}");
+                result.success = false;
+                result.verbose.ipc_mismatches.push(ipc_test_result);
+            }
+
+            // for each connection seen by tcpflow
+            // must exist only one debugger who seen this connection as incoming
+            // must exist only one (distinct) debugger who seen this connection as outgoing
+            // net_report must be sorted chronologically
+            let mut time = Duration::default();
+            let mut order = true;
+            for r in &summary.net_report {
+                let NetReport {
+                    local,
+                    remote,
+                    timestamp,
+                } = *r;
+
+                if let Some(metadata) = s_debugger.network.get(&remote.ip()) {
+                    let debugger_time = metadata
+                        .timestamp
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .expect("cannot fail");
+                    if order && debugger_time < time {
                         result.success = false;
-                        result.verbose.ipc_mismatches.push(ipc_test_result);
+                        order = false;
+                        log::error!("connections unordered at {ip}");
                     }
-
-                    // for each connection seen by conntrack
-                    // must exist only one debugger who seen this connection as incoming
-                    // must exist only one (distinct) debugger who seen this connection as outgoing
-                    let mut duplicate_track = BTreeSet::new();
-                    // net_report must be sorted chronologically
-                    for r in &summary.net_report {
-                        let NetReport {
-                            local,
-                            remote,
-                            timestamp,
-                        } = *r;
-                        // don't count connections to registry
-                        // TODO: check ip also
-                        let _ = self.registry_ip;
-                        if remote.port() == constants::CENTER_PORT {
-                            continue;
-                        }
-                        if !duplicate_track.insert((local, remote)) {
-                            continue;
-                        }
-
-                        let p = self
-                            .summary
-                            .get(&local.ip())
-                            .and_then(|dbg| dbg.debugger.as_ref())
-                            .and_then(|report| report.network.get(&remote.ip()))
-                            .map(|cn| (cn.timestamp, cn.checksum.clone()));
-                        let (local_time, local_crc64) = if let Some((t, c)) = p {
-                            (Some(t), Some(c))
-                        } else {
-                            (None, None)
-                        };
-                        let p = self
-                            .summary
-                            .get(&remote.ip())
-                            .and_then(|dbg| dbg.debugger.as_ref())
-                            .and_then(|report| report.network.get(&local.ip()))
-                            .map(|cn| (cn.timestamp, cn.checksum.clone()));
-                        // unstable
-                        // .unzip();
-                        let (remote_time, remote_crc64) = if let Some((t, c)) = p {
-                            (Some(t), Some(c))
-                        } else {
-                            (None, None)
-                        };
-
-                        let entry = NetworkMatches {
-                            timestamp,
-                            local,
-                            local_time,
-                            local_crc64,
-                            remote,
-                            remote_time,
-                            remote_crc64,
-                        };
-                        let bucket = &mut result.verbose.network_verbose;
-                        let mut ok = false;
-                        match (&entry.local_crc64, &entry.remote_crc64) {
-                            (Some(src_crc64), Some(dst_crc64)) => {
-                                if src_crc64.matches(dst_crc64) {
-                                    ok = true;
-                                    bucket.matches.push(entry);
-                                } else {
-                                    bucket.checksum_mismatch.push(entry);
-                                }
-                            }
-                            (Some(_), None) => bucket.source_debugger_missing.push(entry),
-                            (None, Some(_)) => bucket.destination_debugger_missing.push(entry),
-                            (None, None) => bucket.both_debuggers_missing.push(entry),
-                        }
-
-                        let (order, _, _) = bucket.matches.iter().fold(
-                            (true, Duration::default(), Duration::default()),
-                            |(is_ok, local_t, remote_t), a| {
-                                let this_local = a
-                                    .local_time
-                                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                                    .unwrap_or_default();
-                                let this_remote = a
-                                    .remote_time
-                                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                                    .unwrap_or_default();
-                                let is_ok =
-                                    is_ok && this_local >= local_t && this_remote >= remote_t;
-                                (is_ok, this_local, this_remote)
-                            },
-                        );
-                        if !order {
-                            log::error!("wrong order");
-                        }
-
-                        result.success &= ok && order;
-                    }
+                    time = debugger_time;
                 }
-                // ensure every node and every debugger already reported
-                _ => return,
+
+                // don't count connections to registry
+                // TODO: check ip also
+                let _ = self.registry_ip;
+                if remote.port() == constants::CENTER_PORT {
+                    continue;
+                }
+
+                let p = self
+                    .summary
+                    .get(&local.ip())
+                    .and_then(|dbg| dbg.debugger.as_ref())
+                    .and_then(|report| report.network.get(&remote.ip()))
+                    .map(|cn| (cn.timestamp, cn.checksum.clone()));
+                let (local_time, local_crc64) = if let Some((t, c)) = p {
+                    (Some(t), Some(c))
+                } else {
+                    (None, None)
+                };
+                let p = self
+                    .summary
+                    .get(&remote.ip())
+                    .and_then(|dbg| dbg.debugger.as_ref())
+                    .and_then(|report| report.network.get(&local.ip()))
+                    .map(|cn| (cn.timestamp, cn.checksum.clone()));
+                // unstable
+                // .unzip();
+                let (remote_time, remote_crc64) = if let Some((t, c)) = p {
+                    (Some(t), Some(c))
+                } else {
+                    (None, None)
+                };
+
+                let entry = NetworkMatches {
+                    timestamp,
+                    local,
+                    local_time,
+                    local_crc64,
+                    remote,
+                    remote_time,
+                    remote_crc64,
+                };
+                let bucket = &mut result.verbose.network_verbose;
+                let mut ok = false;
+                match (&entry.local_crc64, &entry.remote_crc64) {
+                    (Some(src_crc64), Some(dst_crc64)) => {
+                        if src_crc64.matches(dst_crc64) {
+                            ok = true;
+                            bucket.matches.push(entry);
+                        } else {
+                            bucket.checksum_mismatch.push(entry);
+                        }
+                    }
+                    (Some(_), None) => bucket.source_debugger_missing.push(entry),
+                    (None, Some(_)) => bucket.destination_debugger_missing.push(entry),
+                    (None, None) => bucket.both_debuggers_missing.push(entry),
+                }
+
+                result.success &= ok;
             }
         }
 
