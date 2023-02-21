@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::SystemTime};
 
 use radiation::{Absorb, Emit};
 
@@ -62,7 +62,10 @@ impl LedgerHashIdx {
                 cn: ConnectionId(0),
                 id: super::StreamId::Handshake,
             },
-            message_id: MessageId(0),
+            message_id: MessageId {
+                time: SystemTime::UNIX_EPOCH,
+                counter: 0,
+            },
         }
     }
 

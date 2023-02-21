@@ -206,7 +206,7 @@ impl P2pRecorder {
             id.alias.clone(),
             id.metadata.time,
         ) {
-            Ok(group) => {
+            Ok(mut group) => {
                 log::debug!("{id} {} new connection", group.id());
                 let info = id.metadata.id.clone();
 
@@ -247,7 +247,7 @@ impl P2pRecorder {
                             incoming,
                             buffered,
                         };
-                        if let Err(err) = cn.on_data(id.clone(), &mut data, &cx, &group) {
+                        if let Err(err) = cn.on_data(id.clone(), &mut data, &cx, &mut group) {
                             log::error!("{id}: {err}");
                         }
                     }
@@ -326,7 +326,7 @@ impl P2pRecorder {
                 incoming,
                 buffered,
             };
-            if let Err(err) = cn_cx.cn.on_data(id.clone(), &mut bytes, &self.cx, &cn_cx.db) {
+            if let Err(err) = cn_cx.cn.on_data(id.clone(), &mut bytes, &self.cx, &mut cn_cx.db) {
                 log::error!("{id}: {err}");
             }
         }

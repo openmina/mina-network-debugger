@@ -2,13 +2,9 @@ use std::{
     path::Path,
     time::SystemTime,
     sync::{
-        atomic::{
-            AtomicU64,
-            Ordering::{SeqCst, self},
-        },
-        Arc,
+        atomic::{AtomicU64, Ordering::SeqCst},
     },
-    net::SocketAddr,
+    net::SocketAddr, collections::BTreeMap, cell::Cell,
 };
 
 use itertools::Itertools;
@@ -35,7 +31,6 @@ use super::{
 
 pub struct DbFacade {
     cns: AtomicU64,
-    pub messages: Arc<AtomicU64>,
     rnd_cnt: AtomicU64,
     inner: DbCore,
 }
@@ -49,7 +44,6 @@ impl DbFacade {
 
         Ok(DbFacade {
             cns: AtomicU64::new(inner.total::<{ DbCore::CONNECTIONS_CNT }>()?),
-            messages: Arc::new(AtomicU64::new(inner.total::<{ DbCore::MESSAGES_CNT }>()?)),
             rnd_cnt: AtomicU64::new(inner.total::<{ DbCore::RANDOMNESS_CNT }>()?),
             inner,
         })
@@ -104,7 +98,7 @@ impl DbFacade {
         Ok(DbGroup {
             addr,
             id,
-            messages: self.messages.clone(),
+            last_ids: BTreeMap::new(),
             inner: self.inner.clone(),
         })
     }
@@ -118,12 +112,6 @@ impl DbFacade {
 
     pub fn core(&self) -> DbCore {
         self.inner.clone()
-    }
-
-    /// Warning, it will work wrong it the application will write messages from multiple threads
-    /// It is ok for now.
-    pub fn next_message_id(&self) -> u64 {
-        self.messages.load(Ordering::SeqCst)
     }
 }
 
@@ -145,18 +133,21 @@ impl DbStrace {
 pub struct DbGroup {
     addr: SocketAddr,
     id: ConnectionId,
-    messages: Arc<AtomicU64>,
+    last_ids: BTreeMap<StreamId, DbStream>,
     inner: DbCore,
 }
 
 impl DbGroup {
-    pub fn get(&self, id: StreamId) -> DbStream {
-        DbStream {
+    pub fn get(&mut self, id: StreamId) -> &DbStream {
+        self.last_ids.entry(id).or_insert_with(|| DbStream {
             addr: self.addr,
             id: StreamFullId { cn: self.id, id },
-            messages: self.messages.clone(),
+            last_id: Cell::new(MessageId {
+                time: SystemTime::UNIX_EPOCH,
+                counter: 0,
+            }),
             inner: self.inner.clone(),
-        }
+        })
     }
 
     pub fn id(&self) -> ConnectionId {
@@ -217,7 +208,7 @@ impl Drop for DbGroup {
 pub struct DbStream {
     addr: SocketAddr,
     id: StreamFullId,
-    messages: Arc<AtomicU64>,
+    last_id: Cell<MessageId>,
     inner: DbCore,
 }
 
@@ -262,7 +253,16 @@ impl DbStream {
             StreamKind::Yamux => vec![MessageType::Yamux],
         };
 
-        let id = MessageId(self.messages.fetch_add(1, SeqCst));
+        let counter = if did.metadata.time == self.last_id.get().time {
+            self.last_id.get().counter + 1
+        } else {
+            0
+        };
+        let id = MessageId {
+            time: did.metadata.time,
+            counter,
+        };
+        self.last_id.set(id);
         let v = Message {
             connection_id: self.id.cn,
             stream_id: self.id.id,
@@ -275,7 +275,6 @@ impl DbStream {
         };
         self.inner
             .put_message(&self.addr, id, v, tys, ledger_hashes)?;
-        self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(id)
     }

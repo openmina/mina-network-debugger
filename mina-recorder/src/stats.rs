@@ -10,7 +10,7 @@ use crate::{
         meshsub::{self, ControlIHave, ControlIWant},
         MessageType,
     },
-    database::{DbFacade, DbError},
+    database::{DbFacade, DbError, MessageId},
 };
 
 #[derive(Default, Absorb, Emit)]
@@ -50,14 +50,12 @@ struct Description {
 struct TxDesc {
     time: SystemTime,
     producer_id: PeerId,
-    message_id: u64,
 }
 
 impl StatsState {
     #[cfg(test)]
     pub fn observe_w(
         &mut self,
-        message_id: u64,
         msg: &[u8],
         incoming: bool,
         time: SystemTime,
@@ -65,7 +63,7 @@ impl StatsState {
         peer: SocketAddr,
     ) {
         let node_address = "0.0.0.0:0".parse().unwrap();
-        let _ = self.observe(message_id, msg, incoming, time, time, peer, node_address);
+        let _ = self.observe(msg, incoming, time, time, peer, node_address);
         let block_stat = self.block_stat();
         db.stats(block_stat.height, node_address, &block_stat)
             .unwrap();
@@ -76,7 +74,6 @@ impl StatsState {
 
     pub fn observe(
         &mut self,
-        message_id: u64,
         msg: &[u8],
         incoming: bool,
         time: SystemTime,
@@ -137,8 +134,8 @@ impl StatsState {
                                 // TODO: investigate
                                 if !incoming {
                                     log::warn!(
-                                        "sending block, did not received it before {}",
-                                        message_id
+                                        "sending block, did not received it before {:?}",
+                                        time
                                     );
                                 }
                                 let v = Description {
@@ -187,8 +184,11 @@ impl StatsState {
                                         _ => (),
                                     }
                                 }
-                                tx_stat.pending_txs =
-                                    self.txs.values().map(|v| v.message_id).collect();
+                                tx_stat.pending_txs = self
+                                    .txs
+                                    .values()
+                                    .map(|v| MessageId { time: v.time, counter: 0 })
+                                    .collect();
 
                                 let it0 =
                                     block.body.staged_ledger_diff.diff.0.completed_works.iter();
@@ -231,7 +231,6 @@ impl StatsState {
                                 global_slot,
                                 incoming,
                                 message_kind: MessageType::PublishNewState,
-                                message_id,
                                 time,
                                 better_time,
                                 latency,
@@ -249,11 +248,9 @@ impl StatsState {
                                         let mut signature = Signature([0; 32], [0; 32]);
                                         signature.0.clone_from_slice(c.signature.0.as_ref());
                                         signature.1.clone_from_slice(c.signature.1.as_ref());
-                                        self.txs.entry(signature).or_insert_with(|| TxDesc {
-                                            time,
-                                            producer_id,
-                                            message_id,
-                                        });
+                                        self.txs
+                                            .entry(signature)
+                                            .or_insert_with(|| TxDesc { time, producer_id });
                                     }
                                     _ => (),
                                 }
@@ -270,11 +267,9 @@ impl StatsState {
                                     }
                                 };
                                 let hash = hash.into_inner().0.into();
-                                self.snarks.entry(hash).or_insert_with(|| TxDesc {
-                                    time,
-                                    producer_id,
-                                    message_id,
-                                });
+                                self.snarks
+                                    .entry(hash)
+                                    .or_insert_with(|| TxDesc { time, producer_id });
                             }
                             v2::NetworkPoolSnarkPoolDiffVersionedStableV2::Empty => (),
                         },
@@ -302,7 +297,6 @@ impl StatsState {
                                     global_slot,
                                     incoming,
                                     message_kind,
-                                    message_id,
                                     time,
                                     better_time,
                                     latency: time.duration_since(first.time).ok(),
@@ -326,7 +320,6 @@ impl StatsState {
                             global_slot: block_height,
                             incoming,
                             message_kind: MessageType::PublishNewState,
-                            message_id,
                             time,
                             better_time,
                             latency: None,
@@ -354,7 +347,6 @@ impl StatsState {
 }
 
 pub fn update_block_stats(
-    message_id: u64,
     msg: &[u8],
     incoming: bool,
     time: SystemTime,
@@ -391,7 +383,6 @@ pub fn update_block_stats(
                         global_slot,
                         incoming,
                         message_kind: MessageType::PublishNewState,
-                        message_id,
                         time,
                         better_time,
                         latency: None,
@@ -418,7 +409,6 @@ pub fn update_block_stats(
                         global_slot: block_height,
                         incoming,
                         message_kind: MessageType::PublishNewState,
-                        message_id,
                         time,
                         better_time,
                         latency: None,

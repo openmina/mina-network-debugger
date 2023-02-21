@@ -48,6 +48,11 @@ spec:
               name: sys-kernel-debug
             - mountPath: /proc
               name: proc
+          resources:
+            requests:
+              memory: 4G
+            limits:
+              memory: 16G
         - name: mina-daemon
           image: tizoc/mina-daemon:tracing-optional-optimizations-focal-berkeley-current
           command:
@@ -74,6 +79,11 @@ spec:
               value: ""
             - name: VERBOSE
               value: "1"
+          resources:
+            requests:
+              memory: 4G
+            limits:
+              memory: 16G
       volumes:
         - name: sys-kernel-debug
           hostPath:

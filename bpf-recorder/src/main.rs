@@ -865,7 +865,6 @@ fn main() {
     }
 
     let mut p2p_cns = BTreeMap::new();
-    let counter = db.messages.clone();
     let mut pending_out_cns = BTreeMap::new();
     let mut recorder = P2pRecorder::new(db, test);
     let mut watching = BTreeMap::new();
@@ -890,11 +889,7 @@ fn main() {
             let last = last_ts.get(&event.tid).cloned().unwrap_or_default();
             if event.ts1 < last {
                 let unordered = last - event.ts1;
-                log::warn!(
-                    "unordered {unordered}, {} < {last}, message id {}",
-                    event.ts1,
-                    counter.load(Ordering::Relaxed)
-                );
+                log::warn!("unordered {unordered}, {} < {last}", event.ts1,);
                 let max_unordered_ns = max_unordered_ns.entry(event.tid).or_default();
                 if unordered > *max_unordered_ns {
                     *max_unordered_ns = unordered;
