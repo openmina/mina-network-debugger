@@ -9,15 +9,7 @@ use crate::decode::MessageType;
 use super::types::{ConnectionId, StreamFullId, StreamKind, Timestamp};
 
 #[derive(Debug, Error)]
-pub enum ParamsCoordinateValidateError {
-    #[error("cannot use together id and timestamp, ambiguous start")]
-    IdWithTimestamp,
-}
-
-#[derive(Debug, Error)]
 pub enum ParamsValidateError {
-    #[error("{0}")]
-    CoordinateValidate(#[from] ParamsCoordinateValidateError),
     #[error("cannot parse socket addr {_0}")]
     ParseSocketAddr(<SocketAddr as FromStr>::Err),
     #[error("cannot filter by stream id without connection id")]
@@ -46,8 +38,7 @@ pub struct ValidParamsConnection {
 }
 
 pub enum Coordinate {
-    ById { id: u64, explicit: bool },
-    ByTimestamp(u64),
+    ByTimestamp { timestamp: u64, explicit: bool },
 }
 
 pub enum StreamFilter {
@@ -63,9 +54,7 @@ pub enum KindFilter {
 
 #[derive(Default, Deserialize)]
 pub struct Params {
-    // the start of the list, either id of record ...
-    id: Option<u64>,
-    // ... or timestamp
+    // the start of the list, timestamp of record
     timestamp: Option<u64>,
     // wether go `forward` or `reverse`, default is `forward`
     #[serde(default)]
@@ -123,44 +112,43 @@ impl Params {
         self
     }
 
-    fn validate_coordinate(&self) -> Result<ValidParamsCoordinate, ParamsCoordinateValidateError> {
-        let start = match (self.id, self.timestamp) {
-            (None, None) => match self.direction {
-                Direction::Forward => Coordinate::ById {
-                    id: 0,
+    fn validate_coordinate(&self) -> ValidParamsCoordinate {
+        let start = match self.timestamp {
+            None => match self.direction {
+                Direction::Forward => Coordinate::ByTimestamp {
+                    timestamp: 0,
                     explicit: false,
                 },
-                Direction::Reverse => Coordinate::ById {
-                    id: u64::MAX,
+                Direction::Reverse => Coordinate::ByTimestamp {
+                    timestamp: u64::MAX,
                     explicit: false,
                 },
             },
-            (Some(id), None) => Coordinate::ById { id, explicit: true },
-            (None, Some(timestamp)) => Coordinate::ByTimestamp(timestamp),
-            (Some(_), Some(_)) => return Err(ParamsCoordinateValidateError::IdWithTimestamp),
+            Some(timestamp) => Coordinate::ByTimestamp {
+                timestamp,
+                explicit: true,
+            },
         };
         let limit = if self.limit_timestamp.is_some() {
             self.limit.unwrap_or(usize::MAX)
         } else {
             self.limit.unwrap_or(16)
         };
-        Ok(ValidParamsCoordinate {
+        ValidParamsCoordinate {
             start,
             limit,
             limit_timestamp: self.limit_timestamp,
             direction: self.direction,
-        })
+        }
     }
 
-    pub fn validate_connection(
-        self,
-    ) -> Result<ValidParamsConnection, ParamsCoordinateValidateError> {
-        let coordinate = self.validate_coordinate()?;
-        Ok(ValidParamsConnection { coordinate })
+    pub fn validate_connection(self) -> ValidParamsConnection {
+        let coordinate = self.validate_coordinate();
+        ValidParamsConnection { coordinate }
     }
 
     pub fn validate(self) -> Result<ValidParams, ParamsValidateError> {
-        let coordinate = self.validate_coordinate()?;
+        let coordinate = self.validate_coordinate();
         let stream_filter = match (self.addr, self.connection_id, self.stream_id) {
             (Some(addr), _, _) => {
                 let addr = addr.parse().map_err(ParamsValidateError::ParseSocketAddr)?;
@@ -216,9 +204,9 @@ impl ValidParamsConnection {
 }
 
 impl ValidParams {
-    pub fn limit<'a, It, T>(&self, it: It) -> impl Iterator<Item = (u64, T)> + 'a
+    pub fn limit<'a, It, K, T>(&self, it: It) -> impl Iterator<Item = (K, T)> + 'a
     where
-        It: Iterator<Item = (u64, T)> + 'a,
+        It: Iterator<Item = (K, T)> + 'a,
         T: Timestamp + 'a,
     {
         self.coordinate.limit(it)
@@ -226,9 +214,9 @@ impl ValidParams {
 }
 
 impl ValidParamsCoordinate {
-    pub fn limit<'a, It, T>(&self, it: It) -> impl Iterator<Item = (u64, T)> + 'a
+    pub fn limit<'a, It, K, T>(&self, it: It) -> impl Iterator<Item = (K, T)> + 'a
     where
-        It: Iterator<Item = (u64, T)> + 'a,
+        It: Iterator<Item = (K, T)> + 'a,
         T: Timestamp,
     {
         let limit_timestamp = self.limit_timestamp;

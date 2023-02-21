@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{io::Cursor, time::SystemTime};
 
 use libp2p_core::PeerId;
 use mina_p2p_messages::{
@@ -122,11 +122,11 @@ pub enum GossipNetMessagePreview {
 
 #[derive(Serialize)]
 pub struct SnarkByHash {
-    pub source: Vec<(SnarkWithHash, u64)>,
-    pub target: Vec<(SnarkWithHash, u64)>,
-    pub first_source: Vec<(SnarkWithHash, u64)>,
-    pub middle: Vec<(SnarkWithHash, u64)>,
-    pub second_target: Vec<(SnarkWithHash, u64)>,
+    pub source: Vec<(SnarkWithHash, SystemTime)>,
+    pub target: Vec<(SnarkWithHash, SystemTime)>,
+    pub first_source: Vec<(SnarkWithHash, SystemTime)>,
+    pub middle: Vec<(SnarkWithHash, SystemTime)>,
+    pub second_target: Vec<(SnarkWithHash, SystemTime)>,
 }
 
 #[derive(Serialize)]

@@ -13,6 +13,7 @@ use libp2p_core::PeerId;
 use mina_recorder::{
     meshsub_stats::{Event, Hash},
     custom_coding,
+    database::MessageId,
 };
 
 use super::rocksdb::{DbInner, DbError};
@@ -32,8 +33,8 @@ pub struct GlobalEvent {
     pub block_height: u32,
     pub global_slot: u32,
     pub debugger_name: String,
-    pub received_message_id: Option<u64>,
-    pub sent_message_id: Option<u64>,
+    pub received_message_id: Option<MessageId>,
+    pub sent_message_id: Option<MessageId>,
     pub receiving_time_microseconds: Option<u64>,
     pub sending_time_microseconds: Option<u64>,
     pub source_addr: Option<String>,
@@ -64,7 +65,7 @@ impl GlobalEvent {
                 block_height: event.block_height,
                 global_slot: event.global_slot,
                 debugger_name,
-                received_message_id: Some(event.message_id),
+                received_message_id: Some(MessageId { time: event.time }),
                 sent_message_id: None,
                 receiving_time_microseconds: Some(time_microseconds),
                 sending_time_microseconds: None,
@@ -81,7 +82,7 @@ impl GlobalEvent {
                 global_slot: event.global_slot,
                 debugger_name,
                 received_message_id: None,
-                sent_message_id: Some(event.message_id),
+                sent_message_id: Some(MessageId { time: event.time }),
                 receiving_time_microseconds: None,
                 sending_time_microseconds: Some(time_microseconds),
                 source_addr: None,
@@ -99,7 +100,7 @@ impl GlobalEvent {
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .unwrap();
                 let time_microseconds = time.as_micros() as u64;
-                self.sent_message_id = Some(event.message_id);
+                self.sent_message_id = Some(MessageId { time: event.time });
                 self.sending_time_microseconds = Some(time_microseconds);
                 self.destination_addr = Some(event.receiver_addr.to_string());
             }

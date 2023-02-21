@@ -32,16 +32,9 @@ fn connections(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("connections").and(warp::query::query()).map(
         move |params: Params| -> WithStatus<Json> {
-            match params.validate_connection() {
-                Ok(valid) => {
-                    let v = db.fetch_connections(&valid);
-                    reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-                }
-                Err(err) => reply::with_status(
-                    reply::json(&err.to_string()),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ),
-            }
+            let valid = params.validate_connection();
+            let v = db.fetch_connections(&valid);
+            reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
         },
     )
 }

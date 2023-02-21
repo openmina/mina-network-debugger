@@ -100,9 +100,8 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
     };
     let mut lock = cx.stats_state.lock();
     match stream.add(id, StreamKind::Meshsub, msg) {
-        Ok(message_id) => {
+        Ok(_) => {
             if let Err(err) = update_block_stats(
-                message_id.0,
                 msg,
                 id.incoming,
                 id.metadata.time,
@@ -115,7 +114,6 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
             }
             let st = lock.entry(node_address).or_default();
             let (b, t, events) = st.observe(
-                message_id.0,
                 msg,
                 id.incoming,
                 id.metadata.time,

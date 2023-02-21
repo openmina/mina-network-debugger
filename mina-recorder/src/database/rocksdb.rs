@@ -2,11 +2,7 @@ use std::{
     path::Path,
     time::SystemTime,
     sync::{
-        atomic::{
-            AtomicU64,
-            Ordering::{SeqCst, self},
-        },
-        Arc,
+        atomic::{AtomicU64, Ordering::SeqCst},
     },
     net::SocketAddr,
 };
@@ -35,7 +31,6 @@ use super::{
 
 pub struct DbFacade {
     cns: AtomicU64,
-    pub messages: Arc<AtomicU64>,
     rnd_cnt: AtomicU64,
     inner: DbCore,
 }
@@ -49,7 +44,6 @@ impl DbFacade {
 
         Ok(DbFacade {
             cns: AtomicU64::new(inner.total::<{ DbCore::CONNECTIONS_CNT }>()?),
-            messages: Arc::new(AtomicU64::new(inner.total::<{ DbCore::MESSAGES_CNT }>()?)),
             rnd_cnt: AtomicU64::new(inner.total::<{ DbCore::RANDOMNESS_CNT }>()?),
             inner,
         })
@@ -104,7 +98,6 @@ impl DbFacade {
         Ok(DbGroup {
             addr,
             id,
-            messages: self.messages.clone(),
             inner: self.inner.clone(),
         })
     }
@@ -118,12 +111,6 @@ impl DbFacade {
 
     pub fn core(&self) -> DbCore {
         self.inner.clone()
-    }
-
-    /// Warning, it will work wrong it the application will write messages from multiple threads
-    /// It is ok for now.
-    pub fn next_message_id(&self) -> u64 {
-        self.messages.load(Ordering::SeqCst)
     }
 }
 
@@ -145,7 +132,6 @@ impl DbStrace {
 pub struct DbGroup {
     addr: SocketAddr,
     id: ConnectionId,
-    messages: Arc<AtomicU64>,
     inner: DbCore,
 }
 
@@ -154,7 +140,6 @@ impl DbGroup {
         DbStream {
             addr: self.addr,
             id: StreamFullId { cn: self.id, id },
-            messages: self.messages.clone(),
             inner: self.inner.clone(),
         }
     }
@@ -217,7 +202,6 @@ impl Drop for DbGroup {
 pub struct DbStream {
     addr: SocketAddr,
     id: StreamFullId,
-    messages: Arc<AtomicU64>,
     inner: DbCore,
 }
 
@@ -262,7 +246,9 @@ impl DbStream {
             StreamKind::Yamux => vec![MessageType::Yamux],
         };
 
-        let id = MessageId(self.messages.fetch_add(1, SeqCst));
+        let id = MessageId {
+            time: did.metadata.time,
+        };
         let v = Message {
             connection_id: self.id.cn,
             stream_id: self.id.id,
@@ -275,7 +261,6 @@ impl DbStream {
         };
         self.inner
             .put_message(&self.addr, id, v, tys, ledger_hashes)?;
-        self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(id)
     }

@@ -267,7 +267,17 @@ impl fmt::Display for StreamId {
 }
 
 #[derive(Clone, Copy, Debug, Absorb, Emit, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MessageId(pub u64);
+pub struct MessageId {
+    #[custom_absorb(custom_coding::time_absorb)]
+    #[custom_emit(custom_coding::time_emit)]
+    pub time: SystemTime,
+}
+
+impl fmt::Display for MessageId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.time)
+    }
+}
 
 #[derive(Clone, Absorb, Serialize, Emit)]
 pub struct Message {

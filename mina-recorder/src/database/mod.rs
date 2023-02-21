@@ -1,7 +1,7 @@
 mod types;
 pub use self::types::{
     StreamKind, StreamId, ConnectionId, ConnectionStats, FullMessage, CapnpEventWithMetadata,
-    CapnpEventWithMetadataKey,
+    CapnpEventWithMetadataKey, MessageId,
 };
 
 mod rocksdb;

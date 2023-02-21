@@ -332,7 +332,7 @@ impl DbCore {
         ledger_hashes: Vec<LedgerHash>,
     ) -> Result<(), DbError> {
         self.inner
-            .put_cf(self.messages(), id.0.to_be_bytes(), v.chain(vec![]))?;
+            .put_cf(self.messages(), id.chain(vec![]), v.chain(vec![]))?;
         let index = AddressIdx { addr: *addr, id };
         self.inner
             .put_cf(self.addr_index(), index.chain(vec![]), vec![])?;
@@ -592,7 +592,7 @@ impl DbCore {
             .remove(&stream_full_id);
     }
 
-    fn fetch_details(&self, (key, msg): (u64, Message)) -> Option<(u64, FullMessage)> {
+    fn fetch_details(&self, (key, msg): (MessageId, Message)) -> Option<(MessageId, FullMessage)> {
         let r = self.get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes());
         let connection = match r {
             Ok(v) => v,
@@ -699,14 +699,16 @@ impl DbCore {
 
     fn connection_id(&self, params: &ValidParamsConnection) -> (bool, u64) {
         match params.coordinate.start {
-            Coordinate::ById { id, explicit } => (explicit, id),
-            Coordinate::ByTimestamp(timestamp) => {
+            Coordinate::ByTimestamp {
+                timestamp,
+                explicit,
+            } => {
                 let total = self.total::<{ Self::CONNECTIONS_CNT }>().unwrap_or(0);
                 match self.search_timestamp::<Connection>(self.connections(), total, timestamp) {
-                    Ok(c) => (true, c),
+                    Ok(c) => (explicit, c),
                     Err(err) => {
                         log::error!("cannot find timestamp {timestamp}, err: {err}");
-                        (false, 0)
+                        (explicit, 0)
                     }
                 }
             }
@@ -715,35 +717,28 @@ impl DbCore {
 
     fn message_id(&self, params: &ValidParams) -> (bool, u64) {
         match params.coordinate.start {
-            Coordinate::ById { id, explicit } => (explicit, id),
-            Coordinate::ByTimestamp(timestamp) => {
-                let total = self.total::<{ Self::MESSAGES_CNT }>().unwrap_or(0);
-                match self.search_timestamp::<Message>(self.messages(), total, timestamp) {
-                    Ok(c) => (true, c),
-                    Err(err) => {
-                        log::error!("cannot find timestamp {timestamp}, err: {err}");
-                        (false, 0)
-                    }
-                }
-            }
+            Coordinate::ByTimestamp {
+                timestamp,
+                explicit,
+            } => (explicit, timestamp),
         }
     }
 
     fn fetch_messages_by_indexes<'a, It>(
         &'a self,
         it: It,
-    ) -> Box<dyn Iterator<Item = (u64, Message)> + 'a>
+    ) -> Box<dyn Iterator<Item = (MessageId, Message)> + 'a>
     where
         It: Iterator<Item = MessageId> + 'a,
     {
-        let it = it.filter_map(|id| match self.get(self.messages(), id.0.to_be_bytes()) {
-            Ok(v) => Some((id.0, v)),
+        let it = it.filter_map(|id| match self.get(self.messages(), id.chain(vec![])) {
+            Ok(v) => Some(v),
             Err(err) => {
                 log::error!("{err}");
                 None
             }
         });
-        Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
+        Box::new(it) as Box<dyn Iterator<Item = (MessageId, Message)>>
     }
 
     pub fn fetch_connections(
@@ -755,7 +750,10 @@ impl DbCore {
         let coordinate = &params.coordinate;
         let direction = coordinate.direction;
 
-        let id = id.to_be_bytes();
+        let id = MessageId {
+            time: SystemTime::UNIX_EPOCH + Duration::from_secs(id),
+        };
+        let id = id.chain(vec![]);
         let mode = if present {
             rocksdb::IteratorMode::From(&id, direction.into())
         } else {
@@ -776,11 +774,13 @@ impl DbCore {
         }))
     }
 
-    pub fn fetch_messages(
-        &self,
-        params: &ValidParams,
-    ) -> impl Iterator<Item = (u64, FullMessage)> + '_ {
+    pub fn fetch_messages(&self, params: &ValidParams) -> impl Iterator<Item = FullMessage> + '_ {
         let (present, id) = self.message_id(params);
+        let id = MessageId {
+            time: SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_secs(id))
+                .expect("cannot fail"),
+        };
 
         let coordinate = &params.coordinate;
         let direction = coordinate.direction;
@@ -790,10 +790,7 @@ impl DbCore {
                 Some(StreamFilter::AnyStreamByAddr(addr)) => {
                     // TODO: duplicated code
                     let addr = *addr;
-                    let id = AddressIdx {
-                        addr,
-                        id: MessageId(id),
-                    };
+                    let id = AddressIdx { addr, id };
                     let id = id.chain(vec![]);
                     let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
@@ -807,10 +804,7 @@ impl DbCore {
                 }
                 Some(StreamFilter::AnyStreamInConnection(connection_id)) => {
                     let connection_id = *connection_id;
-                    let id = ConnectionIdx {
-                        connection_id,
-                        id: MessageId(id),
-                    };
+                    let id = ConnectionIdx { connection_id, id };
                     let id = id.chain(vec![]);
                     let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
@@ -824,10 +818,7 @@ impl DbCore {
                 }
                 Some(StreamFilter::Stream(stream_full_id)) => {
                     let stream_full_id = *stream_full_id;
-                    let id = StreamIdx {
-                        stream_full_id,
-                        id: MessageId(id),
-                    };
+                    let id = StreamIdx { stream_full_id, id };
                     let id = id.chain(vec![]);
                     let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
@@ -845,10 +836,7 @@ impl DbCore {
                 Some(KindFilter::AnyMessageInStream(kinds)) => {
                     let its = kinds.iter().map(|stream_kind| {
                         let stream_kind = *stream_kind;
-                        let id = StreamByKindIdx {
-                            stream_kind,
-                            id: MessageId(id),
-                        };
+                        let id = StreamByKindIdx { stream_kind, id };
                         let id = id.chain(vec![]);
                         let mode = rocksdb::IteratorMode::From(&id, direction.into());
 
@@ -869,7 +857,7 @@ impl DbCore {
                     let its = kinds.iter().map(|message_kind| {
                         let id = MessageKindIdx {
                             ty: message_kind.clone(),
-                            id: MessageId(id),
+                            id,
                         };
                         let id = id.chain(vec![]);
                         let mode = rocksdb::IteratorMode::From(&id, direction.into());
@@ -901,7 +889,7 @@ impl DbCore {
                 (None, None) => unreachable!(),
             }
         } else {
-            let id = id.to_be_bytes();
+            let id = id.chain(vec![]);
             let mode = if present {
                 rocksdb::IteratorMode::From(&id, direction.into())
             } else {
@@ -912,9 +900,11 @@ impl DbCore {
                 .inner
                 .iterator_cf(self.messages(), mode)
                 .filter_map(Self::decode);
-            Box::new(it) as Box<dyn Iterator<Item = (u64, Message)>>
+            Box::new(it) as Box<dyn Iterator<Item = (MessageId, Message)>>
         };
-        params.limit(it.filter_map(|v| self.fetch_details(v)))
+        params
+            .limit(it.filter_map(|v| self.fetch_details(v)))
+            .map(|(_, v)| v)
     }
 
     pub fn fetch_full_message(&self, id: u64) -> Result<FullMessage, DbError> {
@@ -1034,7 +1024,7 @@ impl DbCore {
     pub fn fetch_snark_by_hash(&self, hash_str: String) -> Result<SnarkByHash, DbError> {
         let hash = serde_json::Value::String(hash_str.clone());
         let h = serde_json::from_value::<mina_p2p_messages::v2::LedgerHash>(hash)?;
-        let o = |key_b: Vec<u8>| -> Result<Vec<(SnarkWithHash, u64)>, DbError> {
+        let o = |key_b: Vec<u8>| -> Result<Vec<(SnarkWithHash, SystemTime)>, DbError> {
             let mut v = vec![];
             let mut deduplicate = HashSet::new();
             let key = rocksdb::IteratorMode::From(&key_b, rocksdb::Direction::Forward);
@@ -1081,7 +1071,7 @@ impl DbCore {
                                 };
                                 if conform {
                                     if deduplicate.insert(hash) {
-                                        v.push((snark, id.message_id.0));
+                                        v.push((snark, id.message_id.time));
                                     }
                                 }
                             }
@@ -1107,7 +1097,7 @@ impl DbCore {
                                     };
                                     if conform {
                                         if deduplicate.insert(hash) {
-                                            v.push((snark, id.message_id.0));
+                                            v.push((snark, id.message_id.time));
                                         }
                                     }
                                 }

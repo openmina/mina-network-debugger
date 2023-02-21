@@ -12,7 +12,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::custom_coding;
 
-use super::MessageType;
+use super::{MessageType, MessageId};
 
 #[derive(Default, Clone, Absorb, Emit, Serialize, Deserialize)]
 pub struct BlockStat {
@@ -37,7 +37,6 @@ pub struct Event {
     // TODO: group
     pub incoming: bool,
     pub message_kind: MessageType,
-    pub message_id: u64,
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
@@ -75,7 +74,7 @@ pub struct TxStat {
     pub transactions: Vec<Tx>,
     pub snarks: Vec<Snark>,
 
-    pub pending_txs: Vec<u64>,
+    pub pending_txs: Vec<MessageId>,
     // pub pending_snarks: Vec<u64>,
 }
 
