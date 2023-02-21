@@ -881,7 +881,7 @@ fn main() {
                             DebuggerReport {
                                 version: version.to_owned(),
                                 ipc: Default::default(),
-                                network: BTreeMap::default(),
+                                network: vec![],
                             },
                         );
                         if env::var("TERMINATE").is_ok() {
@@ -894,9 +894,13 @@ fn main() {
                 }
                 SnifferEventVariant::OutgoingConnection(addr) => {
                     if let Some(report) = watching.get_mut(&event.pid) {
-                        report.network.insert(
-                            addr.ip(),
+                        let counter = report.network.iter()
+                            .filter(|cn| cn.ip == addr.ip())
+                            .count();
+                        report.network.push(
                             ConnectionMetadata {
+                                ip: addr.ip(),
+                                counter,
                                 incoming: false,
                                 fd: event.fd as i32,
                                 checksum: Default::default(),
@@ -925,9 +929,13 @@ fn main() {
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     if let Some(report) = watching.get_mut(&event.pid) {
-                        report.network.insert(
-                            addr.ip(),
+                        let counter = report.network.iter()
+                            .filter(|cn| cn.ip == addr.ip())
+                            .count();
+                        report.network.push(
                             ConnectionMetadata {
+                                ip: addr.ip(),
+                                counter,
                                 incoming: true,
                                 fd: event.fd as i32,
                                 checksum: Default::default(),
@@ -1028,7 +1036,7 @@ fn main() {
                     if let Some(addr) = p2p_cns.get(&key) {
                         watching
                             .get_mut(&event.pid)
-                            .and_then(|report| report.network.get_mut(&addr.ip()))
+                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip))
                             .map(|connection| connection.checksum.0 += &data);
 
                         let metadata = EventMetadata {
@@ -1085,7 +1093,7 @@ fn main() {
                     if let Some(addr) = p2p_cns.get(&key) {
                         watching
                             .get_mut(&event.pid)
-                            .and_then(|report| report.network.get_mut(&addr.ip()))
+                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip))
                             .map(|connection| connection.checksum.1 += &data);
                         let metadata = EventMetadata {
                             id: ConnectionInfo {

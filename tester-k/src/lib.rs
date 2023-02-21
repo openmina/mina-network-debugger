@@ -3,10 +3,8 @@
 pub mod center;
 pub mod peer;
 
-#[allow(dead_code)]
-mod conntrack;
-#[allow(dead_code)]
-mod netstat;
+// #[allow(dead_code)]
+// mod netstat;
 
 mod constants;
 mod libp2p_helper;

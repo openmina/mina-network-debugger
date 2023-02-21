@@ -38,18 +38,21 @@ pub struct Report {
 pub struct DebuggerReport {
     pub version: String,
     pub ipc: ChecksumPair,
-    pub network: BTreeMap<IpAddr, ConnectionMetadata>,
+    pub network: Vec<ConnectionMetadata>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct NetReport {
     pub local: SocketAddr,
     pub remote: SocketAddr,
+    pub counter: usize,
     pub timestamp: SystemTime,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionMetadata {
+    pub ip: IpAddr,
+    pub counter: usize,
     pub incoming: bool,
     pub fd: i32,
     pub checksum: ChecksumPair,

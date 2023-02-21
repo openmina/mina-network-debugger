@@ -2,12 +2,12 @@ use std::{
     process::{Command, Child, Stdio},
     fs,
     net::{SocketAddr, IpAddr},
-    time::{SystemTime, Duration},
+    time::SystemTime,
     thread::{self, JoinHandle},
-    io::Read,
+    io::Read, collections::BTreeMap,
 };
 
-use crate::message::NetReport;
+use crate::{message::NetReport, constants};
 
 pub struct TcpFlow {
     child: Child,
@@ -62,6 +62,13 @@ impl TcpFlow {
                 .filter(|x| x.tag_name().name() == "configuration")
                 .map(|x| x.children())
                 .flatten()
+                .filter(|x| {
+                    let size = x.children()
+                        .find(|x| x.tag_name().name() == "filesize")
+                        .and_then(|a| a.text().and_then(|text| text.parse::<usize>().ok()))
+                        .unwrap_or_default();
+                    size > 0
+                })
                 .filter_map(|x| x.children().find(|x| x.tag_name().name() == "tcpflow"))
                 .filter_map(|x| {
                     use time::format_description::well_known::Iso8601;
@@ -85,6 +92,11 @@ impl TcpFlow {
                         .value()
                         .parse::<u16>()
                         .ok()?;
+                    if srcport == constants::CENTER_PORT {
+                        // skip connection to itself
+                        return None;
+                    }
+
                     let dst_ip = a()
                         .find(|x| x.name() == "dst_ipn")?
                         .value()
@@ -95,6 +107,10 @@ impl TcpFlow {
                         .value()
                         .parse::<u16>()
                         .ok()?;
+                    if dstport == constants::CENTER_PORT {
+                        // skip connection to itself
+                        return None;
+                    }
 
                     let src = SocketAddr::new(src_ip, srcport);
                     let dst = SocketAddr::new(dst_ip, dstport);
@@ -104,9 +120,16 @@ impl TcpFlow {
                     Some(NetReport {
                         local: src,
                         remote: dst,
+                        counter: 0,
                         timestamp: SystemTime::from(date.assume_utc()),
                     })
                 })
+                // .scan(BTreeMap::new(), |x, mut item| {
+                //     let e = x.entry(item.remote).or_default();
+                //     item.counter = *e;
+                //     *e += 1;
+                //     Some(item)
+                // })
                 .collect::<Vec<_>>(),
             Err(err) => {
                 log::error!("cannot parse xml report: {err}");
@@ -114,48 +137,54 @@ impl TcpFlow {
             }
         };
 
-        if cns.is_empty() {
-            for entry in fs::read_dir("/test").ok()?.filter_map(Result::ok) {
-                let name = entry.file_name();
-                let name = name.as_os_str().to_str().unwrap();
-                if name.len() == 54 {
-                    let mut pair = name.split('T');
-                    let timestamp = pair.next()?;
-                    let pair = pair.next()?;
+        // if cns.is_empty() {
+        //     for entry in fs::read_dir("/test").ok()?.filter_map(Result::ok) {
+        //         let name = entry.file_name();
+        //         let name = name.as_os_str().to_str().unwrap();
+        //         if name.len() == 54 {
+        //             let mut pair = name.split('T');
+        //             let timestamp = pair.next()?;
+        //             let pair = pair.next()?;
 
-                    let srcport = pair[16..21].parse::<u16>().ok()?;
-                    let dstport = pair[38..43].parse::<u16>().ok()?;
+        //             let srcport = pair[16..21].parse::<u16>().ok()?;
+        //             let dstport = pair[38..43].parse::<u16>().ok()?;
 
-                    let src_ip = parse_ip(&pair[..15])?;
-                    let dst_ip = parse_ip(&pair[22..37])?;
+        //             let src_ip = parse_ip(&pair[..15])?;
+        //             let dst_ip = parse_ip(&pair[22..37])?;
 
-                    let src = SocketAddr::new(src_ip, srcport);
-                    let dst = SocketAddr::new(dst_ip, dstport);
+        //             let src = SocketAddr::new(src_ip, srcport);
+        //             let dst = SocketAddr::new(dst_ip, dstport);
 
-                    let timestamp = SystemTime::UNIX_EPOCH
-                        .checked_add(Duration::from_secs(timestamp.parse::<u64>().ok()?))?;
+        //             let timestamp = SystemTime::UNIX_EPOCH
+        //                 .checked_add(Duration::from_secs(timestamp.parse::<u64>().ok()?))?;
 
-                    cns.push(NetReport {
-                        local: if self.this_ip == src_ip { src } else { dst },
-                        remote: if self.this_ip == src_ip { dst } else { src },
-                        timestamp,
-                    });
-                }
-            }
-        }
+        //             cns.push(NetReport {
+        //                 local: if self.this_ip == src_ip { src } else { dst },
+        //                 remote: if self.this_ip == src_ip { dst } else { src },
+        //                 timestamp,
+        //             });
+        //         }
+        //     }
+        // }
 
         cns.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        let mut counters = BTreeMap::new();
+        for item in &mut cns {
+            let counter = counters.entry(item.remote).or_default();
+            item.counter = *counter;
+            *counter += 1;
+        }
 
         Some(cns)
     }
 }
 
-fn parse_ip(s: &str) -> Option<IpAddr> {
-    let mut octets = s.split('.');
-    let a = octets.next()?.parse().ok()?;
-    let b = octets.next()?.parse().ok()?;
-    let c = octets.next()?.parse().ok()?;
-    let d = octets.next()?.parse().ok()?;
+// fn parse_ip(s: &str) -> Option<IpAddr> {
+//     let mut octets = s.split('.');
+//     let a = octets.next()?.parse().ok()?;
+//     let b = octets.next()?.parse().ok()?;
+//     let c = octets.next()?.parse().ok()?;
+//     let d = octets.next()?.parse().ok()?;
 
-    Some(IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d)))
-}
+//     Some(IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d)))
+// }

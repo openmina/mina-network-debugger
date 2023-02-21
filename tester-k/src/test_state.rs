@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     net::{IpAddr, SocketAddr},
-    time::{SystemTime, Duration},
+    time::SystemTime,
 };
 
 use serde::{Deserialize, Serialize};
@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 use mina_ipc::message::ChecksumPair;
 
 use crate::{
-    constants,
     libp2p_helper::Process,
     message::{NetReport, PeerInfo, Registered, Report, DebuggerReport, Summary},
 };
 
 pub struct State {
+    #[allow(dead_code)]
     registry_ip: IpAddr,
     process: Process,
     build_number: u32,
@@ -26,14 +26,14 @@ pub struct State {
 pub struct TestResult {
     success: bool,
     debugger_version: Option<String>,
-    verbose: Verbose,
+    ipc_verbose: Verbose,
+    network_verbose: BTreeMap<IpAddr, NetworkVerbose>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
 struct Verbose {
-    ipc_matches: Vec<IpcTestResult>,
-    ipc_mismatches: Vec<IpcTestResult>,
-    network_verbose: NetworkVerbose,
+    matches: Vec<IpcTestResult>,
+    mismatches: Vec<IpcTestResult>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -47,9 +47,8 @@ struct IpcTestResult {
 struct NetworkVerbose {
     matches: Vec<NetworkMatches>,
     checksum_mismatch: Vec<NetworkMatches>,
-    source_debugger_missing: Vec<NetworkMatches>,
-    destination_debugger_missing: Vec<NetworkMatches>,
-    both_debuggers_missing: Vec<NetworkMatches>,
+    local_debugger_missing: Option<NetworkMatches>,
+    remote_debugger_missing: Option<NetworkMatches>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -157,7 +156,8 @@ impl State {
         let mut result = TestResult {
             success: true,
             debugger_version: None,
-            verbose: Verbose::default(),
+            ipc_verbose: Verbose::default(),
+            network_verbose: BTreeMap::default(),
         };
         if !self
             .summary
@@ -186,98 +186,98 @@ impl State {
                 debugger_crc64: s_debugger.ipc.clone(),
             };
             if s_node.ipc.matches_(&s_debugger.ipc) {
-                result.verbose.ipc_matches.push(ipc_test_result);
+                result.ipc_verbose.matches.push(ipc_test_result);
             } else {
                 log::error!("test failed, ipc checksum mismatch at {ip}");
                 result.success = false;
-                result.verbose.ipc_mismatches.push(ipc_test_result);
+                result.ipc_verbose.mismatches.push(ipc_test_result);
+            }
+
+            let mut temp = s_debugger.network.clone();
+            temp.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+            if temp != s_debugger.network {
+                result.success = false;
+                log::error!("connections unordered at {ip}");
             }
 
             // for each connection seen by tcpflow
             // must exist only one debugger who seen this connection as incoming
             // must exist only one (distinct) debugger who seen this connection as outgoing
-            // net_report must be sorted chronologically
-            let mut time = Duration::default();
-            let mut order = true;
+            let mut network_verbose = NetworkVerbose::default();
             for r in &summary.net_report {
                 let NetReport {
                     local,
                     remote,
+                    counter,
                     timestamp,
                 } = *r;
 
-                if let Some(metadata) = s_debugger.network.get(&remote.ip()) {
-                    let debugger_time = metadata
-                        .timestamp
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .expect("cannot fail");
-                    if order && debugger_time < time {
-                        result.success = false;
-                        order = false;
-                        log::error!("connections unordered at {ip}");
-                    }
-                    time = debugger_time;
-                }
-
-                // don't count connections to registry
-                // TODO: check ip also
-                let _ = self.registry_ip;
-                if remote.port() == constants::CENTER_PORT {
-                    continue;
-                }
-
-                let p = self
-                    .summary
-                    .get(&local.ip())
-                    .and_then(|dbg| dbg.debugger.as_ref())
-                    .and_then(|report| report.network.get(&remote.ip()))
-                    .map(|cn| (cn.timestamp, cn.checksum.clone()));
-                let (local_time, local_crc64) = if let Some((t, c)) = p {
-                    (Some(t), Some(c))
-                } else {
-                    (None, None)
-                };
-                let p = self
+                let remote_cn = self
                     .summary
                     .get(&remote.ip())
-                    .and_then(|dbg| dbg.debugger.as_ref())
-                    .and_then(|report| report.network.get(&local.ip()))
-                    .map(|cn| (cn.timestamp, cn.checksum.clone()));
-                // unstable
-                // .unzip();
-                let (remote_time, remote_crc64) = if let Some((t, c)) = p {
-                    (Some(t), Some(c))
-                } else {
-                    (None, None)
-                };
+                    .and_then(|s| s.debugger.as_ref())
+                    .and_then(|dbg| dbg.network.iter().find(|cn| cn.ip == local.ip() && cn.counter == counter));
+                let local_cn = s_debugger.network.iter().find(|cn| cn.ip == remote.ip());
 
-                let entry = NetworkMatches {
-                    timestamp,
-                    local,
-                    local_time,
-                    local_crc64,
-                    remote,
-                    remote_time,
-                    remote_crc64,
-                };
-                let bucket = &mut result.verbose.network_verbose;
-                let mut ok = false;
-                match (&entry.local_crc64, &entry.remote_crc64) {
-                    (Some(src_crc64), Some(dst_crc64)) => {
-                        if src_crc64.matches(dst_crc64) {
-                            ok = true;
-                            bucket.matches.push(entry);
+                match (local_cn, remote_cn) {
+                    (Some(l), Some(r)) => {
+                        let item = NetworkMatches {
+                            timestamp,
+                            local,
+                            local_time: Some(l.timestamp),
+                            local_crc64: Some(l.checksum.clone()),
+                            remote,
+                            remote_time: Some(r.timestamp),
+                            remote_crc64: Some(r.checksum.clone()),
+                        };
+                        if l.checksum.matches(&r.checksum) {
+                            network_verbose.matches.push(item);
                         } else {
-                            bucket.checksum_mismatch.push(entry);
+                            network_verbose.checksum_mismatch.push(item);
                         }
                     }
-                    (Some(_), None) => bucket.source_debugger_missing.push(entry),
-                    (None, Some(_)) => bucket.destination_debugger_missing.push(entry),
-                    (None, None) => bucket.both_debuggers_missing.push(entry),
+                    (Some(l), None) => {
+                        result.success = false;
+                        network_verbose.remote_debugger_missing = Some(NetworkMatches {
+                            timestamp,
+                            local,
+                            local_time: Some(l.timestamp),
+                            local_crc64: Some(l.checksum.clone()),
+                            remote,
+                            remote_time: None,
+                            remote_crc64: None,
+                        });
+                        break;
+                    }
+                    (None, Some(r)) => {
+                        result.success = false;
+                        network_verbose.remote_debugger_missing = Some(NetworkMatches {
+                            timestamp,
+                            local,
+                            local_time: None,
+                            local_crc64: None,
+                            remote,
+                            remote_time: Some(r.timestamp),
+                            remote_crc64: Some(r.checksum.clone()),
+                        });
+                        break;
+                    }
+                    (None, None) => {
+                        result.success = false;
+                        network_verbose.remote_debugger_missing = Some(NetworkMatches {
+                            timestamp,
+                            local,
+                            local_time: None,
+                            local_crc64: None,
+                            remote,
+                            remote_time: None,
+                            remote_crc64: None,
+                        });
+                        break;
+                    }
                 }
-
-                result.success &= ok;
             }
+            result.network_verbose.insert(ip, network_verbose);
         }
 
         self.summary.clear();
