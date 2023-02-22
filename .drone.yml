@@ -28,6 +28,7 @@ steps:
   commands:
     - mkdir -p $HOME/.kube
     - echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
+    # - kubectl -n test-debugger delete job mock
     - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=build_number=${DRONE_BUILD_NUMBER} --set=blocks=$BLOCKS --set=delay=$DELAY --set=parallelism=$PARALLElISM --set=image.tag=${DRONE_COMMIT_SHA:0:8}
     - apk update && apk add curl jq
     - echo "Simple test, $PARALLElISM mock nodes exchange $BLOCKS blocks ..."
