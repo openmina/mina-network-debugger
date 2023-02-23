@@ -3,9 +3,7 @@
 pub mod center;
 pub mod peer;
 mod peer_behavior;
-
-// #[allow(dead_code)]
-// mod netstat;
+mod registry_behavior;
 
 mod constants;
 mod libp2p_helper;
