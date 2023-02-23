@@ -65,6 +65,7 @@ pub struct NetReport {
     pub remote: SocketAddr,
     pub counter: usize,
     pub timestamp: SystemTime,
+    pub bytes_number: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

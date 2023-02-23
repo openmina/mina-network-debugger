@@ -26,6 +26,10 @@ impl ChecksumPair {
     pub fn matches_(&self, other: &Self) -> bool {
         self.0.matches(&other.0) && self.1.matches(&other.1)
     }
+
+    pub fn bytes_number(&self) -> u64 {
+        self.0.len + self.1.len
+    }
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

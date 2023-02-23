@@ -26,9 +26,9 @@ pub struct State {
 pub struct TestResult {
     success: bool,
     ipc_ok: bool,
-    order_ok: bool,
     connections_ok: bool,
-    db_ok: bool,
+    connections_order_ok: bool,
+    db_order_ok: bool,
     debugger_version: Option<String>,
     ipc_verbose: Verbose,
     network_verbose: BTreeMap<IpAddr, NetworkVerbose>,
@@ -52,12 +52,14 @@ struct IpcTestResult {
 struct NetworkVerbose {
     matches: Vec<NetworkMatches>,
     checksum_mismatch: Vec<NetworkMatches>,
-    local_debugger_missing: Option<NetworkMatches>,
-    remote_debugger_missing: Option<NetworkMatches>,
+    local_debugger_missing: Vec<NetworkMatches>,
+    remote_debugger_missing: Vec<NetworkMatches>,
+    both_debuggers_missing: Vec<NetworkMatches>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct NetworkMatches {
+    bytes_number: u64,
     timestamp: SystemTime,
     local: SocketAddr,
     local_time: Option<SystemTime>,
@@ -161,9 +163,9 @@ impl State {
         let mut result = TestResult {
             success: true,
             ipc_ok: true,
-            order_ok: true,
+            connections_order_ok: true,
             connections_ok: true,
-            db_ok: true,
+            db_order_ok: true,
             debugger_version: None,
             ipc_verbose: Verbose::default(),
             network_verbose: BTreeMap::default(),
@@ -205,8 +207,8 @@ impl State {
             }
 
             result.db_tests.insert(ip, s_node.db_test.clone());
-            result.db_ok &= s_node.db_test.total_messages > 0 && s_node.db_test.ordered && s_node.db_test.timestamps_filter_ok;
-            if !result.db_ok {
+            result.db_order_ok &= s_node.db_test.total_messages > 0 && s_node.db_test.ordered && s_node.db_test.timestamps_filter_ok;
+            if !result.db_order_ok {
                 result.success = false;
             }
 
@@ -214,7 +216,7 @@ impl State {
             temp.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
             if temp != s_debugger.network {
                 result.success = false;
-                result.order_ok = false;
+                result.connections_order_ok = false;
                 log::error!("connections unordered at {ip}");
             }
 
@@ -228,6 +230,7 @@ impl State {
                     remote,
                     counter,
                     timestamp,
+                    bytes_number,
                 } = *r;
 
                 let remote_cn = self
@@ -240,6 +243,7 @@ impl State {
                 match (local_cn, remote_cn) {
                     (Some(l), Some(r)) => {
                         let item = NetworkMatches {
+                            bytes_number,
                             timestamp,
                             local,
                             local_time: Some(l.timestamp),
@@ -248,16 +252,19 @@ impl State {
                             remote_time: Some(r.timestamp),
                             remote_crc64: Some(r.checksum.clone()),
                         };
-                        if l.checksum.matches(&r.checksum) {
+                        if l.checksum.matches(&r.checksum) && bytes_number == l.checksum.bytes_number() {
                             network_verbose.matches.push(item);
                         } else {
+                            result.success = false;
+                            result.connections_ok = false;
                             network_verbose.checksum_mismatch.push(item);
                         }
                     }
                     (Some(l), None) => {
                         result.success = false;
                         result.connections_ok = false;
-                        network_verbose.remote_debugger_missing = Some(NetworkMatches {
+                        network_verbose.local_debugger_missing.push(NetworkMatches {
+                            bytes_number,
                             timestamp,
                             local,
                             local_time: Some(l.timestamp),
@@ -271,7 +278,8 @@ impl State {
                     (None, Some(r)) => {
                         result.success = false;
                         result.connections_ok = false;
-                        network_verbose.remote_debugger_missing = Some(NetworkMatches {
+                        network_verbose.remote_debugger_missing.push(NetworkMatches {
+                            bytes_number,
                             timestamp,
                             local,
                             local_time: None,
@@ -285,7 +293,8 @@ impl State {
                     (None, None) => {
                         result.success = false;
                         result.connections_ok = false;
-                        network_verbose.remote_debugger_missing = Some(NetworkMatches {
+                        network_verbose.both_debuggers_missing.push(NetworkMatches {
+                            bytes_number,
                             timestamp,
                             local,
                             local_time: None,

@@ -69,23 +69,26 @@ impl TcpFlow {
                         .unwrap_or_default();
                     size > 0
                 })
-                .filter_map(|x| x.children().find(|x| x.tag_name().name() == "tcpflow"))
                 .filter_map(|x| {
+                    let filesize = x.children().find(|x| x.tag_name().name() == "filesize")?;
+                    let tcpflow = x.children().find(|x| x.tag_name().name() == "tcpflow")?;
+                    Some((filesize, tcpflow))
+                })
+                .filter_map(|(filesize, x)| {
                     use time::format_description::well_known::Iso8601;
                     use time::PrimitiveDateTime;
 
                     let a = || x.attributes();
                     let start_time = a().find(|x| x.name() == "startime")?.value();
+                    let date = PrimitiveDateTime::parse(start_time, &Iso8601::DEFAULT).ok()?;
+
+                    let bytes_number = filesize.text()?.parse().ok()?;
+
                     let src_ip = a()
                         .find(|x| x.name() == "src_ipn")?
                         .value()
                         .parse::<IpAddr>()
                         .ok()?;
-                    if self.this_ip != src_ip {
-                        // tcpflow counts each connection twice (from local to remote and vice versa)
-                        // let's ignore half of them
-                        return None;
-                    }
 
                     let srcport = a()
                         .find(|x| x.name() == "srcport")?
@@ -115,21 +118,14 @@ impl TcpFlow {
                     let src = SocketAddr::new(src_ip, srcport);
                     let dst = SocketAddr::new(dst_ip, dstport);
 
-                    let date = PrimitiveDateTime::parse(start_time, &Iso8601::DEFAULT).ok()?;
-
                     Some(NetReport {
                         local: src,
                         remote: dst,
                         counter: 0,
                         timestamp: SystemTime::from(date.assume_utc()),
+                        bytes_number,
                     })
                 })
-                // .scan(BTreeMap::new(), |x, mut item| {
-                //     let e = x.entry(item.remote).or_default();
-                //     item.counter = *e;
-                //     *e += 1;
-                //     Some(item)
-                // })
                 .collect::<Vec<_>>(),
             Err(err) => {
                 log::error!("cannot parse xml report: {err}");
@@ -137,35 +133,19 @@ impl TcpFlow {
             }
         };
 
-        // if cns.is_empty() {
-        //     for entry in fs::read_dir("/test").ok()?.filter_map(Result::ok) {
-        //         let name = entry.file_name();
-        //         let name = name.as_os_str().to_str().unwrap();
-        //         if name.len() == 54 {
-        //             let mut pair = name.split('T');
-        //             let timestamp = pair.next()?;
-        //             let pair = pair.next()?;
-
-        //             let srcport = pair[16..21].parse::<u16>().ok()?;
-        //             let dstport = pair[38..43].parse::<u16>().ok()?;
-
-        //             let src_ip = parse_ip(&pair[..15])?;
-        //             let dst_ip = parse_ip(&pair[22..37])?;
-
-        //             let src = SocketAddr::new(src_ip, srcport);
-        //             let dst = SocketAddr::new(dst_ip, dstport);
-
-        //             let timestamp = SystemTime::UNIX_EPOCH
-        //                 .checked_add(Duration::from_secs(timestamp.parse::<u64>().ok()?))?;
-
-        //             cns.push(NetReport {
-        //                 local: if self.this_ip == src_ip { src } else { dst },
-        //                 remote: if self.this_ip == src_ip { dst } else { src },
-        //                 timestamp,
-        //             });
-        //         }
-        //     }
-        // }
+        let mut lengths = cns.iter().filter_map(|cn| {
+            if self.this_ip == cn.local.ip() {
+                None
+            } else {
+                Some((cn.local.ip(), cn.bytes_number))
+            }
+        }).collect::<BTreeMap<_, _>>();
+        // tcpflow counts each connection twice (from local to remote and vice versa)
+        // let's ignore half of them
+        cns.retain_mut(|cn| {
+            cn.bytes_number += lengths.remove(&cn.remote.ip()).unwrap_or_default();
+            self.this_ip == cn.local.ip()
+        });
 
         cns.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
         let mut counters = BTreeMap::new();
@@ -178,13 +158,3 @@ impl TcpFlow {
         Some(cns)
     }
 }
-
-// fn parse_ip(s: &str) -> Option<IpAddr> {
-//     let mut octets = s.split('.');
-//     let a = octets.next()?.parse().ok()?;
-//     let b = octets.next()?.parse().ok()?;
-//     let c = octets.next()?.parse().ok()?;
-//     let d = octets.next()?.parse().ok()?;
-
-//     Some(IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d)))
-// }
