@@ -1,5 +1,13 @@
 # Mina Network Debugger
 
+We use eBPF for external tracing of the Mina application. eBPF allows developers to run their code inside the Linux kernel. It is secure because the code is translated into bytecode, not machine code, and statically analyzed before execution. This bytecode allows limited read-only access to internal kernel structures, and is triggered by a kernel event such as (but not limited to) syscall. The Mina Network Debugger consists of two parts: an eBPF module and a normal userspace application. The eBPF module collects the data from the kernel and the userspace application decrypts the data, parses it, stores it in a database and serves it over http.
+
+The Mina application launches the libp2p_helper subprocess to communicate with peers over the network. It does this through an `exec` syscall. The eBPF module in the kernel listens for this syscall and thus detects the libp2p_helper subprocess. After that, the eBPF module is can focus on the libp2p_helper and listen to its syscalls.
+
+The libp2p_helper communicated with the Mina application though its stdin (standatd input) and stdout (standard output) pipes. Every Linux process has such pipes. The Mina application writes commands to libp2p_helper's stdin and reads events from libp2p_helper's stdout. In addition, libp2p_helper communicates with peers around the world via TCP connections. The eBPF module intercepts all the data read and written by libp2p_helper and sends it to userspace via a shared memory.
+
+The userspace part of the debugger receives all data from the eBPF module, decrypts it and parses it. The debugger doesn't need a secret key to decrypt the data, because for network interaction the fresh secret key is generated when the Mina application is started and then it is signed by the static (permanent) secret key. However, because the key is generated at startup, the debugger can intercept it, just like any other data. Don't worry, it's not the key, that protects the user's tokens, it's not that easy to intercept it.
+
 (readme for developers)
 
 ## Prepare for build
