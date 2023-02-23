@@ -4,7 +4,7 @@ mod meshsub;
 mod rpc;
 
 use crate::{
-    database::{StreamId, StreamKind, ConnectionStats, DbStream},
+    database::{StreamId, StreamKind, ConnectionStats},
     stats::update_block_stats,
 };
 
@@ -43,19 +43,20 @@ impl DynamicProtocol for State {
 
 impl HandleData for State {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
-        let stream = db.get(self.stream_id);
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &mut Db) -> DbResult<()> {
+        let db_id = db.id();
         if self.kind == StreamKind::Rpc {
+            let stream = db.get(self.stream_id);
             let st = self.rpc_state.as_mut().expect("must exist");
             match st.extend(bytes) {
-                Err(err) => log::error!("{id} {}: {err}", db.id()),
+                Err(err) => log::error!("{id} {}: {err}", db_id),
                 Ok(None) => loop {
                     match st.next_msg() {
-                        Err(err) => log::error!("{id} {}: {err}", db.id()),
+                        Err(err) => log::error!("{id} {}: {err}", db_id),
                         Ok(None) => break,
                         Ok(Some(msg)) => {
                             if let Err(err) = stream.add(&id, self.kind, &msg) {
-                                log::error!("{id} {}: {err}", db.id());
+                                log::error!("{id} {}: {err}", db_id);
                             }
                         }
                     }
@@ -69,13 +70,14 @@ impl HandleData for State {
         } else if self.kind == StreamKind::Meshsub {
             let st = self.meshsub_state.as_mut().expect("must exist");
             if !st.extend(bytes) {
-                meshsub_sink(&id, db, &stream, bytes, cx);
+                meshsub_sink(&id, db, self.stream_id, bytes, cx);
             } else {
                 while let Some(slice) = st.next_msg() {
-                    meshsub_sink(&id, db, &stream, slice, cx);
+                    meshsub_sink(&id, db, self.stream_id, slice, cx);
                 }
             }
         } else {
+            let stream = db.get(self.stream_id);
             stream.add(&id, self.kind, bytes)?;
         }
 
@@ -91,7 +93,8 @@ impl HandleData for State {
     }
 }
 
-fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx) {
+fn meshsub_sink(id: &DirectedId, db: &mut Db, stream_id: StreamId, msg: &[u8], cx: &Cx) {
+    let stream = db.get(stream_id);
     let node_address = {
         let lock = cx.apps.lock();
         lock.get(&id.metadata.id.pid)

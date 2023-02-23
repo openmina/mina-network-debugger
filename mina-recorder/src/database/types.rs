@@ -271,6 +271,7 @@ pub struct MessageId {
     #[custom_absorb(custom_coding::time_absorb)]
     #[custom_emit(custom_coding::time_emit)]
     pub time: SystemTime,
+    pub counter: u32,
 }
 
 impl fmt::Display for MessageId {

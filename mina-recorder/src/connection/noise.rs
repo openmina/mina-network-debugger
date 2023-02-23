@@ -48,7 +48,7 @@ where
     Inner: HandleData,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &mut Db) -> DbResult<()> {
         let accumulator = if id.incoming {
             &mut self.accumulator_incoming
         } else {
@@ -128,7 +128,7 @@ where
     Inner: HandleData,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &mut Db) -> DbResult<()> {
         enum Msg {
             First,
             Second,
@@ -239,7 +239,7 @@ impl<Inner> NoiseState<Inner> {
         id: DirectedId,
         bytes: &mut [u8],
         cx: &Cx,
-        db: &Db,
+        db: &mut Db,
         err: NoiseError,
     ) -> DbResult<()> {
         cx.stats

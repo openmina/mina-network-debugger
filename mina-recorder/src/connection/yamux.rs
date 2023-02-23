@@ -423,7 +423,7 @@ impl<Inner> HandleData for State<Inner>
 where
     Inner: HandleData + From<StreamId>,
 {
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &mut Db) -> DbResult<()> {
         if self.error {
             // TODO: report
             return Ok(());

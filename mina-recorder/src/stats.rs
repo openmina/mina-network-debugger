@@ -187,7 +187,7 @@ impl StatsState {
                                 tx_stat.pending_txs = self
                                     .txs
                                     .values()
-                                    .map(|v| MessageId { time: v.time })
+                                    .map(|v| MessageId { time: v.time, counter: 0 })
                                     .collect();
 
                                 let it0 =

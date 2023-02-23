@@ -65,7 +65,7 @@ impl GlobalEvent {
                 block_height: event.block_height,
                 global_slot: event.global_slot,
                 debugger_name,
-                received_message_id: Some(MessageId { time: event.time }),
+                received_message_id: Some(MessageId { time: event.time, counter: 0 }),
                 sent_message_id: None,
                 receiving_time_microseconds: Some(time_microseconds),
                 sending_time_microseconds: None,
@@ -82,7 +82,7 @@ impl GlobalEvent {
                 global_slot: event.global_slot,
                 debugger_name,
                 received_message_id: None,
-                sent_message_id: Some(MessageId { time: event.time }),
+                sent_message_id: Some(MessageId { time: event.time, counter: 0 }),
                 receiving_time_microseconds: None,
                 sending_time_microseconds: Some(time_microseconds),
                 source_addr: None,
@@ -100,7 +100,7 @@ impl GlobalEvent {
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .unwrap();
                 let time_microseconds = time.as_micros() as u64;
-                self.sent_message_id = Some(MessageId { time: event.time });
+                self.sent_message_id = Some(MessageId { time: event.time, counter: 0 });
                 self.sending_time_microseconds = Some(time_microseconds);
                 self.destination_addr = Some(event.receiver_addr.to_string());
             }

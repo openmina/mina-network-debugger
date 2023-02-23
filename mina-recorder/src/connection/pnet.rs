@@ -53,7 +53,7 @@ where
     Inner: HandleData + From<StreamId>,
 {
     #[inline(never)]
-    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
+    fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &mut Db) -> DbResult<()> {
         if self.skip {
             return Ok(());
         }

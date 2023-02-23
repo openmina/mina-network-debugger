@@ -4,7 +4,7 @@ use std::{
     sync::{
         atomic::{AtomicU64, Ordering::SeqCst},
     },
-    net::SocketAddr,
+    net::SocketAddr, collections::BTreeMap, cell::Cell,
 };
 
 use itertools::Itertools;
@@ -98,6 +98,7 @@ impl DbFacade {
         Ok(DbGroup {
             addr,
             id,
+            last_ids: BTreeMap::new(),
             inner: self.inner.clone(),
         })
     }
@@ -132,16 +133,21 @@ impl DbStrace {
 pub struct DbGroup {
     addr: SocketAddr,
     id: ConnectionId,
+    last_ids: BTreeMap<StreamId, DbStream>,
     inner: DbCore,
 }
 
 impl DbGroup {
-    pub fn get(&self, id: StreamId) -> DbStream {
-        DbStream {
+    pub fn get(&mut self, id: StreamId) -> &DbStream {
+        self.last_ids.entry(id).or_insert_with(|| DbStream {
             addr: self.addr,
             id: StreamFullId { cn: self.id, id },
+            last_id: Cell::new(MessageId {
+                time: SystemTime::UNIX_EPOCH,
+                counter: 0,
+            }),
             inner: self.inner.clone(),
-        }
+        })
     }
 
     pub fn id(&self) -> ConnectionId {
@@ -202,6 +208,7 @@ impl Drop for DbGroup {
 pub struct DbStream {
     addr: SocketAddr,
     id: StreamFullId,
+    last_id: Cell<MessageId>,
     inner: DbCore,
 }
 
@@ -246,9 +253,16 @@ impl DbStream {
             StreamKind::Yamux => vec![MessageType::Yamux],
         };
 
+        let counter = if did.metadata.time == self.last_id.get().time {
+            self.last_id.get().counter + 1
+        } else {
+            0
+        };
         let id = MessageId {
             time: did.metadata.time,
+            counter,
         };
+        self.last_id.set(id);
         let v = Message {
             connection_id: self.id.cn,
             stream_id: self.id.id,

@@ -752,6 +752,7 @@ impl DbCore {
 
         let id = MessageId {
             time: SystemTime::UNIX_EPOCH + Duration::from_secs(id),
+            counter: 0,
         };
         let id = id.chain(vec![]);
         let mode = if present {
@@ -776,10 +777,16 @@ impl DbCore {
 
     pub fn fetch_messages(&self, params: &ValidParams) -> impl Iterator<Item = FullMessage> + '_ {
         let (present, id) = self.message_id(params);
+        let id = if let Direction::Forward = params.coordinate.direction {
+            id
+        } else {
+            id + 1
+        };
         let id = MessageId {
             time: SystemTime::UNIX_EPOCH
                 .checked_add(Duration::from_secs(id))
                 .expect("cannot fail"),
+            counter: 0,
         };
 
         let coordinate = &params.coordinate;

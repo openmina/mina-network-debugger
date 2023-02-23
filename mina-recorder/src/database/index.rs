@@ -64,6 +64,7 @@ impl LedgerHashIdx {
             },
             message_id: MessageId {
                 time: SystemTime::UNIX_EPOCH,
+                counter: 0,
             },
         }
     }
