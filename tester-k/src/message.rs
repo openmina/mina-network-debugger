@@ -32,6 +32,24 @@ pub struct PeerInfo {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Report {
     pub ipc: ChecksumPair,
+    pub db_test: DbTestReport,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestReport {
+    pub start: SystemTime,
+    pub end: SystemTime,
+    pub group_report: Vec<DbTestTimeGroupReport>,
+    pub total_messages: usize,
+    pub ordered: bool,
+    pub timestamps_filter_ok: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestTimeGroupReport {
+    pub timestamps: Vec<SystemTime>,
+    pub timestamps_filter_ok: bool,
+    pub ordered: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

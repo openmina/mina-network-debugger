@@ -2,6 +2,7 @@
 
 pub mod center;
 pub mod peer;
+mod peer_behavior;
 
 // #[allow(dead_code)]
 // mod netstat;

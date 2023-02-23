@@ -1,4 +1,4 @@
-use std::{env, fs, path::Path, thread, time::Duration, net::IpAddr};
+use std::{env, fs, path::Path, thread, time::{Duration, SystemTime}, net::IpAddr};
 
 use reqwest::blocking::ClientBuilder;
 
@@ -9,6 +9,7 @@ use super::{
     libp2p_helper::Process,
     message::{Registered, Report},
     tcpflow::TcpFlow,
+    peer_behavior,
 };
 
 pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
@@ -79,6 +80,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         recv_cnt
     });
 
+    let started = SystemTime::now();
     let mut sent_cnt = 0;
     for slot in 0..blocks {
         thread::sleep(Duration::from_secs(delay as u64));
@@ -94,10 +96,12 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         }
     }
 
+    let db_test = peer_behavior::test_database(started);
+
     let (ipc, _status_code) = process.stop().expect("can check debuggers output");
     let recv_cnt = receiver.join().unwrap();
 
-    let summary_json = serde_json::to_string(&Report { ipc })?;
+    let summary_json = serde_json::to_string(&Report { ipc, db_test })?;
     let url = format!("http://{center_host}:{CENTER_PORT}/report/node?build_number={build_number}");
     // TODO: check
     let _status = client.post(url).body(summary_json).send()?.status();

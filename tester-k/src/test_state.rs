@@ -10,7 +10,7 @@ use mina_ipc::message::ChecksumPair;
 
 use crate::{
     libp2p_helper::Process,
-    message::{NetReport, PeerInfo, Registered, Report, DebuggerReport, Summary},
+    message::{NetReport, PeerInfo, Registered, Report, DebuggerReport, Summary, DbTestReport},
 };
 
 pub struct State {
@@ -25,9 +25,14 @@ pub struct State {
 #[derive(Serialize, Deserialize)]
 pub struct TestResult {
     success: bool,
+    ipc_ok: bool,
+    order_ok: bool,
+    connections_ok: bool,
+    db_ok: bool,
     debugger_version: Option<String>,
     ipc_verbose: Verbose,
     network_verbose: BTreeMap<IpAddr, NetworkVerbose>,
+    db_tests: BTreeMap<IpAddr, DbTestReport>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -155,9 +160,14 @@ impl State {
     pub fn perform_test(&mut self) {
         let mut result = TestResult {
             success: true,
+            ipc_ok: true,
+            order_ok: true,
+            connections_ok: true,
+            db_ok: true,
             debugger_version: None,
             ipc_verbose: Verbose::default(),
             network_verbose: BTreeMap::default(),
+            db_tests: BTreeMap::default(),
         };
         if !self
             .summary
@@ -190,13 +200,18 @@ impl State {
             } else {
                 log::error!("test failed, ipc checksum mismatch at {ip}");
                 result.success = false;
+                result.ipc_ok = false;
                 result.ipc_verbose.mismatches.push(ipc_test_result);
             }
+
+            result.db_tests.insert(ip, s_node.db_test.clone());
+            result.db_ok &= s_node.db_test.total_messages > 0 && s_node.db_test.ordered && s_node.db_test.timestamps_filter_ok;
 
             let mut temp = s_debugger.network.clone();
             temp.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
             if temp != s_debugger.network {
                 result.success = false;
+                result.order_ok = false;
                 log::error!("connections unordered at {ip}");
             }
 
@@ -238,6 +253,7 @@ impl State {
                     }
                     (Some(l), None) => {
                         result.success = false;
+                        result.connections_ok = false;
                         network_verbose.remote_debugger_missing = Some(NetworkMatches {
                             timestamp,
                             local,
@@ -251,6 +267,7 @@ impl State {
                     }
                     (None, Some(r)) => {
                         result.success = false;
+                        result.connections_ok = false;
                         network_verbose.remote_debugger_missing = Some(NetworkMatches {
                             timestamp,
                             local,
@@ -264,6 +281,7 @@ impl State {
                     }
                     (None, None) => {
                         result.success = false;
+                        result.connections_ok = false;
                         network_verbose.remote_debugger_missing = Some(NetworkMatches {
                             timestamp,
                             local,
