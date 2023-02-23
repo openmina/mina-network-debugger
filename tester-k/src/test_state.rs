@@ -206,6 +206,9 @@ impl State {
 
             result.db_tests.insert(ip, s_node.db_test.clone());
             result.db_ok &= s_node.db_test.total_messages > 0 && s_node.db_test.ordered && s_node.db_test.timestamps_filter_ok;
+            if !result.db_ok {
+                result.success = false;
+            }
 
             let mut temp = s_debugger.network.clone();
             temp.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));

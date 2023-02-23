@@ -34,10 +34,10 @@ steps:
     - echo "Simple test, $PARALLElISM mock nodes exchange $BLOCKS blocks ..."
     - sleep $(( $BLOCKS * $DELAY ))
     # - while [ $(curl -s $URL | jq .debugger_version) != "${DRONE_COMMIT_SHA:0:8}"* ]; do sleep 1; done
-    - while [ $(curl -s $URL | jq .success) == "null" ]; do sleep 1; done
-    - export RESULT=$(curl -s $URL)
-    - echo "Debugger commit hash $(echo $RESULT | jq .debugger_version)"
-    - if [[ $(echo $RESULT | jq .success) == "true" ]]; then echo "Passed"; exit 0; else echo $RESULT | jq .; echo "Failed"; exit 1; fi
+    - while [ $(curl -s $URL) == "null" ]; do sleep 1; done
+    - curl -s $URL > test.json
+    - echo "Debugger commit hash $(jq .debugger_version test.json)"
+    - if [[ $(jq .success test.json) == "true" ]]; then echo "Passed"; exit 0; else jq . test.json; echo "Failed"; exit 1; fi
 
 environment:
   BLOCKS: 20
