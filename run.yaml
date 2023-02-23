@@ -29,7 +29,8 @@ spec:
       runtimeClassName: kata-qemu
       containers:
         - name: bpf-debugger
-          image: vladsimplestakingcom/mina-debugger:latest
+          imagePullPolicy: Always
+          image: vladsimplestakingcom/mina-debugger:remove-id
           securityContext:
             privileged: true
           command: ["sh", "-ce", "bpf-recorder"]
@@ -47,6 +48,11 @@ spec:
               name: sys-kernel-debug
             - mountPath: /proc
               name: proc
+          resources:
+            requests:
+              memory: 4G
+            limits:
+              memory: 16G
         - name: mina-daemon
           image: minaprotocol/mina-daemon:13faa3b-stretch-berkeley
           command:
@@ -73,6 +79,11 @@ spec:
               value: ""
             - name: VERBOSE
               value: "1"
+          resources:
+            requests:
+              memory: 4G
+            limits:
+              memory: 16G
       volumes:
         - name: sys-kernel-debug
           hostPath:

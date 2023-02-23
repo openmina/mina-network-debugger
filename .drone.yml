@@ -4,7 +4,7 @@ name: simulate-block-broadcast
 
 trigger:
   event: [ push ]
-  branch: [ main ]
+  branch: [ improvement/message-order ]
 
 steps:
 
@@ -14,7 +14,7 @@ steps:
     dockerfile: Dockerfile
     repo: openmina/mina-network-debugger
     tags:
-      - ${DRONE_COMMIT_SHA:0:8}
+      - message-order
     password:
       from_secret: docker_hub_password
     username:
@@ -32,7 +32,7 @@ steps:
     - mkdir -p $HOME/.kube
     - echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
     # - kubectl -n test-debugger delete job mock
-    - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=build_number=${DRONE_BUILD_NUMBER} --set=blocks=$BLOCKS --set=delay=$DELAY --set=parallelism=$PARALLElISM --set=image.tag=${DRONE_COMMIT_SHA:0:8}
+    - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=build_number=${DRONE_BUILD_NUMBER} --set=blocks=$BLOCKS --set=delay=$DELAY --set=parallelism=$PARALLElISM --set=image.tag=message-order
     - apk update && apk add curl
     - sleep $(( $BLOCKS * $DELAY ))
     - while [ $(curl -s $URL) == "null" ]; do sleep 1; done
