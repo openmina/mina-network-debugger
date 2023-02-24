@@ -26,7 +26,7 @@
     
     2.4 [Blocks IPC](#Blocks-IPC)
   
-##Introduction
+## Introduction
 
 The P2P network is the key component of the Mina blockchain. It is used for communication between nodes, which, among other things, also includes block propagation and the updating of the blockchain state. We want to have a close look at the messages sent by nodes to see if there are inefficiencies in communication so that we know where to optimize.
 
