@@ -2,31 +2,11 @@ use std::time::SystemTime;
 
 use serde::Deserialize;
 
-use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport};
+use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport, DbEventWithMetadata};
 
-#[derive(Deserialize, Clone, PartialEq, Eq)]
-pub struct FullMessage {
-    pub connection_id: u64,
-    pub remote_addr: String,
-    pub incoming: bool,
-    pub timestamp: SystemTime,
-    pub stream_id: StreamId,
-    pub stream_kind: String,
-    pub message: serde_json::Value,
-    pub size: u32,
-}
-
-#[derive(Deserialize, PartialEq, Eq, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum StreamId {
-    Handshake,
-    Forward(u64),
-    Backward(u64),
-}
-
-pub fn test_database(started: SystemTime) -> DbTestReport {
+pub fn test_database(started: SystemTime, events: Vec<DbEventWithMetadata>) -> DbTestReport {
     let timestamps = test_messages_timestamps(started);
-    let events = test_events();
+    let events = test_events(events);
 
     DbTestReport {
         timestamps,
@@ -34,20 +14,40 @@ pub fn test_database(started: SystemTime) -> DbTestReport {
     }
 }
 
-fn get_messages(params: &str) -> Vec<FullMessage> {
-    let res = reqwest::blocking::get(&format!("http://localhost:8000/messages?{params}"))
-        .unwrap()
-        .text()
-        .unwrap();
-    if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
-        msgs.into_iter().map(|(_, m)| m).collect()
-    } else {
-        log::info!("{res}");
-        serde_json::from_str(&res).unwrap()
-    }
-}
-
 pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
+    #[derive(Deserialize, Clone, PartialEq, Eq)]
+    pub struct FullMessage {
+        pub connection_id: u64,
+        pub remote_addr: String,
+        pub incoming: bool,
+        pub timestamp: SystemTime,
+        pub stream_id: StreamId,
+        pub stream_kind: String,
+        pub message: serde_json::Value,
+        pub size: u32,
+    }
+    
+    #[derive(Deserialize, PartialEq, Eq, Clone)]
+    #[serde(rename_all = "snake_case")]
+    pub enum StreamId {
+        Handshake,
+        Forward(u64),
+        Backward(u64),
+    }
+
+    fn get_messages(params: &str) -> Vec<FullMessage> {
+        let res = reqwest::blocking::get(&format!("http://localhost:8000/messages?{params}"))
+            .unwrap()
+            .text()
+            .unwrap();
+        if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
+            msgs.into_iter().map(|(_, m)| m).collect()
+        } else {
+            log::info!("{res}");
+            serde_json::from_str(&res).unwrap()
+        }
+    }
+
     // timestamp
     let time = |t: &SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).expect("cannot fail").as_secs_f64();
 
@@ -94,7 +94,31 @@ pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
 
 }
 
-pub fn test_events() -> DbTestEventsReport {
-    // TODO: do tests
-    DbTestEventsReport {}
+pub fn test_events(events: Vec<DbEventWithMetadata>) -> DbTestEventsReport {
+    fn get_events() -> Vec<DbEventWithMetadata> {
+        let res = reqwest::blocking::get(&format!("http://localhost:8000/libp2p_ipc/block/all"))
+            .unwrap()
+            .text()
+            .unwrap();
+        serde_json::from_str(&res).unwrap()
+    }
+
+    let mut matching = true;
+
+    let debugger_events = get_events();
+    if events.len() == debugger_events.len() {
+        for i in 0..events.len() {
+            let DbEventWithMetadata { events, .. } = &events[i];
+            let DbEventWithMetadata { events: debugger_events, .. } = &debugger_events[i];
+            matching &= events.eq(debugger_events);
+        }
+    } else {
+        matching = false;
+    }
+
+    DbTestEventsReport {
+        matching,
+        events,
+        debugger_events,
+    }
 }

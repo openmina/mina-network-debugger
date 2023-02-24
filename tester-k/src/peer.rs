@@ -4,6 +4,8 @@ use reqwest::blocking::ClientBuilder;
 
 use mina_ipc::message::{outgoing, Config, ConsensusMessage};
 
+use crate::message::{DbEvent, DbEventWithMetadata, GossipNetMessageV2Short};
+
 use super::{
     constants::*,
     libp2p_helper::Process,
@@ -55,7 +57,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
 
     let topic = topic.to_owned();
     let receiver = thread::spawn(move || {
-        let mut recv_cnt = 0;
+        let mut events = vec![];
         while let Ok(msg) = rx.recv() {
             match msg {
                 outgoing::PushMessage::GossipReceived {
@@ -69,19 +71,30 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
                             log::info!(
                                 "worker {this_addr} received from {peer_id} {peer_host}:{peer_port}, msg: {msg}"
                             );
+                            let parse_block_height = |s: &str| s.split("slot: ").nth(1)?.parse().ok();
+                            events.push(DbEventWithMetadata {
+                                time_microseconds: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("msg").as_micros() as u64,
+                                events: vec![DbEvent::ReceivedGossip {
+                                    peer_id,
+                                    peer_address: format!("{peer_host}:{peer_port}"),
+                                    msg: GossipNetMessageV2Short::TestMessage {
+                                        height: parse_block_height(&msg).unwrap_or(u32::MAX),
+                                    },
+                                    hash: hex::encode(calc_hash(&data)),
+                                }],
+                            });
                         }
                         msg => log::info!("worker {this_addr} received unexpected {msg:?}"),
                     }
-                    recv_cnt += 1;
                 }
                 msg => log::info!("worker {this_addr} received unexpected {msg:?}"),
             }
         }
-        recv_cnt
+        events
     });
 
     let started = SystemTime::now();
-    let mut sent_cnt = 0;
+    let mut sent_events = vec![];
     for slot in 0..blocks {
         thread::sleep(Duration::from_secs(delay as u64));
         // chance is 1 per nodes number
@@ -89,17 +102,32 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
             let msg_str = format!("test message, id: {this_addr}, slot: {slot}");
             log::info!("worker {this_addr} publish msg: {msg_str}");
             let msg = ConsensusMessage::Test(msg_str);
+            let data = msg.into_bytes();
+            sent_events.push(DbEventWithMetadata {
+                time_microseconds: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("msg").as_micros() as u64,
+                events: vec![DbEvent::PublishGossip {
+                    msg: GossipNetMessageV2Short::TestMessage {
+                        height: slot,
+                    },
+                    hash: hex::encode(calc_hash(&data)),
+                }],
+            });
             process
-                .publish("coda/test-messages/0.0.1".to_string(), msg.into_bytes())
+                .publish("coda/test-messages/0.0.1".to_string(), data)
                 .unwrap();
-            sent_cnt += 1;
         }
     }
 
-    let db_test = peer_behavior::test_database(started);
-
     let (ipc, _status_code) = process.stop().expect("can check debuggers output");
-    let recv_cnt = receiver.join().unwrap();
+    let recv_events = receiver.join().unwrap();
+
+    let mut events = sent_events;
+    events.extend_from_slice(&recv_events);
+    events
+        .sort_by(|a, b| {
+            a.height().cmp(&b.height()).then(a.time_microseconds.cmp(&b.time_microseconds))
+        });
+    let db_test = peer_behavior::test_database(started, events);
 
     let summary_json = serde_json::to_string(&Report { ipc, db_test })?;
     let url = format!("http://{center_host}:{CENTER_PORT}/report/node?build_number={build_number}");
@@ -114,7 +142,27 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         let _status = client.post(url).body(network_json).send()?.status();
     }
 
-    log::info!("sent: {sent_cnt}, recv: {recv_cnt}");
-
     Ok(())
+}
+
+fn calc_hash(data: &[u8]) -> [u8; 32] {
+    use blake2::digest::{Mac, Update, FixedOutput, typenum};
+
+    // WARNING: hardcode
+    let topic = "coda/consensus-messages/0.0.1";
+
+    let key;
+    let key = if topic.as_bytes().len() <= 64 {
+        topic.as_bytes()
+    } else {
+        key = blake2::Blake2b::<typenum::U32>::default()
+            .chain(topic.as_bytes())
+            .finalize_fixed();
+        key.as_slice()
+    };
+    blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
+        .unwrap()
+        .chain(data)
+        .finalize_fixed()
+        .into()
 }

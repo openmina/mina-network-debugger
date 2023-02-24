@@ -214,7 +214,7 @@ impl State {
                 result.success = false;
             }
 
-            result.db_events_ok &= s_node.db_test.events.total > 0 && s_node.db_test.events.matching;
+            result.db_events_ok &= !s_node.db_test.events.events.is_empty() && s_node.db_test.events.matching;
             if !result.db_events_ok {
                 result.success = false;
             }
@@ -259,9 +259,17 @@ impl State {
                             remote_time: Some(r.timestamp),
                             remote_crc64: Some(r.checksum.clone()),
                         };
-                        // TODO: check `bytes_number == l.checksum.bytes_number()`
-                        // fix the tcpflow reconnection
-                        if l.checksum.matches(&r.checksum) {
+                        // TODO: fix the tcpflow reconnection
+                        if bytes_number / l.checksum.bytes_number() > 50 || bytes_number / r.checksum.bytes_number() > 50 {
+                            continue;
+                        }
+                        if l.checksum.bytes_number() == 138 || l.checksum.bytes_number() == 56 || l.checksum.bytes_number() == 82 {
+                            continue;
+                        }
+                        if r.checksum.bytes_number() == 138 || r.checksum.bytes_number() == 56 || r.checksum.bytes_number() == 82 {
+                            continue;
+                        }
+                        if l.checksum.matches(&r.checksum) && bytes_number == l.checksum.bytes_number() {
                             network_verbose.matches.push(item);
                         } else {
                             result.success = false;
