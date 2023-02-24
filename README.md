@@ -2,6 +2,32 @@
 
 # Mina Network Debugger
 
+## Table of Contents
+
+1. [Introduction](#Introduction)  
+
+    1.1 [Preparing for build](#Preparing-for-build)
+    
+    1.2 [Build and Run](#Build-and-Run)
+    
+    1.3 [Build and run aggregator](#Build-and-run-aggregator)
+    
+    1.4 [Docker](#Docker)
+    
+    1.5 [Protocol stack](#Protocol-stack)
+
+2. [The Network Debugger Front End](#The-Network-Debugger-Front-End)
+
+    2.1 [Messages](#Messages)
+    
+    2.2 [Connections](#Connections)
+    
+    2.3 [Blocks](#Blocks)
+    
+    2.4 [Blocks IPC](#Blocks-IPC)
+  
+##Introduction
+
 The P2P network is the key component of the Mina blockchain. It is used for communication between nodes, which, among other things, also includes block propagation and the updating of the blockchain state. We want to have a close look at the messages sent by nodes to see if there are inefficiencies in communication so that we know where to optimize.
 
 We achieve this by externally tracing the Mina application through eBPF. eBPF allows developers to run their code inside the Linux kernel. It is secure because the code is translated into bytecode, not machine code, and statically analyzed before execution. This bytecode allows limited read-only access to internal kernel structures and is triggered by a kernel event such as (but not limited to) `syscall`. 
@@ -139,8 +165,6 @@ Mina p2p traffic conform this protocol stack (incomplete):
 You can view the Network’s front end on the Metrics and Tracing interface.
 
 Open up [the Metrics and Tracing website’s “Network” page](http://1.k8.openmina.com:31308/network/messages?node=node1)
-
-### Messages
 
 The **Messages** tab shows a list of all messages sent across the P2P network.
 
