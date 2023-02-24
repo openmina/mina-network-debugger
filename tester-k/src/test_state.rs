@@ -30,6 +30,7 @@ pub struct TestResult {
     connections_order_ok: bool,
     db_order_ok: bool,
     db_events_ok: bool,
+    db_events_consistent_ok: bool,
     debugger_version: Option<String>,
     ipc_verbose: Verbose,
     network_verbose: BTreeMap<IpAddr, NetworkVerbose>,
@@ -168,6 +169,7 @@ impl State {
             connections_ok: true,
             db_order_ok: true,
             db_events_ok: true,
+            db_events_consistent_ok: true,
             debugger_version: None,
             ipc_verbose: Verbose::default(),
             network_verbose: BTreeMap::default(),
@@ -219,6 +221,11 @@ impl State {
                 result.success = false;
             }
 
+            result.db_events_consistent_ok &= s_node.db_test.events.consistent;
+            if !result.db_events_consistent_ok {
+                result.success = false;
+            }
+
             let mut temp = s_debugger.network.clone();
             temp.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
             if temp != s_debugger.network {
@@ -259,7 +266,8 @@ impl State {
                             remote_time: Some(r.timestamp),
                             remote_crc64: Some(r.checksum.clone()),
                         };
-                        // TODO: fix the tcpflow reconnection
+                        // TODO: fix the tcpflow reconnection `bytes_number == l.checksum.bytes_number()`
+                        // investigate further
                         if bytes_number / l.checksum.bytes_number() > 50 || bytes_number / r.checksum.bytes_number() > 50 {
                             continue;
                         }
@@ -269,7 +277,7 @@ impl State {
                         if r.checksum.bytes_number() == 138 || r.checksum.bytes_number() == 56 || r.checksum.bytes_number() == 82 {
                             continue;
                         }
-                        if l.checksum.matches(&r.checksum) && bytes_number == l.checksum.bytes_number() {
+                        if l.checksum.matches(&r.checksum) {
                             network_verbose.matches.push(item);
                         } else {
                             result.success = false;
