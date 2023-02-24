@@ -45,6 +45,20 @@ The userspace part of the debugger receives all data from the eBPF module, decry
 
 List of pre-requisites:
 
+Install required dependencies, here is commands for Ubuntu:
+
+```
+sudo apt-get update
+sudo apt-get install -y git curl libelf-dev protobuf-compiler clang libssl-dev pkg-config libbpf-dev make
+```
+
+Install Rust.
+
+```
+curl https://sh.rustup.rs -sSf | sh -s -- -y
+source ~/.cargo/env
+```
+
 Rust `nightly-2022-10-10` and bpf linker.
 
 ```
@@ -53,13 +67,7 @@ rustup component add rust-src --toolchain nightly-2022-10-10-x86_64-unknown-linu
 cargo install bpf-linker --git https://github.com/vlad9486/bpf-linker --branch keep-btf
 ```
 
-Dependencies on ubuntu:
-
-```
-sudo apt install libelf-dev protobuf-compiler clang libssl-dev pkg-config libbpf-dev make
-```
-
-and capnproto
+And finally, capnproto.
 
 ```
 curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
@@ -77,41 +85,50 @@ curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
 cargo build --bin bpf-recorder --release
 ```
 
+Cargo itself (not rustc) will display a warning about a file `main.rs` that was found to be present in multiple build targets. It is intentional that the file is present in two targets.
+
 Run using sudo:
 
 ```
 sudo RUST_LOG=info ./target/release/bpf-recorder
 ```
 
-Use environment variables for configuration:
+Before running, you can use environment variables for configuration:
 
 * `SERVER_PORT`. Default value is `8000`. Set the port where debugger will listen http requests.
 * `DB_PATH`. Default value is `target/db`.
-* `DRY`. By default, the variable is not set. Set any value `DRY=1` to disable BPF. This is useful for inspecting the database.
+* `DRY`. Set any value (for example `DRY=1`) to disable BPF. This is useful for inspecting the database.
 * `HTTPS_KEY_PATH` and `HTTPS_CERT_PATH`. By default, the variables are not set. Set the path to crypto stuff in order to enable them (https).
-* `AGGREGATOR`. No default value. If the value is not set, the debugger will not connect to the aggregator. The value must be http or https url, for example: "http://develop.dev.openmina.com:8000".
-* `DEBUGGER_NAME`. The name of this debugger for the aggregator to distinguish. Any string is valid.
 
-Line in log `libbpf: BTF loading error: -22` may be ignored.
+Line in log `libbpf: BTF loading error: -22` may be ignored. It is because we wrote BPF module in Rust, which generate incompatible debug information. 
 
 In a separate terminal, run the application with env variable `BPF_ALIAS=` set.
-The value of the variable must start with `mainnet-` or `devnet-` or `berkeley-`.
-For example: `BPF_ALIAS=berkeley-node`.
+Important note: set the variable for mina application, not for debugger.
 
-We may potentially pass some useful info to the debugger using these env variables.
+The value of the variable must be the following format: `${CHAIN_ID}-${EXTERNAL_IP}`.
+The `${CHAIN_ID}` is one of: `mainnet` or `devnet` or `berkeley` or literal chain id like `/coda/0.0.1/d8a8e53385b4629a1838156529ff2687e31f951873704ddcc490076052698a88`.
 
-## Build and run aggregator
+For example: 
 
 ```
-cargo build --bin mina-aggregator --release
+BPF_ALIAS=/coda/0.0.1/d8a8e53385b4629a1838156529ff2687e31f951873704ddcc490076052698a88-0.0.0.0
 ```
 
-Use environment variables:
+or
 
-* `SERVER_PORT`. The aggregator will listen here.
-* `HTTPS_KEY_PATH` and `HTTPS_CERT_PATH`. Enables https.
+```
+BPF_ALIAS=berkeley-0.0.0.0
+```
+
+or
+
+```
+BPF_ALIAS=devnet-127.0.0.1
+```
 
 ## Docker
+
+The debugger requires privileged access to the system, read-write access to `/sys/kernel/debug` directory and read-only access to `/proc` directory.
 
 Build the image:
 
@@ -119,21 +136,10 @@ Build the image:
 docker build -t mina-debugger:local .
 ```
 
-The image contains both the debugger and the aggregator. The default entrypoint is the debugger. 
-
 Simple config for docker-compose:
 
 ```
 services:
-  aggregator:
-    image: mina-debugger:local
-    environment:
-      - RUST_LOG=info
-      - SERVER_PORT=8000
-    ports:
-      - "8000:8000"
-    entrypoint: /usr/bin/mina-aggregator
-
   debugger:
     privileged: true
     image: mina-debugger:local
@@ -141,14 +147,21 @@ services:
       - RUST_LOG=info
       - SERVER_PORT=80
       - DB_PATH=/tmp/mina-debugger-db
-      - AGGREGATOR=http://aggregator:8000
-      - DEBUGGER_NAME=develop.dev.openmina.com
       # - HTTPS_KEY_PATH=".../privkey.pem"
       # - HTTPS_CERT_PATH=".../fullchain.pem"
     volumes:
       - "/sys/kernel/debug:/sys/kernel/debug:rw"
+      - "/proc:/proc:ro"
     ports:
       - "80:80"
+```
+
+## Kubernetes
+
+This repository contains `run.yaml` specification, which run latest debugger (at the moment) and Mina node.
+
+```
+kubectl apply -f run.yaml
 ```
 
 ## Protocol stack

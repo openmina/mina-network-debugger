@@ -26,10 +26,10 @@ spec:
       labels:
         app: debugger
     spec:
-      runtimeClassName: kata-qemu
+      # runtimeClassName: kata-qemu
       containers:
         - name: bpf-debugger
-          image: vladsimplestakingcom/mina-debugger:latest
+          image: openmina/mina-network-debugger:message-order
           securityContext:
             privileged: true
           command: ["sh", "-ce", "bpf-recorder"]
