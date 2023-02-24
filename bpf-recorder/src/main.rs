@@ -865,6 +865,7 @@ fn main() {
                 SystemTime::now() - instant_here + instant_there
             };
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
+            let mut subscriptions = BTreeMap::new();
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
                     log::info!("exec {alias} pid: {}", event.pid);
@@ -1017,6 +1018,7 @@ fn main() {
                             time,
                             better_time,
                             &db_capnp,
+                            &mut subscriptions,
                         ) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);
@@ -1074,6 +1076,7 @@ fn main() {
                             time,
                             better_time,
                             &db_capnp,
+                            &mut subscriptions,
                         ) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);

@@ -1,4 +1,4 @@
-use std::{io, net::SocketAddr, time::SystemTime};
+use std::{io, net::SocketAddr, time::SystemTime, collections::BTreeMap};
 
 use binprot::BinProtRead;
 use mina_p2p_messages::gossip::GossipNetMessageV2;
@@ -7,7 +7,9 @@ use radiation::{Absorb, Emit};
 use crate::database::{DbCore, CapnpEventWithMetadataKey, CapnpEventWithMetadata};
 
 #[derive(Default)]
-pub struct CapnpReader(Vec<u8>);
+pub struct CapnpReader {
+    buffer: Vec<u8>,
+}
 
 #[derive(Absorb, Emit)]
 pub enum CapnpEvent {
@@ -26,7 +28,7 @@ pub enum CapnpEvent {
 
 impl CapnpReader {
     pub fn extend_from_slice(&mut self, other: &[u8]) {
-        self.0.extend_from_slice(other);
+        self.buffer.extend_from_slice(other);
     }
 
     pub fn process(
@@ -37,24 +39,25 @@ impl CapnpReader {
         time: SystemTime,
         real_time: SystemTime,
         db: &DbCore,
+        subscriptions: &mut BTreeMap<u64, String>,
     ) -> bool {
         let mut events = vec![];
         let should_continue = loop {
-            if !self.0.is_empty() {
-                let mut slice = self.0.as_slice();
+            if !self.buffer.is_empty() {
+                let mut slice = self.buffer.as_slice();
 
                 let r = if incoming {
-                    process_request(pid, "<-", &mut slice, &mut events)
+                    process_request(pid, "<-", &mut slice, &mut events, subscriptions)
                 } else {
-                    process_response(pid, "->", &mut slice, &mut events)
+                    process_response(pid, "->", &mut slice, &mut events, subscriptions)
                 };
                 match r {
                     Ok(()) => {
                         log::debug!(
                             "capnp {pid} {incoming} consumed: {}",
-                            self.0.len() - slice.len()
+                            self.buffer.len() - slice.len()
                         );
-                        self.0 = slice.to_vec();
+                        self.buffer = slice.to_vec();
                     }
                     Err(err) if err.description == "failed to fill the whole buffer" => {
                         log::debug!("capnp {pid} {incoming} waiting more data");
@@ -121,11 +124,8 @@ impl CapnpReader {
     }
 }
 
-fn calc_hash(data: &[u8]) -> [u8; 32] {
+fn calc_hash(data: &[u8], topic: &str) -> [u8; 32] {
     use blake2::digest::{Mac, Update, FixedOutput, typenum};
-
-    // WARNING: hardcode
-    let topic = "coda/consensus-messages/0.0.1";
 
     let key;
     let key = if topic.as_bytes().len() <= 64 {
@@ -149,6 +149,7 @@ pub fn process_request<R>(
     incoming: &str,
     reader: R,
     events: &mut Vec<CapnpEvent>,
+    subscriptions: &mut BTreeMap<u64, String>,
 ) -> capnp::Result<()>
 where
     R: io::Read,
@@ -167,13 +168,13 @@ where
                 log::debug!("capnp message {pid} {incoming} add_peer {addr}");
             }
             Ok(rpc_request::Publish(Ok(msg))) => {
-                let _topic = msg.get_topic().unwrap();
+                let topic = msg.get_topic().unwrap();
                 // log::info!("capnp message {pid} {incoming} publish {topic}");
 
                 let data = msg.get_data().unwrap();
                 events.push(CapnpEvent::Publish {
                     msg: data[8..].to_vec(),
-                    hash: calc_hash(data),
+                    hash: calc_hash(data, topic),
                 });
             }
             Ok(rpc_request::OpenStream(Ok(stream))) => {
@@ -198,6 +199,11 @@ where
                     data.len()
                 );
             }
+            Ok(rpc_request::Subscribe(Ok(x))) => {
+                if let (Ok(id), Ok(topic)) = (x.get_subscription_id(), x.get_topic()) {
+                    subscriptions.insert(id.get_id(), topic.to_owned());
+                }
+            }
             _ => (),
         },
         message::PushMessage(Ok(msg)) => match msg.which() {
@@ -217,6 +223,7 @@ pub fn process_response<R>(
     incoming: &str,
     reader: R,
     events: &mut Vec<CapnpEvent>,
+    subscriptions: &mut BTreeMap<u64, String>,
 ) -> capnp::Result<()>
 where
     R: io::Read,
@@ -266,13 +273,19 @@ where
                 let peer_port = sender.get_libp2p_port();
 
                 let data = msg.get_data().unwrap();
+                let x = msg.get_subscription_id().unwrap().get_id();
+
+                let topic = subscriptions
+                    .get(&x)
+                    .cloned()
+                    .unwrap_or("coda/consensus-messages/0.0.1".to_owned());
 
                 events.push(CapnpEvent::ReceivedGossip {
                     peer_id,
                     peer_host,
                     peer_port,
                     msg: data[8..].to_vec(),
-                    hash: calc_hash(data),
+                    hash: calc_hash(data, &topic),
                 });
             }
             _ => (),
