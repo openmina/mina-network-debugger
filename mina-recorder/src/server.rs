@@ -262,6 +262,16 @@ fn libp2p_ipc(
         })
 }
 
+fn libp2p_ipc_all(
+    db: DbCore,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("libp2p_ipc" / "block" / "all")
+        .map(move || -> WithStatus<Json> {
+            let v = db.fetch_capnp_all().collect::<Vec<_>>();
+            reply::with_status(reply::json(&v), StatusCode::OK)
+        })
+}
+
 fn capnp_latest(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
@@ -358,7 +368,8 @@ fn routes(
                 .or(capnp(db.clone()))
                 .or(libp2p_ipc(db.clone()))
                 .or(capnp_latest(db.clone()))
-                .or(libp2p_ipc_latest(db))
+                .or(libp2p_ipc_latest(db.clone()))
+                .or(libp2p_ipc_all(db))
                 .or(version().or(openapi())),
         )
         .with(with::header("Content-Type", "application/json"))

@@ -37,12 +37,66 @@ pub struct Report {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DbTestReport {
+    pub timestamps: DbTestTimestampsReport,
+    pub events: DbTestEventsReport,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestTimestampsReport {
     pub start: SystemTime,
     pub end: SystemTime,
     pub group_report: Vec<DbTestTimeGroupReport>,
     pub total_messages: usize,
     pub ordered: bool,
     pub timestamps_filter_ok: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestEventsReport {
+    pub matching: bool,
+    pub events: Vec<DbEventWithMetadata>,
+    pub debugger_events: Vec<DbEventWithMetadata>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbEventWithMetadata {
+    pub time_microseconds: u64,
+    pub events: Vec<DbEvent>,
+}
+
+impl DbEventWithMetadata {
+    pub fn height(&self) -> u32 {
+        match self.events.first() {
+            Some(DbEvent::PublishGossip { msg: GossipNetMessageV2Short::TestMessage { height }, .. }) => *height,
+            Some(DbEvent::ReceivedGossip { msg: GossipNetMessageV2Short::TestMessage { height }, .. }) => *height,
+            None => u32::MAX,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum GossipNetMessageV2Short {
+    TestMessage {
+        height: u32,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum DbEvent {
+    ReceivedGossip {
+        peer_id: String,
+        peer_address: String,
+        msg: GossipNetMessageV2Short,
+        hash: String,
+    },
+    PublishGossip {
+        msg: GossipNetMessageV2Short,
+        hash: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

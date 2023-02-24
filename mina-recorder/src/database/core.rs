@@ -1140,6 +1140,16 @@ impl DbCore {
         Some(self.fetch_capnp(k.height, all))
     }
 
+    pub fn fetch_capnp_all(&self) -> impl Iterator<Item = CapnpTableRow> + '_ {
+        self.inner
+            .iterator_cf(
+                self.capnp(),
+                rocksdb::IteratorMode::Start,
+            )
+            .filter_map(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)
+            .map(|(k, v)| CapnpTableRow::transform(k, v))
+    }
+
     pub fn fetch_capnp(&self, height: u32, all: bool) -> impl Iterator<Item = CapnpTableRow> + '_ {
         type State = BTreeMap<SocketAddr, (BTreeSet<Hash>, BTreeSet<Hash>)>;
 

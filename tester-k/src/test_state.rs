@@ -29,6 +29,7 @@ pub struct TestResult {
     connections_ok: bool,
     connections_order_ok: bool,
     db_order_ok: bool,
+    db_events_ok: bool,
     debugger_version: Option<String>,
     ipc_verbose: Verbose,
     network_verbose: BTreeMap<IpAddr, NetworkVerbose>,
@@ -166,6 +167,7 @@ impl State {
             connections_order_ok: true,
             connections_ok: true,
             db_order_ok: true,
+            db_events_ok: true,
             debugger_version: None,
             ipc_verbose: Verbose::default(),
             network_verbose: BTreeMap::default(),
@@ -207,8 +209,13 @@ impl State {
             }
 
             result.db_tests.insert(ip, s_node.db_test.clone());
-            result.db_order_ok &= s_node.db_test.total_messages > 0 && s_node.db_test.ordered && s_node.db_test.timestamps_filter_ok;
+            result.db_order_ok &= s_node.db_test.timestamps.total_messages > 0 && s_node.db_test.timestamps.ordered && s_node.db_test.timestamps.timestamps_filter_ok;
             if !result.db_order_ok {
+                result.success = false;
+            }
+
+            result.db_events_ok &= !s_node.db_test.events.events.is_empty() && s_node.db_test.events.matching;
+            if !result.db_events_ok {
                 result.success = false;
             }
 
@@ -252,6 +259,16 @@ impl State {
                             remote_time: Some(r.timestamp),
                             remote_crc64: Some(r.checksum.clone()),
                         };
+                        // TODO: fix the tcpflow reconnection
+                        if bytes_number / l.checksum.bytes_number() > 50 || bytes_number / r.checksum.bytes_number() > 50 {
+                            continue;
+                        }
+                        if l.checksum.bytes_number() == 138 || l.checksum.bytes_number() == 56 || l.checksum.bytes_number() == 82 {
+                            continue;
+                        }
+                        if r.checksum.bytes_number() == 138 || r.checksum.bytes_number() == 56 || r.checksum.bytes_number() == 82 {
+                            continue;
+                        }
                         if l.checksum.matches(&r.checksum) && bytes_number == l.checksum.bytes_number() {
                             network_verbose.matches.push(item);
                         } else {

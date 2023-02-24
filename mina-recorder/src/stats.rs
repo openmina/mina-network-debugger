@@ -316,6 +316,26 @@ impl StatsState {
                         }
                     }
                 }
+                meshsub::Event::PublishTestingMessage { from, message, .. } => {
+                    let parse_block_height = |message: &str| message.split("slot: ").nth(1)?.parse().ok();
+                    if let Some(block_height) = parse_block_height(&message) {
+                        let event = Event {
+                            producer_id: from,
+                            hash: Hash([0; 32]),
+                            block_height,
+                            global_slot: block_height,
+                            incoming,
+                            message_kind: MessageType::PublishNewState,
+                            time,
+                            better_time,
+                            latency: None,
+                            sender_addr,
+                            receiver_addr,
+                        };
+                        self.block_stat.events.push(event);
+                        block_stat_updated = true;
+                    }
+                }
                 _ => (),
             }
         }
@@ -387,6 +407,25 @@ pub fn update_block_stats(
                 graft: _,
                 prune: _,
             } => {}
+            meshsub::Event::PublishTestingMessage { from, message, hash, .. } => {
+                let parse_block_height = |message: &str| message.split("slot: ").nth(1)?.parse().ok();
+                if let Some(block_height) = parse_block_height(&message) {
+                    let event = Event {
+                        producer_id: from,
+                        hash: Hash(hash),
+                        block_height,
+                        global_slot: block_height,
+                        incoming,
+                        message_kind: MessageType::PublishNewState,
+                        time,
+                        better_time,
+                        latency: None,
+                        sender_addr,
+                        receiver_addr,
+                    };
+                    db.stats_block_v2(event)?;
+                }
+            }
             _ => {}
         }
     }
