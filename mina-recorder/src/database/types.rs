@@ -508,6 +508,9 @@ pub enum GossipNetMessageV2Short {
     NewState {
         height: u32,
     },
+    TestMessage {
+        height: u32,
+    },
     SnarkPoolDiff,
     TransactionPoolDiff {
         inner: v2::NetworkPoolTransactionPoolDiffVersionedStableV2,
@@ -583,8 +586,14 @@ impl CapnpTableRow {
                                 Some(CapnpEventDecoded::PublishGossip { msg, hash })
                             }
                             Err(err) => {
-                                log::error!("capnp decode {err}");
-                                None
+                                if let Some(3) = msg.as_slice().first() {
+                                    let msg = GossipNetMessageV2Short::TestMessage { height: k.height };
+                                    let hash = Hash(hash);
+                                    Some(CapnpEventDecoded::PublishGossip { msg, hash })
+                                } else {
+                                    log::error!("capnp decode {err}");
+                                    None
+                                }
                             }
                         }
                     }
@@ -633,8 +642,19 @@ impl CapnpTableRow {
                                 })
                             }
                             Err(err) => {
-                                log::error!("capnp decode {err}");
-                                None
+                                if let Some(3) = msg.as_slice().first() {
+                                    let msg = GossipNetMessageV2Short::TestMessage { height: k.height };
+                                    let hash = Hash(hash);
+                                    Some(CapnpEventDecoded::ReceivedGossip {
+                                        peer_id,
+                                        peer_address: format!("{peer_host}:{peer_port}"),
+                                        msg,
+                                        hash,
+                                    })
+                                } else {
+                                    log::error!("capnp decode {err}");
+                                    None
+                                }
                             }
                         }
                     }

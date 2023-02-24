@@ -97,6 +97,10 @@ impl CapnpReader {
                                 None
                             }
                         }
+                    } else if msg[0] == 3 {
+                        let bytes = msg[1..].to_vec();
+                        let parse_block_height = |bytes| String::from_utf8(bytes).ok()?.split("slot: ").nth(1)?.parse().ok();
+                        parse_block_height(bytes)
                     } else {
                         None
                     }
