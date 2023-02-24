@@ -12,9 +12,13 @@
     
     1.3 [Build and run aggregator](#Build-and-run-aggregator)
     
-    1.4 [Docker](#Docker)
+    1.4 [Run tests](#Run-tests)
+
+    1.5 [Docker](#Docker)
+
+    1.6 [Kubernetes](#Kubernetes)
     
-    1.5 [Protocol stack](#Protocol-stack)
+    1.7 [Protocol stack](#Protocol-stack)
 
 2. [The Network Debugger Front End](#The-Network-Debugger-Front-End)
 
@@ -90,7 +94,7 @@ Cargo itself (not rustc) will display a warning about a file `main.rs` that was 
 Run using sudo:
 
 ```
-sudo RUST_LOG=info ./target/release/bpf-recorder
+sudo -E RUST_LOG=info ./target/release/bpf-recorder
 ```
 
 Before running, you can use environment variables for configuration:
@@ -125,6 +129,37 @@ or
 ```
 BPF_ALIAS=devnet-127.0.0.1
 ```
+
+## Run tests
+
+Run unit tests is very simple. There are few dozens of such tests.
+
+```
+cargo test
+```
+
+There is also an integration test which opens TCP connections with itself and
+simultaneously performs disk IO. The test is checking the debugger sees only TCP data and the data is correct.
+
+Build the test:
+
+```
+cargo build --bin coda-libp2p_helper-test
+```
+
+To run the test, run debugger first with environment variable `TEST=1`.
+
+```
+sudo -E RUST_LOG=info TEST=1 TERMINATE=1 ./target/release/bpf-recorder
+```
+
+In separate terminal run the test, note, `PATH` variable must be adjusted:
+
+```
+BPF_ALIAS=test PATH=$(pwd)/target/debug coda-libp2p_helper-test
+```
+
+In few seconds the test is done and both running application exited. Debugger must print "test is passed" in log.
 
 ## Docker
 
