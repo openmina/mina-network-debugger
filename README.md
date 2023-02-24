@@ -234,7 +234,6 @@ You can also click on a filter category (in this case, `/noise`), which may cont
 
 There is also the option of combining multiple filters from various categories:
 
-<screenshot - network - messages - multiple filters selected>
 
 Below the filters is a list of network **Messages**. They are sorted by their message **ID** and **datetime**. You can also see their **Remote Address**, **Direction** (whether they are incoming or outgoing), their **Size**, their **Stream Kind** and **Message Kind**.
 
