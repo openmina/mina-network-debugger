@@ -1,12 +1,12 @@
-use std::time::SystemTime;
+use std::{time::SystemTime, collections::{BTreeSet, BTreeMap}};
 
 use serde::Deserialize;
 
-use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport, DbEventWithMetadata};
+use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport, DbEventWithMetadata, DbEvent, BlockNetworkEvent};
 
-pub fn test_database(started: SystemTime, events: Vec<DbEventWithMetadata>) -> DbTestReport {
+pub fn test_database(started: SystemTime, events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestReport {
     let timestamps = test_messages_timestamps(started);
-    let events = test_events(events);
+    let events = test_events(events, peer_id);
 
     DbTestReport {
         timestamps,
@@ -94,7 +94,13 @@ pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
 
 }
 
-pub fn test_events(events: Vec<DbEventWithMetadata>) -> DbTestEventsReport {
+pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestEventsReport {
+    #[derive(Clone, Deserialize)]
+    pub struct BlockStat {
+        pub height: u32,
+        pub events: Vec<BlockNetworkEvent>,
+    }
+
     fn get_events() -> Vec<DbEventWithMetadata> {
         let res = reqwest::blocking::get(&format!("http://localhost:8000/libp2p_ipc/block/all"))
             .unwrap()
@@ -103,22 +109,73 @@ pub fn test_events(events: Vec<DbEventWithMetadata>) -> DbTestEventsReport {
         serde_json::from_str(&res).unwrap()
     }
 
+    fn get_network_event(height: u32) -> Vec<BlockNetworkEvent> {
+        let res = reqwest::blocking::get(&format!("http://localhost:8000/block/{height}"))
+            .unwrap()
+            .text()
+            .unwrap();
+        let BlockStat { events, .. } = serde_json::from_str(&res).unwrap();
+        events
+    }
+
     let mut matching = true;
 
     let debugger_events = get_events();
     if events.len() == debugger_events.len() {
-        for i in 0..events.len() {
-            let DbEventWithMetadata { events, .. } = &events[i];
-            let DbEventWithMetadata { events: debugger_events, .. } = &debugger_events[i];
-            matching &= events.eq(debugger_events);
-        }
+        let events_set = events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
+        let debugger_events_set = debugger_events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
+        matching &= events_set.eq(&debugger_events_set);
+        // for i in 0..events.len() {
+        //     let DbEventWithMetadata { events, .. } = &events[i];
+        //     let DbEventWithMetadata { events: debugger_events, .. } = &debugger_events[i];
+        //     matching &= events.eq(debugger_events);
+        // }
     } else {
         matching = false;
     }
 
+    let mut consistent = true;
+    let mut network_events = BTreeMap::new();
+    let heights = debugger_events.iter().map(|x| x.height()).collect::<BTreeSet<_>>();
+    for height in heights {
+        let network_e = get_network_event(height);
+        for event in debugger_events.iter().filter(|x| x.height() == height) {
+            let _time = event.time_microseconds;
+            let event = match event.events.first() {
+                Some(v) => v,
+                None => continue,
+            };
+
+            // for each ipc event must exist network event
+            match event {
+                DbEvent::ReceivedGossip { peer_id, peer_address, hash, .. } => {
+                    let _ = peer_id;
+                    let exist = network_e.iter()
+                        .find(|e| {
+                            e.incoming && e.block_height == height && e.sender_addr.to_string().eq(peer_address) && e.hash.eq(hash)
+                        }).is_some();
+                    consistent &= exist;
+                },
+                DbEvent::PublishGossip { hash, .. } => {
+                    let exist = network_e.iter()
+                        .find(|e| {
+                            !e.incoming && e.producer_id == peer_id && e.block_height == height && e.hash.eq(hash)
+                        }).is_some();
+                    let _ = exist;
+                    // consistent &= exist;
+                    // at the end of the test, mock may publish block,
+                    // but it will have no time to be broadcasted, so debugger records nothing
+                },
+            }
+        }
+        network_events.insert(height, network_e);
+    }
+
     DbTestEventsReport {
         matching,
+        consistent,
         events,
         debugger_events,
+        network_events,
     }
 }

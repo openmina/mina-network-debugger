@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     net::{IpAddr, SocketAddr},
-    time::SystemTime,
+    time::{SystemTime, Duration},
 };
 
 use mina_ipc::message::ChecksumPair;
@@ -54,11 +54,27 @@ pub struct DbTestTimestampsReport {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DbTestEventsReport {
     pub matching: bool,
+    pub consistent: bool,
     pub events: Vec<DbEventWithMetadata>,
     pub debugger_events: Vec<DbEventWithMetadata>,
+    pub network_events: BTreeMap<u32, Vec<BlockNetworkEvent>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BlockNetworkEvent {
+    pub producer_id: String,
+    pub hash: String,
+    pub block_height: u32,
+    pub global_slot: u32,
+    pub incoming: bool,
+    pub time: SystemTime,
+    pub better_time: SystemTime,
+    pub latency: Option<Duration>,
+    pub sender_addr: SocketAddr,
+    pub receiver_addr: SocketAddr,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DbEventWithMetadata {
     pub time_microseconds: u64,
     pub events: Vec<DbEvent>,
@@ -74,7 +90,7 @@ impl DbEventWithMetadata {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum GossipNetMessageV2Short {
@@ -83,7 +99,7 @@ pub enum GossipNetMessageV2Short {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum DbEvent {

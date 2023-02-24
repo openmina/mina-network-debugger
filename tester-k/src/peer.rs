@@ -40,7 +40,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         .map(|(address, peer_id)| format!("/dns4/{address}/tcp/{PEER_PORT}/p2p/{peer_id}"))
         .collect::<Vec<String>>();
     let external_multiaddr = format!("/dns4/{this_addr}/tcp/{PEER_PORT}");
-    let topic = "coda/test-messages/0.0.1";
+    let topic = "coda/consensus-messages/0.0.1";
 
     let config = Config::new(
         &root.display().to_string(),
@@ -55,7 +55,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
     process.configure(config)?;
     process.subscribe(0, topic)?;
 
-    let topic = topic.to_owned();
+    let topic_owned = topic.to_owned();
     let receiver = thread::spawn(move || {
         let mut events = vec![];
         while let Ok(msg) = rx.recv() {
@@ -66,7 +66,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
                     peer_port,
                     data,
                 } => {
-                    match ConsensusMessage::from_bytes(&data, &topic).unwrap() {
+                    match ConsensusMessage::from_bytes(&data, &topic_owned).unwrap() {
                         ConsensusMessage::Test(msg) => {
                             log::info!(
                                 "worker {this_addr} received from {peer_id} {peer_host}:{peer_port}, msg: {msg}"
@@ -80,7 +80,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
                                     msg: GossipNetMessageV2Short::TestMessage {
                                         height: parse_block_height(&msg).unwrap_or(u32::MAX),
                                     },
-                                    hash: hex::encode(calc_hash(&data)),
+                                    hash: hex::encode(ConsensusMessage::calc_hash(&data, &topic_owned)),
                                 }],
                             });
                         }
@@ -109,11 +109,11 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
                     msg: GossipNetMessageV2Short::TestMessage {
                         height: slot,
                     },
-                    hash: hex::encode(calc_hash(&data)),
+                    hash: hex::encode(ConsensusMessage::calc_hash(&data, topic)),
                 }],
             });
             process
-                .publish("coda/test-messages/0.0.1".to_string(), data)
+                .publish(topic.to_string(), data)
                 .unwrap();
         }
     }
@@ -127,7 +127,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         .sort_by(|a, b| {
             a.height().cmp(&b.height()).then(a.time_microseconds.cmp(&b.time_microseconds))
         });
-    let db_test = peer_behavior::test_database(started, events);
+    let db_test = peer_behavior::test_database(started, events, response.info.peer_id);
 
     let summary_json = serde_json::to_string(&Report { ipc, db_test })?;
     let url = format!("http://{center_host}:{CENTER_PORT}/report/node?build_number={build_number}");
@@ -143,26 +143,4 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn calc_hash(data: &[u8]) -> [u8; 32] {
-    use blake2::digest::{Mac, Update, FixedOutput, typenum};
-
-    // WARNING: hardcode
-    let topic = "coda/consensus-messages/0.0.1";
-
-    let key;
-    let key = if topic.as_bytes().len() <= 64 {
-        topic.as_bytes()
-    } else {
-        key = blake2::Blake2b::<typenum::U32>::default()
-            .chain(topic.as_bytes())
-            .finalize_fixed();
-        key.as_slice()
-    };
-    blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
-        .unwrap()
-        .chain(data)
-        .finalize_fixed()
-        .into()
 }
