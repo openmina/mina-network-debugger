@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use serde::Deserialize;
 
-use crate::message::{DbTestReport, DbTestTimeGroupReport};
+use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport};
 
 #[derive(Deserialize, Clone, PartialEq, Eq)]
 pub struct FullMessage {
@@ -25,24 +25,34 @@ pub enum StreamId {
 }
 
 pub fn test_database(started: SystemTime) -> DbTestReport {
-    fn get_messages(params: &str) -> Vec<FullMessage> {
-        let res = reqwest::blocking::get(&format!("http://localhost:8000/messages?{params}"))
-            .unwrap()
-            .text()
-            .unwrap();
-        if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
-            msgs.into_iter().map(|(_, m)| m).collect()
-        } else {
-            log::info!("{res}");
-            serde_json::from_str(&res).unwrap()
-        }
-    }
+    let timestamps = test_messages_timestamps(started);
+    let events = test_events();
 
+    DbTestReport {
+        timestamps,
+        events,
+    }
+}
+
+fn get_messages(params: &str) -> Vec<FullMessage> {
+    let res = reqwest::blocking::get(&format!("http://localhost:8000/messages?{params}"))
+        .unwrap()
+        .text()
+        .unwrap();
+    if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
+        msgs.into_iter().map(|(_, m)| m).collect()
+    } else {
+        log::info!("{res}");
+        serde_json::from_str(&res).unwrap()
+    }
+}
+
+pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
     // timestamp
     let time = |t: &SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).expect("cannot fail").as_secs_f64();
 
     const GROUPS: u64 = 10;
-    let mut report = DbTestReport {
+    let mut report = DbTestTimestampsReport {
         start: started,
         end: SystemTime::now(),
         group_report: vec![],
@@ -81,4 +91,10 @@ pub fn test_database(started: SystemTime) -> DbTestReport {
     }
 
     report
+
+}
+
+pub fn test_events() -> DbTestEventsReport {
+    // TODO: do tests
+    DbTestEventsReport {}
 }

@@ -37,12 +37,24 @@ pub struct Report {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DbTestReport {
+    pub timestamps: DbTestTimestampsReport,
+    pub events: DbTestEventsReport,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestTimestampsReport {
     pub start: SystemTime,
     pub end: SystemTime,
     pub group_report: Vec<DbTestTimeGroupReport>,
     pub total_messages: usize,
     pub ordered: bool,
     pub timestamps_filter_ok: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestEventsReport {
+    pub total: usize,
+    pub matching: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
