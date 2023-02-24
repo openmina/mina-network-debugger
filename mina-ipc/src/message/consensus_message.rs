@@ -25,7 +25,7 @@ impl ConsensusMessage {
         }
     }
 
-    fn calc_hash(data: &[u8], topic: &str) -> [u8; 32] {
+    pub fn calc_hash(data: &[u8], topic: &str) -> [u8; 32] {
         use blake2::digest::{typenum, FixedOutput, Mac, Update};
 
         let key;
@@ -47,9 +47,11 @@ impl ConsensusMessage {
     pub fn into_bytes(self) -> Vec<u8> {
         match self {
             Self::Test(msg) => {
-                let mut bytes = vec![0, 0, 0, 0, 0, 0, 0, 0, 3];
-                bytes.extend_from_slice(msg.as_bytes());
-                bytes
+                let mut v = vec![0, 0, 0, 0, 0, 0, 0, 0, 3];
+                v.extend_from_slice(msg.as_bytes());
+                let l = ((v.len() - 8) as u64).to_be_bytes();
+                v[..8].clone_from_slice(&l);
+                v
             }
             Self::Inner { inner, .. } => {
                 let mut v = vec![0; 8];
