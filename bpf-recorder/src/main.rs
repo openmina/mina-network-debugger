@@ -358,9 +358,9 @@ impl App {
                     return Err(0);
                 }
 
-                if ip[0] == 127 && ip[1] == 0 && ip[2] == 0 {
-                    return Err(0);
-                }
+                // if ip[0] == 127 && ip[1] == 0 && ip[2] == 0 {
+                //     return Err(0);
+                // }
             } else if ty == AF_INET6 {
                 // filter there something
             } else {

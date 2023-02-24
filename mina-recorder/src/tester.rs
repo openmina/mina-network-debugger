@@ -20,6 +20,11 @@ impl Tester {
 
     pub fn on_data(&mut self, incoming: bool, metadata: EventMetadata, bytes: Vec<u8>) {
         let _ = (incoming, metadata);
-        assert!(bytes.iter().all(|v| *v == 0x11));
+        if bytes == b"test-is-passed" {
+            println!("test is passed");
+            std::process::exit(0);
+        } else {
+            assert!(bytes.iter().all(|v| *v == 0x11));
+        }
     }
 }
