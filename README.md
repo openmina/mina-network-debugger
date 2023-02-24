@@ -140,6 +140,8 @@ You can view the Network’s front end on the Metrics and Tracing interface.
 
 Open up [the Metrics and Tracing website’s “Network” page](http://1.k8.openmina.com:31308/network/messages?node=node1)
 
+### Messages
+
 The **Messages** tab shows a list of all messages sent across the P2P network.
 
 
