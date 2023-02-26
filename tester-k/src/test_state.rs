@@ -266,18 +266,9 @@ impl State {
                             remote_time: Some(r.timestamp),
                             remote_crc64: Some(r.checksum.clone()),
                         };
-                        // TODO: fix the tcpflow reconnection `bytes_number == l.checksum.bytes_number()`
-                        // investigate further
-                        if bytes_number / l.checksum.bytes_number() > 50 || bytes_number / r.checksum.bytes_number() > 50 {
-                            continue;
-                        }
-                        if l.checksum.bytes_number() == 138 || l.checksum.bytes_number() == 56 || l.checksum.bytes_number() == 82 {
-                            continue;
-                        }
-                        if r.checksum.bytes_number() == 138 || r.checksum.bytes_number() == 56 || r.checksum.bytes_number() == 82 {
-                            continue;
-                        }
-                        if l.checksum.matches(&r.checksum) {
+                        let l_bigger = bytes_number <= l.checksum.bytes_number();
+                        let r_bigger = bytes_number <= r.checksum.bytes_number();
+                        if l.checksum.matches(&r.checksum) && l_bigger && r_bigger {
                             network_verbose.matches.push(item);
                         } else {
                             result.success = false;
