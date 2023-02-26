@@ -34,6 +34,10 @@ pub struct App {
     pub enter_connect: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_exit_connect")]
     pub exit_connect: ebpf::ProgRef,
+    #[prog("tracepoint/syscalls/sys_enter_getsockopt")]
+    pub enter_getsockopt: ebpf::ProgRef,
+    #[prog("tracepoint/syscalls/sys_exit_getsockopt")]
+    pub exit_getsockopt: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_enter_accept4")]
     pub enter_accept4: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_exit_accept4")]
@@ -420,6 +424,26 @@ impl App {
                     event.set_ok(addr_len)
                 }
             }
+            context::Variant::GetSockOptL1O4 { fd, len_ptr, .. } => {
+                let event = event.set_tag_fd(DataTag::GetSockOpt, fd);
+                if ret < 0 {
+                    event.set_err(ret)
+                } else {
+                    let mut len_bytes = [0_u8; 4];
+                    let c = unsafe {
+                        let p = len_bytes.as_mut_ptr() as *mut _;
+                        helpers::probe_read_user(p, 4, len_ptr as _)
+                    };
+                    if c != 0 {
+                        return Err(0);
+                    }
+                    let len = u32::from_ne_bytes(len_bytes) as u64;
+                    event.set_ok(len)
+                }
+            }
+            context::Variant::GetSockOptIrrelevant { .. } => {
+                return Ok(());
+            }
             context::Variant::Accept {
                 listen_on_fd,
                 addr_len_ptr,
@@ -533,6 +557,30 @@ impl App {
 
     #[inline(always)]
     pub fn exit_connect(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
+        self.exit(ctx)
+    }
+
+    #[inline(always)]
+    pub fn enter_getsockopt(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
+        let level = ctx.read_here::<u64>(0x18);
+        let opt = ctx.read_here::<u64>(0x20);
+        if level == 1 && opt == 4 {
+            self.enter(context::Variant::GetSockOptL1O4 {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                val_ptr: ctx.read_here::<u64>(0x28),
+                len_ptr: ctx.read_here::<u64>(0x30),
+            })
+        } else {
+            self.enter(context::Variant::GetSockOptIrrelevant {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                val_ptr: ctx.read_here::<u64>(0x28),
+                len_ptr: ctx.read_here::<u64>(0x30),
+            })
+        }
+    }
+
+    #[inline(always)]
+    pub fn exit_getsockopt(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         self.exit(ctx)
     }
 
@@ -817,6 +865,7 @@ fn main() {
     }
 
     let mut p2p_cns = BTreeMap::new();
+    let mut pending_out_cns = BTreeMap::new();
     let mut recorder = P2pRecorder::new(db, test);
     let mut watching = BTreeMap::new();
     let mut capnp_readers = BTreeMap::<_, CapnpReader>::new();
@@ -824,6 +873,7 @@ fn main() {
     let mut max_buffered = 0;
     let mut max_unordered_ns = BTreeMap::new();
     let mut last_ts = BTreeMap::new();
+    let mut subscriptions = BTreeMap::new();
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             let event = match event {
@@ -865,7 +915,6 @@ fn main() {
                 SystemTime::now() - instant_here + instant_there
             };
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
-            let mut subscriptions = BTreeMap::new();
             match event.variant {
                 SnifferEventVariant::NewApp(alias) => {
                     log::info!("exec {alias} pid: {}", event.pid);
@@ -889,6 +938,18 @@ fn main() {
                     recorder.set_port(event.pid, addr.port());
                 }
                 SnifferEventVariant::OutgoingConnection(addr) => {
+                    pending_out_cns.insert((event.pid, event.fd), addr);
+                }
+                SnifferEventVariant::GetSockOpt(value) => {
+                    if value.len() != 4 {
+                        continue;
+                    }
+                    let Some(addr) = pending_out_cns.remove(&(event.pid, event.fd)) else {
+                        continue;
+                    };
+                    if value.as_slice() != [0; 4] {
+                        continue;
+                    }
                     if let Some(report) = watching.get_mut(&event.pid) {
                         let counter = report.network.iter()
                             .filter(|cn| cn.ip == addr.ip())
@@ -916,11 +977,12 @@ fn main() {
                         duration,
                     };
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                        log::debug!("new outgoing connection on already allocated fd");
+                        log::warn!("new outgoing connection on already allocated fd");
                         let mut metadata = metadata.clone();
                         metadata.id.addr = old_addr;
                         recorder.on_disconnect(metadata, buffered);
                     }
+                    log::info!("new outgoing connection {}", metadata);
                     recorder.on_connect::<true>(false, metadata, buffered);
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
@@ -951,11 +1013,12 @@ fn main() {
                         duration,
                     };
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
-                        log::debug!("new incoming connection on already allocated fd");
+                        log::warn!("new incoming connection on already allocated fd");
                         let mut metadata = metadata.clone();
                         metadata.id.addr = old_addr;
                         recorder.on_disconnect(metadata, buffered);
                     }
+                    log::info!("new incoming connection {}", metadata);
                     recorder.on_connect::<true>(true, metadata, buffered);
                 }
                 SnifferEventVariant::Disconnected => {
@@ -971,9 +1034,10 @@ fn main() {
                             better_time,
                             duration,
                         };
+                        log::info!("disconnected {}", metadata);
                         recorder.on_disconnect(metadata, buffered);
                     } else {
-                        log::debug!(
+                        log::warn!(
                             "{} cannot process disconnect {}, not connected",
                             event.pid,
                             event.fd
@@ -1048,7 +1112,7 @@ fn main() {
                         };
                         recorder.on_data(true, metadata, buffered, data);
                     } else {
-                        log::debug!(
+                        log::warn!(
                             "{} cannot handle data on {}, not connected, {}",
                             event.pid,
                             event.fd,
@@ -1105,7 +1169,7 @@ fn main() {
                         };
                         recorder.on_data(false, metadata, buffered, data);
                     } else {
-                        log::debug!(
+                        log::warn!(
                             "{} cannot handle data on {}, not connected, {}",
                             event.pid,
                             event.fd,

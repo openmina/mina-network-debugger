@@ -59,6 +59,7 @@ pub enum DataTag {
     Read,
     Alias,
     Random,
+    GetSockOpt,
 }
 
 impl DataTag {
@@ -74,6 +75,7 @@ impl DataTag {
             DataTag::Read,
             DataTag::Alias,
             DataTag::Random,
+            DataTag::GetSockOpt,
         ];
         values.into_iter().find(|&v| v as u32 == c)
     }
@@ -107,6 +109,7 @@ pub mod sniffer_event {
         IncomingData(Vec<u8>),
         OutgoingData(Vec<u8>),
         Random(Vec<u8>),
+        GetSockOpt(Vec<u8>),
         Error(DataTag, i32),
     }
 
@@ -191,6 +194,8 @@ pub mod sniffer_event {
                 ))
             } else if let DataTag::Random = tag {
                 ret(SnifferEventVariant::Random(data.to_vec()))
+            } else if let DataTag::GetSockOpt = tag {
+                ret(SnifferEventVariant::GetSockOpt(data.to_vec()))
             } else {
                 Ok(None)
             }
