@@ -152,7 +152,7 @@ pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestE
                     let _ = peer_id;
                     let exist = network_e.iter()
                         .find(|e| {
-                            e.incoming && e.block_height == height && e.sender_addr.to_string().eq(peer_address) && e.hash.eq(hash)
+                            e.incoming && e.block_height == height && peer_address.starts_with(&e.sender_addr.ip().to_string()) && e.hash.eq(hash)
                         }).is_some();
                     consistent &= exist;
                 },
