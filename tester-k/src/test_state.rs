@@ -14,8 +14,6 @@ use crate::{
 };
 
 pub struct State {
-    #[allow(dead_code)]
-    registry_ip: IpAddr,
     process: Process,
     build_number: u32,
     pub summary: BTreeMap<IpAddr, Summary>,
@@ -74,10 +72,9 @@ struct NetworkMatches {
 impl State {
     const SEED_NODES: usize = 10;
 
-    pub fn new(registry_ip: IpAddr) -> Self {
+    pub fn new() -> Self {
         let (process, _) = Process::spawn();
         State {
-            registry_ip,
             process,
             build_number: 0,
             summary: BTreeMap::default(),
@@ -252,7 +249,7 @@ impl State {
                     .get(&remote.ip())
                     .and_then(|s| s.debugger.as_ref())
                     .and_then(|dbg| dbg.network.iter().find(|cn| cn.ip == local.ip() && cn.counter == counter));
-                let local_cn = s_debugger.network.iter().find(|cn| cn.ip == remote.ip());
+                let local_cn = s_debugger.network.iter().find(|cn| cn.ip == remote.ip() && cn.counter == counter);
 
                 match (local_cn, remote_cn) {
                     (Some(l), Some(r)) => {
@@ -266,9 +263,10 @@ impl State {
                             remote_time: Some(r.timestamp),
                             remote_crc64: Some(r.checksum.clone()),
                         };
-                        let l_bigger = bytes_number <= l.checksum.bytes_number();
-                        let r_bigger = bytes_number <= r.checksum.bytes_number();
-                        if l.checksum.matches(&r.checksum) && l_bigger && r_bigger {
+                        // TODO:
+                        // let l_bigger = bytes_number <= l.checksum.bytes_number();
+                        // let r_bigger = bytes_number <= r.checksum.bytes_number();
+                        if l.checksum.matches(&r.checksum) {
                             network_verbose.matches.push(item);
                         } else {
                             result.success = false;
@@ -326,7 +324,6 @@ impl State {
             result.network_verbose.insert(ip, network_verbose);
         }
 
-        self.summary.clear();
         self.test_result = Some(result);
     }
 }

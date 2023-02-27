@@ -35,10 +35,6 @@ spec:
           env:
             - name: RUST_LOG
               value: debug
-            - name: MY_POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
 ---
 apiVersion: batch/v1
 kind: Job
@@ -76,8 +72,6 @@ spec:
               value: "info"
             - name: SERVER_PORT
               value: "8000"
-            - name: DEBUGGER_NAME
-              value: "debugger"
             - name: REGISTRY
               value: "registry-svc"
             - name: TERMINATE
