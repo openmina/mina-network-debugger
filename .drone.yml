@@ -37,6 +37,7 @@ steps:
     - sleep $(( $BLOCKS * $DELAY ))
     - while [ $(curl -s $URL) == "null" ]; do sleep 1; done
     - curl -s $URL > /test/test.json
+    - cat /test/test.json
 
 - name: test-ipc-matches
   image: alpine:3.17.2

@@ -943,6 +943,18 @@ fn main() {
                     recorder.set_port(event.pid, addr.port());
                 }
                 SnifferEventVariant::OutgoingConnection(addr) => {
+                    let metadata = EventMetadata {
+                        id: ConnectionInfo {
+                            addr,
+                            pid: event.pid,
+                            fd: event.fd,
+                        },
+                        time,
+                        better_time,
+                        duration,
+                    };
+
+                    log::info!("new unconfirmed {metadata}");
                     pending_out_cns.insert((event.pid, event.fd), addr);
                 }
                 SnifferEventVariant::GetSockOpt(value) => {
@@ -952,7 +964,19 @@ fn main() {
                     let Some(addr) = pending_out_cns.remove(&(event.pid, event.fd)) else {
                         continue;
                     };
-                    if value.as_slice() != [0; 4] {
+                    let metadata = EventMetadata {
+                        id: ConnectionInfo {
+                            addr,
+                            pid: event.pid,
+                            fd: event.fd,
+                        },
+                        time,
+                        better_time,
+                        duration,
+                    };
+                    let value = u32::from_ne_bytes(value.as_slice().try_into().unwrap());
+                    log::info!("getsockopt {value}, {metadata}");
+                    if value != 0 {
                         continue;
                     }
                     if let Some(report) = watching.get_mut(&event.pid) {
@@ -971,16 +995,6 @@ fn main() {
                         );
                     }
 
-                    let metadata = EventMetadata {
-                        id: ConnectionInfo {
-                            addr,
-                            pid: event.pid,
-                            fd: event.fd,
-                        },
-                        time,
-                        better_time,
-                        duration,
-                    };
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
                         log::warn!("new outgoing connection on already allocated fd");
                         let mut metadata = metadata.clone();
@@ -1201,14 +1215,21 @@ fn main() {
             for report in watching.values() {
                 let summary_json = serde_json::to_string(report).unwrap();
 
-                client
+                let r = client
                     .post(format!(
                         "http://{host}:80/report/debugger?build_number={build_number}"
                     ))
                     .body(summary_json)
-                    .send()
-                    .unwrap()
-                    .status();
+                    .send();
+                match r {
+                    Ok(v) => drop(v.status()),
+                    Err(err) => log::error!("{err}"),
+                }
+            }
+
+            if env::var("DEBUGGER_CONTINUE").is_ok() {
+                terminating.store(false, Ordering::SeqCst);
+                while !terminating.load(Ordering::SeqCst) {}
             }
         }
     }

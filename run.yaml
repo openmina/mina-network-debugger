@@ -29,6 +29,7 @@ spec:
       runtimeClassName: kata-qemu
       containers:
         - name: bpf-debugger
+          imagePullPolicy: Always
           image: vladsimplestakingcom/mina-debugger:latest
           securityContext:
             privileged: true
@@ -48,13 +49,13 @@ spec:
             - mountPath: /proc
               name: proc
         - name: mina-daemon
-          image: minaprotocol/mina-daemon:13faa3b-stretch-berkeley
+          image: minaprotocol/mina-daemon:aaaf56d-stretch-berkeley
           command:
           command: ["sh", "-c"]
           args:
             - |
               sleep 10
-              curl https://raw.githubusercontent.com/MinaProtocol/mina/13faa3b/genesis_ledgers/berkeley.json -o /berkeley.json
+              curl https://raw.githubusercontent.com/MinaProtocol/mina/2884275/genesis_ledgers/berkeley.json -o /berkeley.json
               mkdir -p /key
               chmod 700 /key
               mina libp2p generate-keypair --privkey-path /key/privkey
