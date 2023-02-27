@@ -25,7 +25,13 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         .timeout(Duration::from_secs(30))
         .build()?;
     let url = format!("http://{center_host}:{CENTER_PORT}/register?build_number={build_number}");
-    let request = client.get(url).send()?;
+    let request = match client.get(url).send() {
+        Ok(v) => v,
+        Err(err) => {
+            log::error!("{err}");
+            return Ok(());
+        }
+    };
     let response = serde_json::from_reader::<_, Registered>(request)?;
     let this_addr = response.external;
 
@@ -40,7 +46,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         .map(|(address, peer_id)| format!("/dns4/{address}/tcp/{PEER_PORT}/p2p/{peer_id}"))
         .collect::<Vec<String>>();
     let external_multiaddr = format!("/dns4/{this_addr}/tcp/{PEER_PORT}");
-    let topic = "coda/consensus-messages/0.0.1";
+    let topic = "coda/test-messages/0.0.1";
 
     let config = Config::new(
         &root.display().to_string(),
