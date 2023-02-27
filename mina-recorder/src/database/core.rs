@@ -785,7 +785,7 @@ impl DbCore {
         let id = MessageId {
             time: SystemTime::UNIX_EPOCH
                 .checked_add(Duration::from_secs(id))
-                .expect("cannot fail"),
+                .unwrap_or(SystemTime::now() + Duration::from_secs(3600)),
             counter: 0,
         };
 

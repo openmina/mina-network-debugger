@@ -365,6 +365,36 @@ pub fn parse_it(
             ))
         })
         .filter_map(move |(data, topic, from, seqno, signature, key)| {
+            let c = Cursor::new(&data[8..]);
+            if let Some(3) = c.get_ref().first() {
+                let bytes = c.get_ref()[1..].to_vec();
+                let message = String::from_utf8(bytes).ok()?;
+                let from = PeerId::from_bytes(&from?).ok()?;
+
+                let hash = if calc_hash {
+                    use blake2::digest::{Mac, Update, FixedOutput, typenum};
+
+                    let key;
+                    let key = if topic.as_bytes().len() <= 64 {
+                        topic.as_bytes()
+                    } else {
+                        key = blake2::Blake2b::<typenum::U32>::default()
+                            .chain(topic.as_bytes())
+                            .finalize_fixed();
+                        key.as_slice()
+                    };
+                    blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
+                        .expect("cannot fail, length is statically known")
+                        .chain(data)
+                        .finalize_fixed()
+                        .into()
+                } else {
+                    [0; 32]
+                };
+
+                return Some(Event::PublishTestingMessage { from, topic, message, hash });
+            }
+            
             let mut c = Cursor::new(&data[8..]);
             match GossipNetMessageV2::binprot_read(&mut c) {
                 Ok(msg) => {
@@ -416,36 +446,6 @@ pub fn parse_it(
             }
 
             let mut c = Cursor::new(&data[8..]);
-
-            if let Some(3) = c.get_ref().first() {
-                let bytes = c.get_ref()[1..].to_vec();
-                let message = String::from_utf8(bytes).ok()?;
-                let from = PeerId::from_bytes(&from?).ok()?;
-
-                let hash = if calc_hash {
-                    use blake2::digest::{Mac, Update, FixedOutput, typenum};
-
-                    let key;
-                    let key = if topic.as_bytes().len() <= 64 {
-                        topic.as_bytes()
-                    } else {
-                        key = blake2::Blake2b::<typenum::U32>::default()
-                            .chain(topic.as_bytes())
-                            .finalize_fixed();
-                        key.as_slice()
-                    };
-                    blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
-                        .expect("cannot fail, length is statically known")
-                        .chain(data)
-                        .finalize_fixed()
-                        .into()
-                } else {
-                    [0; 32]
-                };
-
-                return Some(Event::PublishTestingMessage { from, topic, message, hash });
-            }
-
             match GossipNetMessageV1::binprot_read(&mut c) {
                 Ok(msg) => {
                     let message = Box::new(msg);
