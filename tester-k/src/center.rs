@@ -108,7 +108,7 @@ fn register(
                     StatusCode::INTERNAL_SERVER_ERROR,
                 );
             };
-            log::debug!("register {addr}, build {build_number}");
+            log::info!("register {addr}, build {build_number}");
             match state
                 .lock()
                 .expect("must not panic during mutex hold")
@@ -140,12 +140,12 @@ fn net_report(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     );
                 };
-                log::debug!("receive net report from {addr}, build {build_number}");
+                log::info!("receive net report from {addr}, build {build_number}");
                 log::debug!("{report:?}");
 
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
-                    log::debug!(
+                    log::warn!(
                         "ignore net report {build_number}, current {}",
                         lock.build_number()
                     );
@@ -174,12 +174,12 @@ fn report(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     );
                 };
-                log::debug!("receive node report from {addr}, build {build_number}");
+                log::info!("receive node report from {addr}, build {build_number}");
                 log::debug!("{report:?}");
 
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
-                    log::debug!(
+                    log::warn!(
                         "ignore node report {build_number}, current {}",
                         lock.build_number()
                     );
@@ -208,12 +208,12 @@ fn debugger_report(
                         StatusCode::INTERNAL_SERVER_ERROR,
                     );
                 };
-                log::debug!("receive debugger report from {addr}, build {build_number}");
+                log::info!("receive debugger report from {addr}, build {build_number}");
                 log::debug!("{report:?}");
 
                 let mut lock = state.lock().expect("must not panic during mutex hold");
                 if lock.build_number() != build_number {
-                    log::debug!(
+                    log::warn!(
                         "ignore debugger report {build_number}, current {}",
                         lock.build_number()
                     );

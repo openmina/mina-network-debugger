@@ -34,7 +34,7 @@ spec:
           imagePullPolicy: Always
           env:
             - name: RUST_LOG
-              value: debug
+              value: info
 ---
 apiVersion: batch/v1
 kind: Job
