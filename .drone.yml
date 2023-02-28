@@ -1,6 +1,6 @@
 kind: pipeline
 type: docker
-name: default
+name: simulate-block-broadcast
 
 trigger:
   event: [ push ]
@@ -37,6 +37,7 @@ steps:
     - sleep $(( $BLOCKS * $DELAY ))
     - while [ $(curl -s $URL) == "null" ]; do sleep 1; done
     - curl -s $URL > /test/test.json
+    - cat /test/test.json
 
 - name: test-ipc-matches
   image: alpine:3.17.2
@@ -73,6 +74,24 @@ steps:
   commands:
     - apk update && apk add jq
     - if [[ $(jq .db_order_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+
+- name: test-all-events-stored
+  image: alpine:3.17.2
+  volumes:
+    - name: test-result
+      path: /test
+  commands:
+    - apk update && apk add jq
+    - if [[ $(jq .db_events_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+
+- name: test-ipc-consistent-with-network
+  image: alpine:3.17.2
+  volumes:
+    - name: test-result
+      path: /test
+  commands:
+    - apk update && apk add jq
+    - if [[ $(jq .db_events_consistent_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
 
 environment:
   BLOCKS: 20

@@ -54,6 +54,17 @@ pub enum Variant {
         data_ptr: u64,
         data_len: u64,
     },
+    // level == 1, opt == 4
+    GetSockOptL1O4 {
+        fd: u32,
+        val_ptr: u64,
+        len_ptr: u64,
+    },
+    GetSockOptIrrelevant {
+        fd: u32,
+        val_ptr: u64,
+        len_ptr: u64,
+    },
 }
 
 impl Variant {
@@ -68,6 +79,8 @@ impl Variant {
             Variant::Send { data_ptr, .. } => *data_ptr as *const u8,
             Variant::Recv { data_ptr, .. } => *data_ptr as *const u8,
             Variant::GetRandom { data_ptr, .. } => *data_ptr as *const u8,
+            Variant::GetSockOptL1O4 { val_ptr, .. } => *val_ptr as *const u8,
+            Variant::GetSockOptIrrelevant { val_ptr, .. } => *val_ptr as *const u8,
         }
     }
 }

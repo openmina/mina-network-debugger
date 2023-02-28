@@ -2790,6 +2790,7 @@ name = "tester-k"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake2",
  "env_logger",
  "hex",
  "log",

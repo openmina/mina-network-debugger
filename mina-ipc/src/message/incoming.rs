@@ -34,6 +34,17 @@ pub enum RpcRequest {
     GenerateKeypair,
     Subscribe { id: u64, topic: String },
     Publish { topic: String, data: Vec<u8> },
+    AddStreamHandler {
+        protocol: String,
+    },
+    OpenStream {
+        peer_id: String,
+        protocol: String,
+    },
+    SendStream {
+        data: Vec<u8>,
+        stream_id: u64,
+    },
     Irrelevant,
 }
 
@@ -69,6 +80,29 @@ where
                         is_seed: x.get_is_seed(),
                         multiaddr: x.get_multiaddr()?.get_representation()?.to_owned(),
                     }))
+                }
+                Ok(rpc_request::OpenStream(x)) => {
+                    let x = x?;
+                    let sender = x.get_peer()?;
+
+                    Ok(Self::RpcRequest(RpcRequest::OpenStream {
+                        peer_id: sender.get_id()?.to_owned(),
+                        protocol: x.get_protocol_id()?.to_owned(),
+                    }))
+                }
+                Ok(rpc_request::SendStream(x)) => {
+                    let x = x?;
+                    let msg = x.get_msg()?;
+
+                    Ok(Self::RpcRequest(RpcRequest::SendStream {
+                        data: msg.get_data()?.to_owned(),
+                        stream_id: msg.get_stream_id()?.get_id(),
+                    }))
+                }
+                Ok(rpc_request::AddStreamHandler(x)) => {
+                    let x = x?;
+                    let protocol = x.get_protocol()?.to_owned();
+                    Ok(Self::RpcRequest(RpcRequest::AddStreamHandler { protocol }))
                 }
                 _ => Ok(Self::RpcRequest(RpcRequest::Irrelevant)),
             },
@@ -120,6 +154,24 @@ impl<'a> CapnpEncode<'a> for Msg {
                         let mut builder = builder.init_publish();
                         builder.set_topic(topic);
                         builder.set_data(data);
+                        Ok(())
+                    }
+                    RpcRequest::OpenStream { peer_id, protocol } => {
+                        let mut builder = builder.init_open_stream();
+                        let mut peer = builder.reborrow().init_peer();
+                        peer.set_id(peer_id);
+                        builder.set_protocol_id(protocol);
+                        Ok(())
+                    }
+                    RpcRequest::SendStream { data, stream_id } => {
+                        let mut builder = builder.init_send_stream().init_msg();
+                        builder.set_data(data);
+                        builder.init_stream_id().set_id(*stream_id);
+                        Ok(())
+                    }
+                    RpcRequest::AddStreamHandler { protocol } => {
+                        let mut builder = builder.init_add_stream_handler();
+                        builder.set_protocol(protocol);
                         Ok(())
                     }
                     RpcRequest::Irrelevant => Ok(()),

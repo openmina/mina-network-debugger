@@ -29,7 +29,8 @@ spec:
       # runtimeClassName: kata-qemu
       containers:
         - name: bpf-debugger
-          image: openmina/mina-network-debugger:message-order
+          imagePullPolicy: Always
+          image: vladsimplestakingcom/mina-debugger:latest
           securityContext:
             privileged: true
           command: ["sh", "-ce", "bpf-recorder"]
@@ -48,13 +49,13 @@ spec:
             - mountPath: /proc
               name: proc
         - name: mina-daemon
-          image: minaprotocol/mina-daemon:13faa3b-stretch-berkeley
+          image: tizoc/mina-daemon:tracing-optional-optimizations-focal-berkeley-current
           command:
           command: ["sh", "-c"]
           args:
             - |
               sleep 10
-              curl https://raw.githubusercontent.com/MinaProtocol/mina/13faa3b/genesis_ledgers/berkeley.json -o /berkeley.json
+              curl https://raw.githubusercontent.com/MinaProtocol/mina/2884275/genesis_ledgers/berkeley.json -o /berkeley.json
               mkdir -p /key
               chmod 700 /key
               mina libp2p generate-keypair --privkey-path /key/privkey
@@ -68,7 +69,7 @@ spec:
               protocol: TCP
           env:
             - name: BPF_ALIAS
-              value: /coda/0.0.1/d8a8e53385b4629a1838156529ff2687e31f951873704ddcc490076052698a88-0.0.0.0
+              value: /coda/0.0.1/8fab56ef04619087270631e89bde75990d7968309f4008e3cac42eee9601fc96-0.0.0.0
             - name: MINA_LIBP2P_PASS
               value: ""
             - name: VERBOSE

@@ -20,7 +20,7 @@ pub fn run() -> anyhow::Result<()> {
 
     let addr = ([0, 0, 0, 0], constants::CENTER_PORT);
     let (tx, rx) = oneshot::channel();
-    let state = Arc::new(Mutex::new(State::new(std::env::var("MY_POD_IP")?.parse()?)));
+    let state = Arc::new(Mutex::new(State::new()));
     let (_, server) = warp::serve(routes(state))
         .bind_with_graceful_shutdown(addr, async { rx.await.unwrap_or_default() });
 

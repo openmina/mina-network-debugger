@@ -150,7 +150,7 @@ impl TcpFlow {
         cns.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
         let mut counters = BTreeMap::new();
         for item in &mut cns {
-            let counter = counters.entry(item.remote).or_default();
+            let counter = counters.entry(item.remote.ip()).or_default();
             item.counter = *counter;
             *counter += 1;
         }
