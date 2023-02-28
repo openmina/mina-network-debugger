@@ -43,7 +43,6 @@ pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
         if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
             msgs.into_iter().map(|(_, m)| m).collect()
         } else {
-            log::info!("{res}");
             serde_json::from_str(&res).unwrap()
         }
     }
@@ -90,6 +89,8 @@ pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
         report.group_report.push(group_report);
     }
 
+    let _messages = get_messages("stream_kind=/mina/peer-exchange");
+
     report
 
 }
@@ -122,14 +123,14 @@ pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestE
 
     let debugger_events = get_events();
     if events.len() == debugger_events.len() {
-        let events_set = events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
-        let debugger_events_set = debugger_events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
-        matching &= events_set.eq(&debugger_events_set);
-        // for i in 0..events.len() {
-        //     let DbEventWithMetadata { events, .. } = &events[i];
-        //     let DbEventWithMetadata { events: debugger_events, .. } = &debugger_events[i];
-        //     matching &= events.eq(debugger_events);
-        // }
+        // let events_set = events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
+        // let debugger_events_set = debugger_events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
+        // matching &= events_set.eq(&debugger_events_set);
+        for i in 0..events.len() {
+            let DbEventWithMetadata { events, .. } = &events[i];
+            let DbEventWithMetadata { events: debugger_events, .. } = &debugger_events[i];
+            matching &= events.eq(debugger_events);
+        }
     } else {
         matching = false;
     }
