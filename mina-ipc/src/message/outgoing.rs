@@ -34,7 +34,19 @@ pub enum RpcResponse {
         public_key: Vec<u8>,
         secret_key: Vec<u8>,
     },
+    OutgoingStream(OutgoingStream),
+    SendStreamSuccess,
+    SubscribeSuccess,
+    AddStreamHandlerSuccess,
     Irrelevant,
+}
+
+#[derive(Debug)]
+pub struct OutgoingStream {
+    pub peer_id: String,
+    pub peer_host: String,
+    pub peer_port: u16,
+    pub stream_id: u64,
 }
 
 impl RpcResponse {
@@ -56,10 +68,22 @@ pub enum PushMessage {
         peer_id: String,
     },
     GossipReceived {
+        subscription_id: u64,
         peer_id: String,
         peer_host: String,
         peer_port: u16,
         data: Vec<u8>,
+    },
+    IncomingStream {
+        peer_id: String,
+        peer_host: String,
+        peer_port: u16,
+        protocol: String,
+        stream_id: u64,
+    },
+    StreamMessageReceived {
+        data: Vec<u8>,
+        stream_id: u64,
     },
     Irrelevant,
 }
@@ -104,6 +128,29 @@ where
                                 secret_key,
                             }
                         }
+                        Ok(rpc_response_success::OpenStream(x)) => {
+                            let x = x?;
+                            let sender = x.get_peer()?;
+    
+                            RpcResponse::OutgoingStream(OutgoingStream {
+                                peer_id: sender.get_peer_id()?.get_id()?.to_owned(),
+                                peer_host: sender.get_host()?.to_owned(),
+                                peer_port: sender.get_libp2p_port(),
+                                stream_id: x.get_stream_id()?.get_id(),
+                            })
+                        }
+                        Ok(rpc_response_success::SendStream(x)) => {
+                            x?;
+                            RpcResponse::SendStreamSuccess
+                        }
+                        Ok(rpc_response_success::Subscribe(x)) => {
+                            x?;
+                            RpcResponse::SubscribeSuccess
+                        }
+                        Ok(rpc_response_success::AddStreamHandler(x)) => {
+                            x?;
+                            RpcResponse::AddStreamHandlerSuccess
+                        }
                         _ => RpcResponse::Irrelevant,
                     },
                 };
@@ -122,14 +169,33 @@ where
                         let x = x?;
                         let sender = x.get_sender()?;
                         let data = x.get_data()?;
-                        // TODO: use it to determine topic
-                        x.get_subscription_id()?.get_id();
 
                         PushMessage::GossipReceived {
+                            subscription_id: x.get_subscription_id()?.get_id(),
                             peer_id: sender.get_peer_id()?.get_id()?.to_owned(),
                             peer_host: sender.get_host()?.to_owned(),
                             peer_port: sender.get_libp2p_port(),
                             data: data.to_owned(),
+                        }
+                    }
+                    Ok(push_message::IncomingStream(x)) => {
+                        let x = x?;
+                        let sender = x.get_peer()?;
+
+                        PushMessage::IncomingStream {
+                            peer_id: sender.get_peer_id()?.get_id()?.to_owned(),
+                            peer_host: sender.get_host()?.to_owned(),
+                            peer_port: sender.get_libp2p_port(),
+                            protocol: x.get_protocol()?.to_owned(),
+                            stream_id: x.get_stream_id()?.get_id(),
+                        }
+                    }
+                    Ok(push_message::StreamMessageReceived(x)) => {
+                        let x = x?;
+                        let msg = x.get_msg()?;
+                        PushMessage::StreamMessageReceived {
+                            data: msg.get_data()?.to_owned(),
+                            stream_id: msg.get_stream_id()?.get_id(),
                         }
                     }
                     _ => PushMessage::Irrelevant,

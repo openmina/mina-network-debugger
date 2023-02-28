@@ -223,7 +223,7 @@ impl State {
                 result.success = false;
             }
 
-            // TODO: rewrite this test, account only milliseconds, it might be microseconds difference due to libp2p threads
+            // TODO: disable this test, it might be microseconds difference due to libp2p threads
             // let mut temp = s_debugger.network.clone();
             // temp.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
             // if temp != s_debugger.network {

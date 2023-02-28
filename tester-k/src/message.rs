@@ -20,7 +20,7 @@ pub struct Registered {
     pub info: PeerInfo,
     pub secret_key: String,
     pub external: IpAddr,
-    pub peers: BTreeMap<IpAddr, String>,
+    pub peers: Vec<(IpAddr, String)>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

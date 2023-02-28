@@ -54,7 +54,7 @@ spec:
             limits:
               memory: 16G
         - name: mina-daemon
-          image: minaprotocol/mina-daemon:aaaf56d-stretch-berkeley
+          image: tizoc/mina-daemon:tracing-optional-optimizations-focal-berkeley-current
           command:
           command: ["sh", "-c"]
           args:
@@ -74,7 +74,7 @@ spec:
               protocol: TCP
           env:
             - name: BPF_ALIAS
-              value: /coda/0.0.1/d8a8e53385b4629a1838156529ff2687e31f951873704ddcc490076052698a88-0.0.0.0
+              value: /coda/0.0.1/8fab56ef04619087270631e89bde75990d7968309f4008e3cac42eee9601fc96-0.0.0.0
             - name: MINA_LIBP2P_PASS
               value: ""
             - name: VERBOSE

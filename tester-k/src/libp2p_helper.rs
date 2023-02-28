@@ -2,7 +2,7 @@ use std::{
     io,
     os::unix::prelude::AsRawFd,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::mpsc,
+    sync::{mpsc, Arc, Mutex},
     thread,
 };
 
@@ -10,9 +10,14 @@ use mina_ipc::message::{incoming, outgoing, ChecksumIo, ChecksumPair, Config};
 
 pub struct Process {
     this: Child,
-    stdin: ChecksumIo<ChildStdin>,
+    stdin: Arc<Mutex<ChecksumIo<ChildStdin>>>,
     stdout_handler: thread::JoinHandle<ChecksumIo<ChildStdout>>,
     rpc_rx: RpcReceiver,
+}
+
+pub struct StreamSender {
+    stdin: Arc<Mutex<ChecksumIo<ChildStdin>>>,
+    stream_id: u64,
 }
 
 pub type PushReceiver = mpsc::Receiver<outgoing::PushMessage>;
@@ -29,6 +34,7 @@ impl Process {
             .spawn()
             .expect("launcher executable");
         let stdin = ChecksumIo::new(this.stdin.take().expect("must be present"));
+        let stdin = Arc::new(Mutex::new(stdin));
         let stdout = ChecksumIo::new(this.stdout.take().expect("must be present"));
 
         let (push_tx, push_rx) = mpsc::channel();
@@ -68,7 +74,7 @@ impl Process {
     }
 
     pub fn generate_keypair(&mut self) -> mina_ipc::Result<Option<(String, Vec<u8>, Vec<u8>)>> {
-        self.stdin.encode(&incoming::Msg::RpcRequest(
+        self.stdin.lock().unwrap().encode(&incoming::Msg::RpcRequest(
             incoming::RpcRequest::GenerateKeypair,
         ))?;
         let r = self.rpc_rx.recv();
@@ -88,14 +94,14 @@ impl Process {
 
     pub fn configure(&mut self, config: Config) -> mina_ipc::Result<()> {
         let value = incoming::Msg::RpcRequest(incoming::RpcRequest::Configure(config));
-        self.stdin.encode(&value)?;
+        self.stdin.lock().unwrap().encode(&value)?;
         let _ = self.rpc_rx.recv();
         Ok(())
     }
 
     pub fn publish(&mut self, topic: String, data: Vec<u8>) -> mina_ipc::Result<()> {
         let value = incoming::Msg::RpcRequest(incoming::RpcRequest::Publish { topic, data });
-        self.stdin.encode(&value)?;
+        self.stdin.lock().unwrap().encode(&value)?;
         let _ = self.rpc_rx.recv();
         Ok(())
     }
@@ -105,11 +111,37 @@ impl Process {
             id,
             topic: topic.to_owned(),
         });
-        self.stdin.encode(&value)
+        self.stdin.lock().unwrap().encode(&value)?;
+        let _ = self.rpc_rx.recv();
+        Ok(())
+    }
+
+    pub fn open_stream(&mut self, peer_id: &str, protocol: &str) -> mina_ipc::Result<Result<StreamSender, String>> {
+        let value = incoming::Msg::RpcRequest(incoming::RpcRequest::AddStreamHandler {
+            protocol: protocol.to_owned(),
+        });
+        self.stdin.lock().unwrap().encode(&value)?;
+        if let Ok(outgoing::RpcResponse::Error(err)) = self.rpc_rx.recv() {
+            return Ok(Err(err));
+        }
+
+        let value = incoming::Msg::RpcRequest(incoming::RpcRequest::OpenStream {
+            peer_id: peer_id.to_owned(),
+            protocol: protocol.to_owned(),
+        });
+        self.stdin.lock().unwrap().encode(&value)?;
+        match self.rpc_rx.recv() {
+            Ok(outgoing::RpcResponse::OutgoingStream(v)) => Ok(Ok(StreamSender {
+                stdin: self.stdin.clone(),
+                stream_id: v.stream_id,
+            })),
+            Ok(outgoing::RpcResponse::Error(err)) => Ok(Err(err)),
+            _ => Ok(Err(String::new())),
+        }
     }
 
     pub fn stop(mut self) -> io::Result<(ChecksumPair, Option<i32>)> {
-        nix::unistd::close(self.stdin.inner.as_raw_fd()).unwrap();
+        nix::unistd::close(self.stdin.lock().unwrap().inner.as_raw_fd()).unwrap();
 
         let status = self.this.wait().unwrap();
 
@@ -117,8 +149,21 @@ impl Process {
         let stdout = self.stdout_handler.join().unwrap();
 
         Ok((
-            ChecksumPair(self.stdin.checksum(), stdout.checksum()),
+            ChecksumPair(self.stdin.lock().unwrap().checksum(), stdout.checksum()),
             status.code(),
         ))
+    }
+}
+
+impl StreamSender {
+    pub fn send_stream(&mut self, data: &[u8]) -> mina_ipc::Result<()> {
+        let value = incoming::Msg::RpcRequest(incoming::RpcRequest::SendStream {
+            data: data.to_owned(),
+            stream_id: self.stream_id,
+        });
+        self.stdin.lock().unwrap().encode(&value)?;
+        // TODO:
+        // let _ = self.rpc_rx.recv();
+        Ok(())
     }
 }
