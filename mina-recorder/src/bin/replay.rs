@@ -15,7 +15,7 @@ fn main() {
     let mut recorder = P2pRecorder::new(db, false);
     let metadata = EventMetadata::default();
     recorder.on_alias(metadata.id.pid, "mainnet-node".to_owned());
-    recorder.on_connect::<true>(true, metadata, 0);
+    recorder.on_connect::<true>(true, metadata, 0, String::new());
 
     let mut bytes = Vec::new();
     fs::File::open(filename)

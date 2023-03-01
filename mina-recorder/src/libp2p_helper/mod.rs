@@ -40,6 +40,7 @@ impl CapnpReader {
         real_time: SystemTime,
         db: &DbCore,
         subscriptions: &mut BTreeMap<u64, String>,
+        chain_id: &mut String,
     ) -> bool {
         let mut events = vec![];
         let should_continue = loop {
@@ -47,7 +48,7 @@ impl CapnpReader {
                 let mut slice = self.buffer.as_slice();
 
                 let r = if incoming {
-                    process_request(pid, "<-", &mut slice, &mut events, subscriptions)
+                    process_request(pid, "<-", &mut slice, &mut events, subscriptions, chain_id)
                 } else {
                     process_response(pid, "->", &mut slice, &mut events, subscriptions)
                 };
@@ -150,6 +151,7 @@ pub fn process_request<R>(
     reader: R,
     events: &mut Vec<CapnpEvent>,
     subscriptions: &mut BTreeMap<u64, String>,
+    chain_id: &mut String,
 ) -> capnp::Result<()>
 where
     R: io::Read,
@@ -163,6 +165,10 @@ where
 
     match t.which()? {
         message::RpcRequest(Ok(msg)) => match msg.which() {
+            Ok(rpc_request::Configure(Ok(config))) => {
+                let network_id = config.get_config()?.get_network_id()?;
+                *chain_id = format!("/coda/0.0.1/{network_id}");
+            }
             Ok(rpc_request::AddPeer(Ok(peer))) => {
                 let addr = peer.get_multiaddr().unwrap().get_representation().unwrap();
                 log::debug!("capnp message {pid} {incoming} add_peer {addr}");

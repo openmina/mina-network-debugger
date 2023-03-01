@@ -176,6 +176,7 @@ impl P2pRecorder {
         incoming: bool,
         metadata: EventMetadata,
         buffered: usize,
+        suggested_chain_id: String,
     ) {
         if let Some(tester) = &mut self.tester {
             tester.on_connect(incoming, metadata);
@@ -188,12 +189,17 @@ impl P2pRecorder {
                 .map(|(a, _)| a)
                 .unwrap_or_default()
         };
-        let mut it = alias.split('-');
-        let network = it.next().expect("`split` must yield at least one");
-        let chain_id = CHAINS
-            .iter()
-            .find_map(|(k, v)| if *k == network { Some(*v) } else { None })
-            .unwrap_or(network);
+        let chain_id = if !suggested_chain_id.is_empty() {
+            suggested_chain_id
+        } else {
+            let mut it = alias.split('-');
+            let network = it.next().expect("`split` must yield at least one");
+            CHAINS
+                .iter()
+                .find_map(|(k, v)| if *k == network { Some(*v) } else { None })
+                .unwrap_or(network)
+                .to_owned()
+        };
         let id = DirectedId {
             metadata,
             alias: alias.clone(),

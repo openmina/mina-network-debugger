@@ -875,6 +875,7 @@ fn main() {
     let mut max_unordered_ns = BTreeMap::new();
     let mut last_ts = BTreeMap::new();
     let mut subscriptions = BTreeMap::new();
+    let mut chain_id = BTreeMap::new();
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             let event = match event {
@@ -1002,7 +1003,7 @@ fn main() {
                         recorder.on_disconnect(metadata, buffered);
                     }
                     log::info!("new outgoing connection {}", metadata);
-                    recorder.on_connect::<true>(false, metadata, buffered);
+                    recorder.on_connect::<true>(false, metadata, buffered, chain_id.get(&event.pid).cloned().unwrap_or_default());
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     if let Some(report) = watching.get_mut(&event.pid) {
@@ -1038,7 +1039,7 @@ fn main() {
                         recorder.on_disconnect(metadata, buffered);
                     }
                     log::info!("new incoming connection {}", metadata);
-                    recorder.on_connect::<true>(true, metadata, buffered);
+                    recorder.on_connect::<true>(true, metadata, buffered, chain_id.get(&event.pid).cloned().unwrap_or_default());
                 }
                 SnifferEventVariant::Disconnected => {
                     let key = (event.pid, event.fd);
@@ -1102,6 +1103,7 @@ fn main() {
                             better_time,
                             &db_capnp,
                             &mut subscriptions,
+                            chain_id.entry(event.pid).or_default(),
                         ) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);
@@ -1160,6 +1162,7 @@ fn main() {
                             better_time,
                             &db_capnp,
                             &mut subscriptions,
+                            chain_id.entry(event.pid).or_default(),
                         ) {
                             capnp_readers.remove(&key);
                             capnp_blacklist.insert(key);
