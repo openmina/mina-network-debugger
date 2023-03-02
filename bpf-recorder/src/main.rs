@@ -876,6 +876,7 @@ fn main() {
     let mut last_ts = BTreeMap::new();
     let mut subscriptions = BTreeMap::new();
     let mut chain_id = BTreeMap::new();
+    let mut max_lag = Duration::ZERO;
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             let event = match event {
@@ -885,7 +886,7 @@ fn main() {
 
             if buffered > max_buffered {
                 max_buffered = buffered;
-                log::warn!("buffered: {buffered}");
+                log::info!("buffered data update maximum: {buffered}");
             }
 
             let last = last_ts.get(&event.tid).cloned().unwrap_or_default();
@@ -918,7 +919,12 @@ fn main() {
                 };
                 unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut tp) };
                 let instant_here = Duration::new(tp.tv_sec as _, tp.tv_nsec as _);
-                SystemTime::now() - instant_here + instant_there
+                let delta = instant_here.checked_sub(instant_there).unwrap_or_default();
+                if delta >= max_lag + Duration::from_secs(60) {
+                    max_lag = delta;
+                    log::warn!("lagging: {delta:?}");
+                }
+                SystemTime::now() - delta
             };
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
             match event.variant {
@@ -1057,7 +1063,9 @@ fn main() {
                         log::info!("disconnected {}", metadata);
                         recorder.on_disconnect(metadata, buffered);
                     } else {
-                        log::warn!(
+                        // `close` means close socket, not necessarily it was connected
+                        // so it is ok
+                        log::debug!(
                             "{} cannot process disconnect {}, not connected",
                             event.pid,
                             event.fd
