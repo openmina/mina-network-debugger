@@ -234,6 +234,8 @@ impl DbStream {
         stream_kind: StreamKind,
         bytes: &[u8],
     ) -> Result<MessageId, DbError> {
+        let index_ledger_hash = std::env::var("DEBUGGER_INDEX_LEDGER_HASH").is_ok();
+
         let sb = self.inner.get_stream(self.id)?;
         let mut file = sb.lock().expect("poisoned");
         let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
@@ -243,7 +245,7 @@ impl DbStream {
         let tys = match stream_kind {
             StreamKind::Unknown => vec![],
             StreamKind::Meshsub => {
-                let (tys, hashes) = crate::decode::meshsub::parse_types(bytes)?;
+                let (tys, hashes) = crate::decode::meshsub::parse_types(bytes, index_ledger_hash)?;
                 ledger_hashes = hashes;
                 tys
             }

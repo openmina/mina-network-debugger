@@ -195,7 +195,7 @@ impl SnarkWithHash {
     }
 }
 
-pub fn parse_types(bytes: &[u8]) -> Result<(Vec<MessageType>, Vec<LedgerHash>), DecodeError> {
+pub fn parse_types(bytes: &[u8], index_ledger_hash: bool) -> Result<(Vec<MessageType>, Vec<LedgerHash>), DecodeError> {
     let buf = Bytes::from(bytes.to_vec());
     let pb::Rpc {
         subscriptions,
@@ -214,90 +214,94 @@ pub fn parse_types(bytes: &[u8]) -> Result<(Vec<MessageType>, Vec<LedgerHash>), 
         .into_iter()
         .filter_map(|msg| msg.data)
         .filter_map(|data| Some((data.get(8).cloned()?, data)))
-        .filter_map(|(tag, data)| match tag {
-            0 => {
-                let mut c = Cursor::new(&data[8..]);
-                match GossipNetMessageV2::binprot_read(&mut c) {
-                    Ok(GossipNetMessageV2::NewState(block)) => {
-                        let it0 = block.body.staged_ledger_diff.diff.0.completed_works.iter();
-                        let it1 = block
-                            .body
-                            .staged_ledger_diff
-                            .diff
-                            .1
-                            .as_ref()
-                            .into_iter()
-                            .flat_map(|x| x.completed_works.iter());
-                        for di in it0.chain(it1) {
-                            match &di.proofs {
-                                TransactionSnarkWorkTStableV2Proofs::One(w) => {
-                                    let source = w.0.statement.source.ledger.clone().into_inner();
-                                    let mut h = [0; 31];
-                                    h.clone_from_slice(&source.0.as_ref()[1..]);
-                                    ledger_hashes.push(LedgerHash::Source(h));
-                                    let target = w.0.statement.target.ledger.clone().into_inner();
-                                    let mut h = [0; 31];
-                                    h.clone_from_slice(&target.0.as_ref()[1..]);
-                                    ledger_hashes.push(LedgerHash::Target(h));
-                                }
-                                TransactionSnarkWorkTStableV2Proofs::Two((f, s)) => {
-                                    let l = f.0.statement.source.ledger.clone().into_inner();
-                                    let mut h = [0; 31];
-                                    h.clone_from_slice(&l.0.as_ref()[1..]);
-                                    ledger_hashes.push(LedgerHash::FirstSource(h));
-                                    let l = f.0.statement.target.ledger.clone().into_inner();
-                                    let mut h = [0; 31];
-                                    h.clone_from_slice(&l.0.as_ref()[1..]);
-                                    ledger_hashes.push(LedgerHash::Middle(h));
-                                    let l = s.0.statement.target.ledger.clone().into_inner();
-                                    let mut h = [0; 31];
-                                    h.clone_from_slice(&l.0.as_ref()[1..]);
-                                    ledger_hashes.push(LedgerHash::SecondTarget(h));
+        .filter_map(|(tag, data)| if index_ledger_hash {
+            match tag {
+                0 => {
+                    let mut c = Cursor::new(&data[8..]);
+                    match GossipNetMessageV2::binprot_read(&mut c) {
+                        Ok(GossipNetMessageV2::NewState(block)) => {
+                            let it0 = block.body.staged_ledger_diff.diff.0.completed_works.iter();
+                            let it1 = block
+                                .body
+                                .staged_ledger_diff
+                                .diff
+                                .1
+                                .as_ref()
+                                .into_iter()
+                                .flat_map(|x| x.completed_works.iter());
+                            for di in it0.chain(it1) {
+                                match &di.proofs {
+                                    TransactionSnarkWorkTStableV2Proofs::One(w) => {
+                                        let source = w.0.statement.source.ledger.clone().into_inner();
+                                        let mut h = [0; 31];
+                                        h.clone_from_slice(&source.0.as_ref()[1..]);
+                                        ledger_hashes.push(LedgerHash::Source(h));
+                                        let target = w.0.statement.target.ledger.clone().into_inner();
+                                        let mut h = [0; 31];
+                                        h.clone_from_slice(&target.0.as_ref()[1..]);
+                                        ledger_hashes.push(LedgerHash::Target(h));
+                                    }
+                                    TransactionSnarkWorkTStableV2Proofs::Two((f, s)) => {
+                                        let l = f.0.statement.source.ledger.clone().into_inner();
+                                        let mut h = [0; 31];
+                                        h.clone_from_slice(&l.0.as_ref()[1..]);
+                                        ledger_hashes.push(LedgerHash::FirstSource(h));
+                                        let l = f.0.statement.target.ledger.clone().into_inner();
+                                        let mut h = [0; 31];
+                                        h.clone_from_slice(&l.0.as_ref()[1..]);
+                                        ledger_hashes.push(LedgerHash::Middle(h));
+                                        let l = s.0.statement.target.ledger.clone().into_inner();
+                                        let mut h = [0; 31];
+                                        h.clone_from_slice(&l.0.as_ref()[1..]);
+                                        ledger_hashes.push(LedgerHash::SecondTarget(h));
+                                    }
                                 }
                             }
                         }
+                        _ => (),
                     }
-                    _ => (),
+                    Some(MessageType::PublishNewState)
                 }
-                Some(MessageType::PublishNewState)
-            }
-            1 => {
-                let mut c = Cursor::new(&data[8..]);
-                match GossipNetMessageV2::binprot_read(&mut c) {
-                    Ok(GossipNetMessageV2::SnarkPoolDiff(
-                        NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(w),
-                    )) => match &w.0 {
-                        TransactionSnarkWorkStatementStableV2::One(w) => {
-                            let source = w.source.ledger.clone().into_inner();
-                            let mut h = [0; 31];
-                            h.clone_from_slice(&source.0.as_ref()[1..]);
-                            ledger_hashes.push(LedgerHash::Source(h));
-                            let target = w.source.ledger.clone().into_inner();
-                            let mut h = [0; 31];
-                            h.clone_from_slice(&target.0.as_ref()[1..]);
-                            ledger_hashes.push(LedgerHash::Target(h));
-                        }
-                        TransactionSnarkWorkStatementStableV2::Two((f, s)) => {
-                            let l = f.source.ledger.clone().into_inner();
-                            let mut h = [0; 31];
-                            h.clone_from_slice(&l.0.as_ref()[1..]);
-                            ledger_hashes.push(LedgerHash::FirstSource(h));
-                            let l = f.target.ledger.clone().into_inner();
-                            let mut h = [0; 31];
-                            h.clone_from_slice(&l.0.as_ref()[1..]);
-                            ledger_hashes.push(LedgerHash::Middle(h));
-                            let l = s.target.ledger.clone().into_inner();
-                            let mut h = [0; 31];
-                            h.clone_from_slice(&l.0.as_ref()[1..]);
-                            ledger_hashes.push(LedgerHash::SecondTarget(h));
-                        }
-                    },
-                    _ => (),
+                1 => {
+                    let mut c = Cursor::new(&data[8..]);
+                    match GossipNetMessageV2::binprot_read(&mut c) {
+                        Ok(GossipNetMessageV2::SnarkPoolDiff(
+                            NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(w),
+                        )) => match &w.0 {
+                            TransactionSnarkWorkStatementStableV2::One(w) => {
+                                let source = w.source.ledger.clone().into_inner();
+                                let mut h = [0; 31];
+                                h.clone_from_slice(&source.0.as_ref()[1..]);
+                                ledger_hashes.push(LedgerHash::Source(h));
+                                let target = w.source.ledger.clone().into_inner();
+                                let mut h = [0; 31];
+                                h.clone_from_slice(&target.0.as_ref()[1..]);
+                                ledger_hashes.push(LedgerHash::Target(h));
+                            }
+                            TransactionSnarkWorkStatementStableV2::Two((f, s)) => {
+                                let l = f.source.ledger.clone().into_inner();
+                                let mut h = [0; 31];
+                                h.clone_from_slice(&l.0.as_ref()[1..]);
+                                ledger_hashes.push(LedgerHash::FirstSource(h));
+                                let l = f.target.ledger.clone().into_inner();
+                                let mut h = [0; 31];
+                                h.clone_from_slice(&l.0.as_ref()[1..]);
+                                ledger_hashes.push(LedgerHash::Middle(h));
+                                let l = s.target.ledger.clone().into_inner();
+                                let mut h = [0; 31];
+                                h.clone_from_slice(&l.0.as_ref()[1..]);
+                                ledger_hashes.push(LedgerHash::SecondTarget(h));
+                            }
+                        },
+                        _ => (),
+                    }
+                    Some(MessageType::PublishSnarkPoolDiff)
                 }
-                Some(MessageType::PublishSnarkPoolDiff)
+                2 => Some(MessageType::PublishTransactionPoolDiff),
+                _ => None,
             }
-            2 => Some(MessageType::PublishTransactionPoolDiff),
-            _ => None,
+        } else {
+            None
         });
     let mut control_types = vec![];
     if let Some(c) = control {

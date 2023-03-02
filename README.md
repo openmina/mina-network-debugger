@@ -103,6 +103,7 @@ Before running, you can use environment variables for configuration:
 * `DB_PATH`. Default value is `target/db`.
 * `DRY`. Set any value (for example `DRY=1`) to disable BPF. This is useful for inspecting the database.
 * `HTTPS_KEY_PATH` and `HTTPS_CERT_PATH`. By default, the variables are not set. Set the path to crypto stuff in order to enable them (https).
+* `DEBUGGER_INDEX_LEDGER_HASH`. By default it is disabled, set any value to enable indexing ledger hash, it may be cpu expensive.
 
 Line in log `libbpf: BTF loading error: -22` may be ignored. It is because we wrote BPF module in Rust, which generate incompatible debug information. 
 
