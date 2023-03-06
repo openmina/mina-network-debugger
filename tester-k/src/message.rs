@@ -20,7 +20,8 @@ pub struct Registered {
     pub info: PeerInfo,
     pub secret_key: String,
     pub external: IpAddr,
-    pub peers: Vec<(IpAddr, String)>,
+    pub prev: Option<IpAddr>,
+    pub peers: BTreeMap<IpAddr, String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -39,6 +40,7 @@ pub struct Report {
 pub struct DbTestReport {
     pub timestamps: DbTestTimestampsReport,
     pub events: DbTestEventsReport,
+    pub order: DbTestOrderReport,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -58,6 +60,13 @@ pub struct DbTestEventsReport {
     pub events: Vec<DbEventWithMetadata>,
     pub debugger_events: Vec<DbEventWithMetadata>,
     pub network_events: BTreeMap<u32, Vec<BlockNetworkEvent>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestOrderReport {
+    pub messages: usize,
+    pub unordered_num: Vec<(u64, bool, u32, u32)>,
+    pub unordered_time: Vec<(u64, bool, SystemTime, SystemTime)>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

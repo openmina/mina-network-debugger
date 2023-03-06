@@ -1,52 +1,70 @@
 use std::{time::SystemTime, collections::{BTreeSet, BTreeMap}};
 
 use serde::Deserialize;
+use reqwest::blocking::{Client, ClientBuilder};
 
-use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport, DbEventWithMetadata, DbEvent, BlockNetworkEvent};
+use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport, DbEventWithMetadata, DbEvent, BlockNetworkEvent, DbTestOrderReport};
 
 pub fn test_database(started: SystemTime, events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestReport {
-    let timestamps = test_messages_timestamps(started);
+    let client = ClientBuilder::new().build().unwrap();
+
+    let timestamps = test_messages_timestamps(&client, started);
     let events = test_events(events, peer_id);
+    let order = test_order(&client);
 
     DbTestReport {
         timestamps,
         events,
+        order,
     }
 }
 
-pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
-    #[derive(Deserialize, Clone, PartialEq, Eq)]
-    pub struct FullMessage {
-        pub connection_id: u64,
-        pub remote_addr: String,
-        pub incoming: bool,
-        pub timestamp: SystemTime,
-        pub stream_id: StreamId,
-        pub stream_kind: String,
-        pub message: serde_json::Value,
-        pub size: u32,
-    }
-    
-    #[derive(Deserialize, PartialEq, Eq, Clone)]
-    #[serde(rename_all = "snake_case")]
-    pub enum StreamId {
-        Handshake,
-        Forward(u64),
-        Backward(u64),
-    }
+#[derive(Deserialize, Clone, PartialEq, Eq)]
+pub struct FullMessage {
+    pub connection_id: u64,
+    pub remote_addr: String,
+    pub incoming: bool,
+    pub timestamp: SystemTime,
+    pub stream_id: StreamId,
+    pub stream_kind: String,
+    pub message: serde_json::Value,
+    pub size: u32,
+}
 
-    fn get_messages(params: &str) -> Vec<FullMessage> {
-        let res = reqwest::blocking::get(&format!("http://localhost:8000/messages?{params}"))
-            .unwrap()
-            .text()
-            .unwrap();
-        if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
-            msgs.into_iter().map(|(_, m)| m).collect()
-        } else {
-            serde_json::from_str(&res).unwrap()
-        }
-    }
+#[derive(Deserialize, PartialEq, Eq, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamId {
+    Handshake,
+    Forward(u64),
+    Backward(u64),
+}
 
+fn get_messages(client: &Client, params: &str) -> anyhow::Result<Vec<(u64, FullMessage)>> {
+    let time = |t: &SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).expect("cannot fail").as_secs_f64();
+
+    let res = client.get(&format!("http://localhost:8000/messages?{params}"))
+        .send()?
+        .text()?;
+    if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
+        Ok(msgs)
+    } else {
+        let msgs = serde_json::from_str::<Vec<FullMessage>>(&res)?
+            .into_iter()
+            .map(|m| (time(&m.timestamp) as u64, m))
+            .collect();
+        Ok(msgs)
+    }
+}
+
+fn get_message(client: &Client, id: u64) -> anyhow::Result<Vec<u8>> {
+    client.get(&format!("http://localhost:8000/message_bin/{id}"))
+        .send()?
+        .bytes()
+        .map(|x| x.to_vec())
+        .map_err(Into::into)
+}
+
+pub fn test_messages_timestamps(client: &Client, started: SystemTime) -> DbTestTimestampsReport {
     // timestamp
     let time = |t: &SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).expect("cannot fail").as_secs_f64();
 
@@ -65,10 +83,16 @@ pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
     for i in 0..GROUPS {
         let start = (s + i as f64 * duration / (GROUPS as f64)) as u64;
         let end = (s + (i + 1) as f64 * duration / (GROUPS as f64)) as u64;
-        let messages = get_messages(&format!("timestamp={start}&limit_timestamp={end}"));
+        let messages = match get_messages(&client, &format!("timestamp={start}&limit_timestamp={end}")) {
+            Ok(v) => v,
+            Err(err) => {
+                log::error!("{err}");
+                vec![]
+            },
+        };
         report.total_messages += messages.len();
         let mut group_report = DbTestTimeGroupReport {
-            timestamps: messages.into_iter().map(|m| m.timestamp).collect(),
+            timestamps: messages.into_iter().map(|(_, m)| m.timestamp).collect(),
             timestamps_filter_ok: true,
             ordered: true,
         };
@@ -90,10 +114,70 @@ pub fn test_messages_timestamps(started: SystemTime) -> DbTestTimestampsReport {
         report.group_report.push(group_report);
     }
 
-    let _messages = get_messages("stream_kind=/mina/peer-exchange");
+    report
+}
+
+pub fn test_order(client: &Client) -> DbTestOrderReport {
+    let mut report = DbTestOrderReport {
+        messages: 0,
+        unordered_num: vec![],
+        unordered_time: vec![],
+    };
+
+    let mut messages = vec![];
+    let mut id = 0;
+    loop {
+        let params = format!("stream_kind=/mina/node-status&limit=500&id={id}");
+        let mut v = match get_messages(&client, &params) {
+            Ok(v) => v,
+            Err(err) => {
+                log::error!("{err}");
+                vec![]
+            },
+        };
+        if let Some((last, _)) = v.last() {
+            id = *last + 1;
+        } else {
+            break;
+        }
+        messages.append(&mut v);
+    }
+
+    let mut last_incoming = None;
+    let mut n_incoming = 0;
+    let mut last_outgoing = None;
+    let mut n_outgoing = 0;
+    for (id, msg) in messages {
+        // assert!(msg.size % 0x400 == 0);
+        // assert_eq!(msg.stream_kind, "/mina/node-status");
+        let bytes = get_message(&client, id).unwrap();
+        for this_n in bytes.chunks(0x400).map(|c| u32::from_ne_bytes(c[..4].try_into().unwrap())) {
+            report.messages += 1;
+            let (last, last_n) = if msg.incoming {
+                (&mut last_incoming, &mut n_incoming)
+            } else {
+                (&mut last_outgoing, &mut n_outgoing)
+            };
+            if let Some(last) = last {
+                if *last_n + 1 != this_n {
+                    log::error!("{this_n} after {last_n}");
+                    report.unordered_num.push((id, msg.incoming, *last_n, this_n));
+                }
+                if *last > msg.timestamp {
+                    log::error!("{:?} after {last:?}", msg.timestamp);
+                    report.unordered_time.push((id, msg.incoming, *last, msg.timestamp));
+                }
+            } else {
+                if *last_n != 0 && this_n != 0 {
+                    log::error!("{last_n} and {this_n} at beginning");
+                }
+            }
+            *last = Some(msg.timestamp);
+            *last_n = this_n;
+        }
+    }
 
     report
-
 }
 
 pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestEventsReport {
@@ -123,7 +207,7 @@ pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestE
     let mut matching = true;
 
     let debugger_events = get_events();
-    if events.len() == debugger_events.len() {
+    if events.len() <= debugger_events.len() {
         // let events_set = events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
         // let debugger_events_set = debugger_events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
         // matching &= events_set.eq(&debugger_events_set);

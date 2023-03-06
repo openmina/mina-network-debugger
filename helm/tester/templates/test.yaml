@@ -115,6 +115,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            - name: LAUNCH_STREAM_SENDER
+              value: "1"
       volumes:
         - name: sys-kernel-debug
           hostPath:

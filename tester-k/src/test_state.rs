@@ -16,19 +16,20 @@ use crate::{
 pub struct State {
     process: Process,
     build_number: u32,
+    last: Option<IpAddr>,
     pub summary: BTreeMap<IpAddr, Summary>,
     pub test_result: Option<TestResult>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct TestResult {
-    success: bool,
     ipc_ok: bool,
     connections_ok: bool,
     connections_order_ok: bool,
     db_order_ok: bool,
     db_events_ok: bool,
     db_events_consistent_ok: bool,
+    messages_order_in_stream_ok: bool,
     debugger_version: Option<String>,
     ipc_verbose: Verbose,
     network_verbose: BTreeMap<IpAddr, NetworkVerbose>,
@@ -77,6 +78,7 @@ impl State {
         State {
             process,
             build_number: 0,
+            last: None,
             summary: BTreeMap::default(),
             test_result: None,
         }
@@ -114,6 +116,7 @@ impl State {
             info: info.clone(),
             secret_key: hex::encode(secret_key),
             external: addr.ip(),
+            prev: self.last,
             peers: self
                 .summary
                 .iter()
@@ -128,6 +131,7 @@ impl State {
                 ..Default::default()
             },
         );
+        self.last = Some(addr.ip());
 
         Ok(response)
     }
@@ -160,13 +164,13 @@ impl State {
 
     pub fn perform_test(&mut self) {
         let mut result = TestResult {
-            success: true,
             ipc_ok: true,
             connections_order_ok: true,
             connections_ok: true,
             db_order_ok: true,
             db_events_ok: true,
             db_events_consistent_ok: true,
+            messages_order_in_stream_ok: true,
             debugger_version: None,
             ipc_verbose: Verbose::default(),
             network_verbose: BTreeMap::default(),
@@ -202,26 +206,18 @@ impl State {
                 result.ipc_verbose.matches.push(ipc_test_result);
             } else {
                 log::error!("test failed, ipc checksum mismatch at {ip}");
-                result.success = false;
                 result.ipc_ok = false;
                 result.ipc_verbose.mismatches.push(ipc_test_result);
             }
 
             result.db_tests.insert(ip, s_node.db_test.clone());
             result.db_order_ok &= s_node.db_test.timestamps.total_messages > 0 && s_node.db_test.timestamps.ordered && s_node.db_test.timestamps.timestamps_filter_ok;
-            if !result.db_order_ok {
-                result.success = false;
-            }
 
             result.db_events_ok &= !s_node.db_test.events.events.is_empty() && s_node.db_test.events.matching;
-            if !result.db_events_ok {
-                result.success = false;
-            }
 
             result.db_events_consistent_ok &= s_node.db_test.events.consistent;
-            if !result.db_events_consistent_ok {
-                result.success = false;
-            }
+
+            result.messages_order_in_stream_ok &= s_node.db_test.order.unordered_num.is_empty() && s_node.db_test.order.unordered_time.is_empty() && s_node.db_test.order.messages != 0;
 
             // TODO: disable this test, it might be microseconds difference due to libp2p threads
             // let mut temp = s_debugger.network.clone();
@@ -270,13 +266,11 @@ impl State {
                         if l.checksum.matches(&r.checksum) {
                             network_verbose.matches.push(item);
                         } else {
-                            result.success = false;
                             result.connections_ok = false;
                             network_verbose.checksum_mismatch.push(item);
                         }
                     }
                     (Some(l), None) => {
-                        result.success = false;
                         result.connections_ok = false;
                         network_verbose.local_debugger_missing.push(NetworkMatches {
                             bytes_number,
@@ -291,7 +285,6 @@ impl State {
                         break;
                     }
                     (None, Some(r)) => {
-                        result.success = false;
                         result.connections_ok = false;
                         network_verbose.remote_debugger_missing.push(NetworkMatches {
                             bytes_number,
@@ -306,7 +299,6 @@ impl State {
                         break;
                     }
                     (None, None) => {
-                        result.success = false;
                         result.connections_ok = false;
                         network_verbose.both_debuggers_missing.push(NetworkMatches {
                             bytes_number,

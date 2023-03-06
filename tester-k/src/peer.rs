@@ -61,9 +61,9 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
     process.configure(config)?;
     process.subscribe(0, topic)?;
 
-    let stream_sender = if let Some((_, peer_id)) = response.peers.last() {
+    let stream_sender = if let Some(peer_id) = response.prev.and_then(|ip| response.peers.get(&ip)) {
         if env::var("LAUNCH_STREAM_SENDER").is_ok() {
-            launch_stream_sender(peer_id, blocks * delay, &mut process)?
+            launch_stream_sender(peer_id, 2, &mut process)?
         } else {
             None
         }
@@ -109,11 +109,14 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
                 }
                 outgoing::PushMessage::StreamMessageReceived { data, stream_id } => {
                     let value = u32::from_ne_bytes(data[..4].try_into().unwrap());
-                    log::info!("worker {this_addr} received at stream {stream_id}, msg {value}");
+                    if value % 1000 == 0 {
+                        log::info!("worker {this_addr} received at stream {stream_id}, msg {value}");
+                    }
                 }
                 msg => log::info!("worker {this_addr} received unexpected {msg:?}"),
             }
         }
+        log::info!("join receiver");
         events
     });
 
@@ -146,7 +149,7 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         stream_sender.join().unwrap();
     }
 
-    let (ipc, _status_code) = process.stop().expect("can check debuggers output");
+    process.stop_receiving();
     let recv_events = receiver.join().unwrap();
 
     let mut events = sent_events;
@@ -156,6 +159,8 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
             a.height().cmp(&b.height()).then(a.time_microseconds.cmp(&b.time_microseconds))
         });
     let db_test = peer_behavior::test_database(started, events, response.info.peer_id);
+
+    let (ipc, _status_code) = process.stop().expect("can check debuggers output");
 
     let summary_json = serde_json::to_string(&Report { ipc, db_test })?;
     let url = format!("http://{center_host}:{CENTER_PORT}/report/node?build_number={build_number}");
@@ -174,10 +179,10 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
 }
 
 fn launch_stream_sender(peer_id: &str, seconds: u32, process: &mut Process) -> mina_ipc::Result<Option<thread::JoinHandle<()>>> {
-    let mut tries = 5;
+    let mut tries = 10;
     let sender = loop {
         log::info!("try open stream");
-        match process.open_stream(peer_id, "/mina/peer-exchange")? {
+        match process.open_stream(peer_id, "/mina/node-status")? {
             Ok(v) => break Some(v),
             Err(err) => {
                 log::warn!("failed to open stream {err}");
@@ -191,7 +196,7 @@ fn launch_stream_sender(peer_id: &str, seconds: u32, process: &mut Process) -> m
     };
     if let Some(mut sender) = sender {
         let handle = thread::spawn(move || {
-            for millisecond in 0..(1000 * seconds) {
+            for millisecond in 0..(100 * seconds) {
                 let instant = std::time::Instant::now();
 
                 let mut data = [0; 1024];
@@ -201,8 +206,8 @@ fn launch_stream_sender(peer_id: &str, seconds: u32, process: &mut Process) -> m
 
                 sender.send_stream(&data).unwrap();
                 let elapsed = instant.elapsed();
-                if elapsed < Duration::from_millis(1) {
-                    thread::sleep(Duration::from_millis(1) - elapsed);
+                if elapsed < Duration::from_millis(10) {
+                    thread::sleep(Duration::from_millis(10) - elapsed);
                 }
             }
         });

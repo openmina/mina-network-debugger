@@ -13,6 +13,7 @@ pub struct Process {
     stdin: Arc<Mutex<ChecksumIo<ChildStdin>>>,
     stdout_handler: thread::JoinHandle<ChecksumIo<ChildStdout>>,
     rpc_rx: RpcReceiver,
+    ctx: mpsc::Sender<Option<outgoing::Msg>>,
 }
 
 pub struct StreamSender {
@@ -39,27 +40,46 @@ impl Process {
 
         let (push_tx, push_rx) = mpsc::channel();
         let (rpc_tx, rpc_rx) = mpsc::channel();
+        let (ctx, crx) = mpsc::channel::<Option<outgoing::Msg>>();
+        let c_ctx = ctx.clone();
         let stdout_handler = thread::spawn(move || {
             let mut stdout = stdout;
+            let inner = thread::spawn(move || {
+                loop {
+                    match stdout.decode() {
+                        Ok(m) => c_ctx.send(Some(m)).unwrap_or_default(),
+                        // stdout is closed, no error
+                        Err(err) if err.description == "Premature end of file" => {
+                            c_ctx.send(None).unwrap_or_default();
+                            break;
+                        }
+                        Err(err) => {
+                            c_ctx.send(None).unwrap_or_default();
+                            log::error!("error decoding message: {err}");
+                            break;
+                        }
+                    }
+                }
+                stdout
+            });
             loop {
-                match stdout.decode() {
-                    Ok(outgoing::Msg::PushMessage(msg)) => push_tx.send(msg).expect("must exist"),
-                    Ok(outgoing::Msg::RpcResponse(msg)) => rpc_tx.send(msg).expect("must exist"),
-                    Ok(outgoing::Msg::Unknown(msg)) => {
+                match crx.recv() {
+                    Ok(Some(outgoing::Msg::PushMessage(msg))) => push_tx.send(msg).expect("must exist"),
+                    Ok(Some(outgoing::Msg::RpcResponse(msg))) => rpc_tx.send(msg).expect("must exist"),
+                    Ok(Some(outgoing::Msg::Unknown(msg))) => {
                         log::error!("unknown discriminant: {msg}");
                         break;
                     }
-                    // stdout is closed, no error
-                    Err(err) if err.description == "Premature end of file" => {
+                    Ok(None) => {
+                        log::info!("break receiving loop");
+
                         break;
-                    }
-                    Err(err) => {
-                        log::error!("error decoding message: {err}");
-                        break;
-                    }
+                    },
+                    Err(_) => break,
                 };
             }
-            stdout
+            drop((push_tx, rpc_tx));
+            inner.join().unwrap()
         });
 
         (
@@ -68,6 +88,7 @@ impl Process {
                 stdin,
                 stdout_handler,
                 rpc_rx,
+                ctx,
             },
             push_rx,
         )
@@ -139,6 +160,10 @@ impl Process {
             _ => Ok(Err(String::new())),
         }
     }
+
+    pub fn stop_receiving(&mut self) {
+        self.ctx.send(None).unwrap_or_default()
+    } 
 
     pub fn stop(mut self) -> io::Result<(ChecksumPair, Option<i32>)> {
         nix::unistd::close(self.stdin.lock().unwrap().inner.as_raw_fd()).unwrap();
