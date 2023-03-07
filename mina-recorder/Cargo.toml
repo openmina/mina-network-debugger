@@ -25,7 +25,7 @@ strace-parse = { git = "https://github.com/openmina/strace-parse.rs.git" }
 bitflags = { version = "1.3" }
 
 prost = { version = "0.11.3" }
-mina-p2p-messages = { git = "https://github.com/openmina/mina-p2p-messages-rs.git", rev = "d6196bd717ce3b418a2a14ee8f4076ef186dd58b" }
+mina-p2p-messages = { git = "https://github.com/openmina/mina-p2p-messages-rs.git", branch = "new-types-feb-23" }
 binprot = { git = "https://github.com/openmina/binprot-rs", rev = "ead5ba916725abf8ab212b89985b47c79d1a006a" }
 capnp = { version = "0.15.2" }
 

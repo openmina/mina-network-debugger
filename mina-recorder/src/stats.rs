@@ -202,10 +202,10 @@ impl StatsState {
                                 for snark in it0.chain(it1) {
                                     let hash = match &snark.proofs {
                                         v2::TransactionSnarkWorkTStableV2Proofs::One(p) => {
-                                            p.0.statement.target.ledger.clone()
+                                            p.0.statement.target.first_pass_ledger.clone()
                                         }
                                         v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => {
-                                            p.0.statement.target.ledger.clone()
+                                            p.0.statement.target.first_pass_ledger.clone()
                                         }
                                     };
                                     let hash = hash.into_inner().0.into();
@@ -263,10 +263,10 @@ impl StatsState {
                             v2::NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(s) => {
                                 let hash = match &s.1.proof {
                                     v2::TransactionSnarkWorkTStableV2Proofs::One(p) => {
-                                        p.0.statement.target.ledger.clone()
+                                        p.0.statement.target.first_pass_ledger.clone()
                                     }
                                     v2::TransactionSnarkWorkTStableV2Proofs::Two((_, p)) => {
-                                        p.0.statement.target.ledger.clone()
+                                        p.0.statement.target.first_pass_ledger.clone()
                                     }
                                 };
                                 let hash = hash.into_inner().0.into();

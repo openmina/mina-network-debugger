@@ -149,13 +149,13 @@ impl SnarkWithHash {
             match &w.0 {
                 TransactionSnarkWorkStatementStableV2::Two((l, r)) => Some(SnarkWithHash::Merge {
                     hashes: [
-                        l.source.ledger.clone(),
-                        l.target.ledger.clone(),
-                        r.target.ledger.clone(),
+                        l.0.source.first_pass_ledger.clone(),
+                        l.0.target.first_pass_ledger.clone(),
+                        r.0.target.first_pass_ledger.clone(),
                     ],
                 }),
                 TransactionSnarkWorkStatementStableV2::One(w) => Some(SnarkWithHash::Leaf {
-                    hashes: [w.source.ledger.clone(), w.target.ledger.clone()],
+                    hashes: [w.0.source.first_pass_ledger.clone(), w.0.target.first_pass_ledger.clone()],
                 }),
             }
         } else {
@@ -177,16 +177,16 @@ impl SnarkWithHash {
         for di in it0.chain(it1) {
             match &di.proofs {
                 TransactionSnarkWorkTStableV2Proofs::One(w) => {
-                    let source = w.0.statement.source.ledger.clone();
-                    let target = w.0.statement.target.ledger.clone();
+                    let source = w.0.statement.source.first_pass_ledger.clone();
+                    let target = w.0.statement.target.first_pass_ledger.clone();
                     snarks.push(SnarkWithHash::Leaf {
                         hashes: [source, target],
                     })
                 }
                 TransactionSnarkWorkTStableV2Proofs::Two((f, s)) => {
-                    let l = f.0.statement.source.ledger.clone();
-                    let m = f.0.statement.target.ledger.clone();
-                    let r = s.0.statement.target.ledger.clone();
+                    let l = f.0.statement.source.first_pass_ledger.clone();
+                    let m = f.0.statement.target.first_pass_ledger.clone();
+                    let r = s.0.statement.target.first_pass_ledger.clone();
                     snarks.push(SnarkWithHash::Merge { hashes: [l, m, r] })
                 }
             }
@@ -233,25 +233,25 @@ pub fn parse_types(bytes: &[u8], index_ledger_hash: bool) -> Result<(Vec<Message
                                 for di in it0.chain(it1) {
                                     match &di.proofs {
                                         TransactionSnarkWorkTStableV2Proofs::One(w) => {
-                                            let source = w.0.statement.source.ledger.clone().into_inner();
+                                            let source = w.0.statement.source.first_pass_ledger.clone().into_inner();
                                             let mut h = [0; 31];
                                             h.clone_from_slice(&source.0.as_ref()[1..]);
                                             ledger_hashes.push(LedgerHash::Source(h));
-                                            let target = w.0.statement.target.ledger.clone().into_inner();
+                                            let target = w.0.statement.target.first_pass_ledger.clone().into_inner();
                                             let mut h = [0; 31];
                                             h.clone_from_slice(&target.0.as_ref()[1..]);
                                             ledger_hashes.push(LedgerHash::Target(h));
                                         }
                                         TransactionSnarkWorkTStableV2Proofs::Two((f, s)) => {
-                                            let l = f.0.statement.source.ledger.clone().into_inner();
+                                            let l = f.0.statement.source.first_pass_ledger.clone().into_inner();
                                             let mut h = [0; 31];
                                             h.clone_from_slice(&l.0.as_ref()[1..]);
                                             ledger_hashes.push(LedgerHash::FirstSource(h));
-                                            let l = f.0.statement.target.ledger.clone().into_inner();
+                                            let l = f.0.statement.target.first_pass_ledger.clone().into_inner();
                                             let mut h = [0; 31];
                                             h.clone_from_slice(&l.0.as_ref()[1..]);
                                             ledger_hashes.push(LedgerHash::Middle(h));
-                                            let l = s.0.statement.target.ledger.clone().into_inner();
+                                            let l = s.0.statement.target.first_pass_ledger.clone().into_inner();
                                             let mut h = [0; 31];
                                             h.clone_from_slice(&l.0.as_ref()[1..]);
                                             ledger_hashes.push(LedgerHash::SecondTarget(h));
@@ -272,25 +272,25 @@ pub fn parse_types(bytes: &[u8], index_ledger_hash: bool) -> Result<(Vec<Message
                                 NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(w),
                             )) => match &w.0 {
                                 TransactionSnarkWorkStatementStableV2::One(w) => {
-                                    let source = w.source.ledger.clone().into_inner();
+                                    let source = w.0.source.first_pass_ledger.clone().into_inner();
                                     let mut h = [0; 31];
                                     h.clone_from_slice(&source.0.as_ref()[1..]);
                                     ledger_hashes.push(LedgerHash::Source(h));
-                                    let target = w.source.ledger.clone().into_inner();
+                                    let target = w.0.source.first_pass_ledger.clone().into_inner();
                                     let mut h = [0; 31];
                                     h.clone_from_slice(&target.0.as_ref()[1..]);
                                     ledger_hashes.push(LedgerHash::Target(h));
                                 }
                                 TransactionSnarkWorkStatementStableV2::Two((f, s)) => {
-                                    let l = f.source.ledger.clone().into_inner();
+                                    let l = f.0.source.first_pass_ledger.clone().into_inner();
                                     let mut h = [0; 31];
                                     h.clone_from_slice(&l.0.as_ref()[1..]);
                                     ledger_hashes.push(LedgerHash::FirstSource(h));
-                                    let l = f.target.ledger.clone().into_inner();
+                                    let l = f.0.target.first_pass_ledger.clone().into_inner();
                                     let mut h = [0; 31];
                                     h.clone_from_slice(&l.0.as_ref()[1..]);
                                     ledger_hashes.push(LedgerHash::Middle(h));
-                                    let l = s.target.ledger.clone().into_inner();
+                                    let l = s.0.target.first_pass_ledger.clone().into_inner();
                                     let mut h = [0; 31];
                                     h.clone_from_slice(&l.0.as_ref()[1..]);
                                     ledger_hashes.push(LedgerHash::SecondTarget(h));
@@ -421,7 +421,7 @@ pub fn parse_it(
                 Err(err) => log::error!("decode {err}"),
             }
 
-            let mut c = Cursor::new(&data[8..]);
+            let mut c = Cursor::<&[u8]>::new(&data[8..]);
 
             if let Some(3) = c.get_ref().first() {
                 let bytes = c.get_ref()[1..].to_vec();
