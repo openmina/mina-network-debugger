@@ -1,6 +1,6 @@
-# docker build -t mina-tester-k:local -f tester-k.dockerfile --build-arg mina_daemon_tag=1.3.2beta2-release-2.0.0-0b63498-bullseye-berkeley .
+# docker build -t mina-tester-k:local -f tester-k.dockerfile --build-arg mina_daemon_image=minaprotocol/mina-daemon:1.3.2beta2-release-2.0.0-0b63498-bullseye-berkeley .
 
-ARG mina_daemon_tag
+ARG mina_daemon_image
 
 FROM rust:1.65-bullseye as builder
 
@@ -18,7 +18,7 @@ COPY . .
 
 RUN cargo build --bin mina-tester-k --release
 
-FROM minaprotocol/mina-daemon:${mina_daemon_tag} as builder-tcpflow
+FROM ${mina_daemon_image} as builder-tcpflow
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     apt-get -y install git automake make gcc g++ zlib1g-dev libssl-dev libboost-dev libpcap-dev libcairo2 libcairo2-dev libpython2.7-dev && \
@@ -27,7 +27,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     ./bootstrap.sh && \
     ./configure && make
 
-FROM minaprotocol/mina-daemon:${mina_daemon_tag}
+FROM ${mina_daemon_image}
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install libpcap-dev libcairo2-dev
 
