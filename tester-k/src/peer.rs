@@ -29,6 +29,8 @@ pub fn run(blocks: u32, delay: u32) -> anyhow::Result<()> {
         Ok(v) => v,
         Err(err) => {
             log::error!("{err}");
+            let (process, _rx) = Process::spawn();
+            process.stop()?;
             return Ok(());
         }
     };
