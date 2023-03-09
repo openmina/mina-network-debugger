@@ -1,7 +1,6 @@
 use std::{
     net::SocketAddr,
     sync::{Arc, Mutex},
-    thread,
 };
 
 use signal_hook::{consts, iterator::Signals};
@@ -16,7 +15,6 @@ use super::{constants, test_state::State};
 
 pub fn run() -> anyhow::Result<()> {
     let rt = Runtime::new()?;
-    let _guard = rt.enter();
 
     let addr = ([0, 0, 0, 0], constants::CENTER_PORT);
     let (tx, rx) = oneshot::channel();
@@ -24,13 +22,13 @@ pub fn run() -> anyhow::Result<()> {
     let (_, server) = warp::serve(routes(state))
         .bind_with_graceful_shutdown(addr, async { rx.await.unwrap_or_default() });
 
-    let handler = thread::spawn(move || rt.block_on(server));
+    let handler = rt.spawn(server);
 
     let mut signals = Signals::new(&[consts::SIGINT, consts::SIGTERM])?;
     for sig in signals.forever() {
         log::info!("signal {sig}");
         tx.send(()).unwrap_or_default();
-        handler.join().unwrap();
+        rt.block_on(handler).unwrap();
         break;
     }
 

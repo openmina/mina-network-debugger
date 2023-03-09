@@ -2591,6 +2591,17 @@ dependencies = [
 [[package]]
 name = "simulator"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "structopt",
+ "tokio",
+ "warp",
+]
 
 [[package]]
 name = "slab"
