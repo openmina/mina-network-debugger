@@ -64,8 +64,12 @@ impl Process {
             });
             loop {
                 match crx.recv() {
-                    Ok(Some(outgoing::Msg::PushMessage(msg))) => push_tx.send(msg).expect("must exist"),
-                    Ok(Some(outgoing::Msg::RpcResponse(msg))) => rpc_tx.send(msg).expect("must exist"),
+                    Ok(Some(outgoing::Msg::PushMessage(msg))) => {
+                        push_tx.send(msg).expect("must exist")
+                    }
+                    Ok(Some(outgoing::Msg::RpcResponse(msg))) => {
+                        rpc_tx.send(msg).expect("must exist")
+                    }
                     Ok(Some(outgoing::Msg::Unknown(msg))) => {
                         log::error!("unknown discriminant: {msg}");
                         break;
@@ -74,7 +78,7 @@ impl Process {
                         log::info!("break receiving loop");
 
                         break;
-                    },
+                    }
                     Err(_) => break,
                 };
             }
@@ -95,9 +99,12 @@ impl Process {
     }
 
     pub fn generate_keypair(&mut self) -> mina_ipc::Result<Option<(String, Vec<u8>, Vec<u8>)>> {
-        self.stdin.lock().unwrap().encode(&incoming::Msg::RpcRequest(
-            incoming::RpcRequest::GenerateKeypair,
-        ))?;
+        self.stdin
+            .lock()
+            .unwrap()
+            .encode(&incoming::Msg::RpcRequest(
+                incoming::RpcRequest::GenerateKeypair,
+            ))?;
         let r = self.rpc_rx.recv();
         let r = match r {
             Err(_) => return Ok(None),
@@ -137,7 +144,11 @@ impl Process {
         Ok(())
     }
 
-    pub fn open_stream(&mut self, peer_id: &str, protocol: &str) -> mina_ipc::Result<Result<StreamSender, String>> {
+    pub fn open_stream(
+        &mut self,
+        peer_id: &str,
+        protocol: &str,
+    ) -> mina_ipc::Result<Result<StreamSender, String>> {
         let value = incoming::Msg::RpcRequest(incoming::RpcRequest::AddStreamHandler {
             protocol: protocol.to_owned(),
         });
@@ -163,7 +174,7 @@ impl Process {
 
     pub fn stop_receiving(&mut self) {
         self.ctx.send(None).unwrap_or_default()
-    } 
+    }
 
     pub fn stop(mut self) -> io::Result<(ChecksumPair, Option<i32>)> {
         nix::unistd::close(self.stdin.lock().unwrap().inner.as_raw_fd()).unwrap();

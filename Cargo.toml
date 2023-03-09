@@ -6,5 +6,5 @@ members = [
     "mina-aggregator",
     "tester",
     "mina-ipc",
-    "tester-k",
+    "simulator",
 ]

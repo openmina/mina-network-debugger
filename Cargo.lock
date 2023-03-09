@@ -226,7 +226,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "tester-k",
+ "simulator",
  "typenum",
 ]
 
@@ -2594,11 +2594,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "hex",
  "log",
+ "mina-ipc",
+ "nix 0.26.2",
+ "rand 0.8.5",
  "reqwest",
+ "roxmltree",
  "serde",
  "serde_json",
+ "signal-hook",
  "structopt",
+ "time",
  "tokio",
  "warp",
 ]
@@ -2752,29 +2759,6 @@ name = "tester"
 version = "0.1.0"
 dependencies = [
  "rand 0.8.5",
-]
-
-[[package]]
-name = "tester-k"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blake2",
- "env_logger",
- "hex",
- "log",
- "mina-ipc",
- "nix 0.26.2",
- "rand 0.8.5",
- "reqwest",
- "roxmltree",
- "serde",
- "serde_json",
- "signal-hook",
- "structopt",
- "time",
- "tokio",
- "warp",
 ]
 
 [[package]]

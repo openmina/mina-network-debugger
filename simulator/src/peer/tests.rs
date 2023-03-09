@@ -1,18 +1,119 @@
-use std::{time::SystemTime, collections::{BTreeSet, BTreeMap}};
+use std::{
+    time::{SystemTime, Duration},
+    collections::{BTreeMap, BTreeSet},
+    net::SocketAddr,
+};
 
-use serde::Deserialize;
-use reqwest::blocking::{Client, ClientBuilder};
+use reqwest::blocking::{ClientBuilder, Client};
+use serde::{Serialize, Deserialize};
 
-use crate::message::{DbTestReport, DbTestTimeGroupReport, DbTestTimestampsReport, DbTestEventsReport, DbEventWithMetadata, DbEvent, BlockNetworkEvent, DbTestOrderReport};
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TestReport {
+    pub timestamps: DbTestTimestampsReport,
+    pub events: DbTestEventsReport,
+    pub order: DbTestOrderReport,
+}
 
-pub fn test_database(started: SystemTime, events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestReport {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestTimestampsReport {
+    pub start: SystemTime,
+    pub end: SystemTime,
+    pub group_report: Vec<DbTestTimeGroupReport>,
+    pub total_messages: usize,
+    pub ordered: bool,
+    pub timestamps_filter_ok: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestTimeGroupReport {
+    pub timestamps: Vec<SystemTime>,
+    pub timestamps_filter_ok: bool,
+    pub ordered: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestEventsReport {
+    pub matching: bool,
+    pub consistent: bool,
+    pub events: Vec<DbEventWithMetadata>,
+    pub debugger_events: Vec<DbEventWithMetadata>,
+    pub network_events: BTreeMap<u32, Vec<BlockNetworkEvent>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BlockNetworkEvent {
+    pub producer_id: String,
+    pub hash: String,
+    pub block_height: u32,
+    pub global_slot: u32,
+    pub incoming: bool,
+    pub time: SystemTime,
+    pub better_time: SystemTime,
+    pub latency: Option<Duration>,
+    pub sender_addr: SocketAddr,
+    pub receiver_addr: SocketAddr,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DbTestOrderReport {
+    pub messages: usize,
+    pub unordered_num: Vec<(u64, bool, u32, u32)>,
+    pub unordered_time: Vec<(u64, bool, SystemTime, SystemTime)>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DbEventWithMetadata {
+    pub time_microseconds: u64,
+    pub events: Vec<DbEvent>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum GossipNetMessageV2Short {
+    TestMessage { height: u32 },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum DbEvent {
+    ReceivedGossip {
+        peer_id: String,
+        peer_address: String,
+        msg: GossipNetMessageV2Short,
+        hash: String,
+    },
+    PublishGossip {
+        msg: GossipNetMessageV2Short,
+        hash: String,
+    },
+}
+
+impl DbEventWithMetadata {
+    pub fn height(&self) -> u32 {
+        match self.events.first() {
+            Some(DbEvent::PublishGossip {
+                msg: GossipNetMessageV2Short::TestMessage { height },
+                ..
+            }) => *height,
+            Some(DbEvent::ReceivedGossip {
+                msg: GossipNetMessageV2Short::TestMessage { height },
+                ..
+            }) => *height,
+            None => u32::MAX,
+        }
+    }
+}
+
+pub fn run(started: SystemTime, events: Vec<DbEventWithMetadata>, peer_id: String) -> TestReport {
     let client = ClientBuilder::new().build().unwrap();
 
     let timestamps = test_messages_timestamps(&client, started);
     let events = test_events(events, peer_id);
     let order = test_order(&client);
 
-    DbTestReport {
+    TestReport {
         timestamps,
         events,
         order,
@@ -40,9 +141,14 @@ pub enum StreamId {
 }
 
 fn get_messages(client: &Client, params: &str) -> anyhow::Result<Vec<(u64, FullMessage)>> {
-    let time = |t: &SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).expect("cannot fail").as_secs_f64();
+    let time = |t: &SystemTime| {
+        t.duration_since(SystemTime::UNIX_EPOCH)
+            .expect("cannot fail")
+            .as_secs_f64()
+    };
 
-    let res = client.get(&format!("http://localhost:8000/messages?{params}"))
+    let res = client
+        .get(&format!("http://localhost:8000/messages?{params}"))
         .send()?
         .text()?;
     if let Ok(msgs) = serde_json::from_str::<Vec<(u64, FullMessage)>>(&res) {
@@ -57,7 +163,8 @@ fn get_messages(client: &Client, params: &str) -> anyhow::Result<Vec<(u64, FullM
 }
 
 fn get_message(client: &Client, id: u64) -> anyhow::Result<Vec<u8>> {
-    client.get(&format!("http://localhost:8000/message_bin/{id}"))
+    client
+        .get(&format!("http://localhost:8000/message_bin/{id}"))
         .send()?
         .bytes()
         .map(|x| x.to_vec())
@@ -66,7 +173,11 @@ fn get_message(client: &Client, id: u64) -> anyhow::Result<Vec<u8>> {
 
 pub fn test_messages_timestamps(client: &Client, started: SystemTime) -> DbTestTimestampsReport {
     // timestamp
-    let time = |t: &SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).expect("cannot fail").as_secs_f64();
+    let time = |t: &SystemTime| {
+        t.duration_since(SystemTime::UNIX_EPOCH)
+            .expect("cannot fail")
+            .as_secs_f64()
+    };
 
     const GROUPS: u64 = 10;
     let mut report = DbTestTimestampsReport {
@@ -78,18 +189,23 @@ pub fn test_messages_timestamps(client: &Client, started: SystemTime) -> DbTestT
         timestamps_filter_ok: true,
     };
     let s = time(&started);
-    let duration = report.end.duration_since(started).expect("system time changed during test").as_secs_f64();
+    let duration = report
+        .end
+        .duration_since(started)
+        .expect("system time changed during test")
+        .as_secs_f64();
 
     for i in 0..GROUPS {
         let start = (s + i as f64 * duration / (GROUPS as f64)) as u64;
         let end = (s + (i + 1) as f64 * duration / (GROUPS as f64)) as u64;
-        let messages = match get_messages(&client, &format!("timestamp={start}&limit_timestamp={end}")) {
-            Ok(v) => v,
-            Err(err) => {
-                log::error!("{err}");
-                vec![]
-            },
-        };
+        let messages =
+            match get_messages(&client, &format!("timestamp={start}&limit_timestamp={end}")) {
+                Ok(v) => v,
+                Err(err) => {
+                    log::error!("{err}");
+                    vec![]
+                }
+            };
         report.total_messages += messages.len();
         let mut group_report = DbTestTimeGroupReport {
             timestamps: messages.into_iter().map(|(_, m)| m.timestamp).collect(),
@@ -133,7 +249,7 @@ pub fn test_order(client: &Client) -> DbTestOrderReport {
             Err(err) => {
                 log::error!("{err}");
                 vec![]
-            },
+            }
         };
         if let Some((last, _)) = v.last() {
             id = *last + 1;
@@ -151,7 +267,10 @@ pub fn test_order(client: &Client) -> DbTestOrderReport {
         // assert!(msg.size % 0x400 == 0);
         // assert_eq!(msg.stream_kind, "/mina/node-status");
         let bytes = get_message(&client, id).unwrap();
-        for this_n in bytes.chunks(0x400).map(|c| u32::from_ne_bytes(c[..4].try_into().unwrap())) {
+        for this_n in bytes
+            .chunks(0x400)
+            .map(|c| u32::from_ne_bytes(c[..4].try_into().unwrap()))
+        {
             report.messages += 1;
             let (last, last_n) = if msg.incoming {
                 (&mut last_incoming, &mut n_incoming)
@@ -161,11 +280,15 @@ pub fn test_order(client: &Client) -> DbTestOrderReport {
             if let Some(last) = last {
                 if *last_n + 1 != this_n {
                     log::error!("{this_n} after {last_n}");
-                    report.unordered_num.push((id, msg.incoming, *last_n, this_n));
+                    report
+                        .unordered_num
+                        .push((id, msg.incoming, *last_n, this_n));
                 }
                 if *last > msg.timestamp {
                     log::error!("{:?} after {last:?}", msg.timestamp);
-                    report.unordered_time.push((id, msg.incoming, *last, msg.timestamp));
+                    report
+                        .unordered_time
+                        .push((id, msg.incoming, *last, msg.timestamp));
                 }
             } else {
                 if *last_n != 0 && this_n != 0 {
@@ -213,7 +336,10 @@ pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestE
         // matching &= events_set.eq(&debugger_events_set);
         for i in 0..events.len() {
             let DbEventWithMetadata { events, .. } = &events[i];
-            let DbEventWithMetadata { events: debugger_events, .. } = &debugger_events[i];
+            let DbEventWithMetadata {
+                events: debugger_events,
+                ..
+            } = &debugger_events[i];
             matching &= events.eq(debugger_events);
         }
     } else {
@@ -222,7 +348,10 @@ pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestE
 
     let mut consistent = true;
     let mut network_events = BTreeMap::new();
-    let heights = debugger_events.iter().map(|x| x.height()).collect::<BTreeSet<_>>();
+    let heights = debugger_events
+        .iter()
+        .map(|x| x.height())
+        .collect::<BTreeSet<_>>();
     for height in heights {
         let network_e = get_network_event(height);
         for event in debugger_events.iter().filter(|x| x.height() == height) {
@@ -234,24 +363,39 @@ pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestE
 
             // for each ipc event must exist network event
             match event {
-                DbEvent::ReceivedGossip { peer_id, peer_address, hash, .. } => {
+                DbEvent::ReceivedGossip {
+                    peer_id,
+                    peer_address,
+                    hash,
+                    ..
+                } => {
                     let _ = peer_id;
-                    let exist = network_e.iter()
+                    let exist = network_e
+                        .iter()
                         .find(|e| {
-                            e.incoming && e.block_height == height && peer_address.starts_with(&e.sender_addr.ip().to_string()) && e.hash.eq(hash)
-                        }).is_some();
+                            e.incoming
+                                && e.block_height == height
+                                && peer_address.starts_with(&e.sender_addr.ip().to_string())
+                                && e.hash.eq(hash)
+                        })
+                        .is_some();
                     consistent &= exist;
-                },
+                }
                 DbEvent::PublishGossip { hash, .. } => {
-                    let exist = network_e.iter()
+                    let exist = network_e
+                        .iter()
                         .find(|e| {
-                            !e.incoming && e.producer_id == peer_id && e.block_height == height && e.hash.eq(hash)
-                        }).is_some();
+                            !e.incoming
+                                && e.producer_id == peer_id
+                                && e.block_height == height
+                                && e.hash.eq(hash)
+                        })
+                        .is_some();
                     let _ = exist;
                     // consistent &= exist;
                     // at the end of the test, mock may publish block,
                     // but it will have no time to be broadcasted, so debugger records nothing
-                },
+                }
             }
         }
         network_events.insert(height, network_e);

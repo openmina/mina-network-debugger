@@ -21,7 +21,7 @@ steps:
       from_secret: docker_hub_username
 
 - name: deploy
-  image: alpine/helm:3.8.1
+  image: alpine/k8s:1.23.17
   volumes:
     - name: test-result
       path: /test
@@ -29,84 +29,104 @@ steps:
     DRONE_KUBECONFIG:
       from_secret: k8s_config
   commands:
-    - mkdir -p $HOME/.kube
-    - echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
-    # - kubectl -n test-debugger delete job mock
-    - helm upgrade mina-debugger-test helm/tester --values=helm/tester/values.yaml --namespace=test-debugger --set=build_number=${DRONE_BUILD_NUMBER} --set=blocks=$BLOCKS --set=delay=$DELAY --set=parallelism=$PARALLElISM --set=image.tag=${DRONE_COMMIT_SHA:0:8}
-    - apk update && apk add curl
-    - sleep $(( $BLOCKS * $DELAY ))
-    - while [ $(curl -s $URL) == "null" ]; do sleep 1; done
-    - curl -s $URL > /test/test.json
-    - cat /test/test.json
+    - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
+    - ./collect_summary.sh ${DRONE_BUILD_NUMBER}
+    - curl -s $URL > /test/summary.json
 
-- name: test-ipc-matches
-  image: alpine:3.17.2
+- name: test-ipc
+  image: vladsimplestakingcom/mina-tester-k:latest
   volumes:
     - name: test-result
       path: /test
   commands:
-    - apk update && apk add jq
-    - if [[ $(jq .ipc_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+    - mina-simulator test --name ipc --summary-json /test/summary.json
 
-- name: test-connections-same-as-tcpflow
-  image: alpine:3.17.2
+- name: test-all-messages-number
+  image: vladsimplestakingcom/mina-tester-k:latest
   volumes:
     - name: test-result
       path: /test
   commands:
-    - apk update && apk add jq
-    - if [[ $(jq .connections_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+    - mina-simulator test --name all-messages-number --summary-json /test/summary.json
 
-- name: test-connections-order
-  image: alpine:3.17.2
+- name: test-all-messages-order
+  image: vladsimplestakingcom/mina-tester-k:latest
   volumes:
     - name: test-result
       path: /test
   commands:
-    - apk update && apk add jq
-    - if [[ $(jq .connections_order_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+    - mina-simulator test --name all-messages-order --summary-json /test/summary.json
 
-- name: test-database-timestamp-filter
-  image: alpine:3.17.2
+- name: test-all-messages-time-filter
+  image: vladsimplestakingcom/mina-tester-k:latest
   volumes:
     - name: test-result
       path: /test
   commands:
-    - apk update && apk add jq
-    - if [[ $(jq .db_order_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+    - mina-simulator test --name all-messages-time-filter --summary-json /test/summary.json
 
-- name: test-all-events-stored
-  image: alpine:3.17.2
+- name: test-ipc-events-number
+  image: vladsimplestakingcom/mina-tester-k:latest
   volumes:
     - name: test-result
       path: /test
   commands:
-    - apk update && apk add jq
-    - if [[ $(jq .db_events_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+    - mina-simulator test --name ipc-events-number --summary-json /test/summary.json
 
-- name: test-ipc-consistent-with-network
-  image: alpine:3.17.2
+- name: test-ipc-events-match
+  image: vladsimplestakingcom/mina-tester-k:latest
   volumes:
     - name: test-result
       path: /test
   commands:
-    - apk update && apk add jq
-    - if [[ $(jq .db_events_consistent_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+    - mina-simulator test --name ipc-events-match --summary-json /test/summary.json
 
-- name: test-message-order-in-stream
-  image: alpine:3.17.2
+- name: test-ipc-events-consistent
+  image: vladsimplestakingcom/mina-tester-k:latest
   volumes:
     - name: test-result
       path: /test
   commands:
-    - apk update && apk add jq
-    - if [[ $(jq .messages_order_in_stream_ok /test/test.json) == "true" ]]; then exit 0; else exit 1; fi
+    - mina-simulator test --name ipc-events-consistent --summary-json /test/summary.json
+
+- name: test-stream-messages-number
+  image: vladsimplestakingcom/mina-tester-k:latest
+  volumes:
+    - name: test-result
+      path: /test
+  commands:
+    - mina-simulator test --name stream-messages-number --summary-json /test/summary.json
+
+- name: test-stream-messages-order
+  image: vladsimplestakingcom/mina-tester-k:latest
+  volumes:
+    - name: test-result
+      path: /test
+  commands:
+    - mina-simulator test --name stream-messages-order --summary-json /test/summary.json
+
+- name: test-stream-messages-order-time
+  image: vladsimplestakingcom/mina-tester-k:latest
+  volumes:
+    - name: test-result
+      path: /test
+  commands:
+    - mina-simulator test --name stream-messages-order-time --summary-json /test/summary.json
+
+- name: test-network-checksum
+  image: vladsimplestakingcom/mina-tester-k:latest
+  volumes:
+    - name: test-result
+      path: /test
+  commands:
+    - mina-simulator test --name network-checksum --summary-json /test/summary.json
 
 environment:
   BLOCKS: 20
   DELAY: 6
   PARALLElISM: 10
-  URL: http://1.k8.openmina.com:31876/test
+  RUST_LOG: info
+  URL: http://1.k8.openmina.com:31876/summary
 
 volumes:
 - name: test-result

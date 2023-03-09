@@ -76,6 +76,9 @@ spec:
               value: "registry-svc"
             - name: TERMINATE
               value: "1"
+            # useful for inspecting debugger's state
+            # - name: DEBUGGER_WAIT_FOREVER
+            #   value: "1"
             - name: BUILD_NUMBER
               value: "{{ .Values.build_number }}"
           ports:
@@ -101,7 +104,7 @@ spec:
           args:
             - |
               sleep 5
-              mina-tester-k peer --blocks={{ .Values.blocks }} --delay={{ .Values.delay }}
+              mina-simulator peer --blocks={{ .Values.blocks }} --delay={{ .Values.delay }}
           env:
             - name: "RUST_LOG"
               value: info
@@ -115,8 +118,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-            - name: LAUNCH_STREAM_SENDER
-              value: "1"
       volumes:
         - name: sys-kernel-debug
           hostPath:

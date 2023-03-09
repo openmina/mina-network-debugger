@@ -726,7 +726,7 @@ fn main() {
         sniffer_event::{SnifferEvent, SnifferEventVariant},
         proc,
     };
-    use tester_k::{DebuggerReport, ConnectionMetadata};
+    use simulator::registry::messages::{DebuggerReport, ConnectionMetadata};
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
         EventMetadata, ConnectionInfo, server, P2pRecorder, libp2p_helper::CapnpReader,
@@ -1126,7 +1126,7 @@ fn main() {
                     if let Some(addr) = p2p_cns.get(&key) {
                         watching
                             .get_mut(&event.pid)
-                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip))
+                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip && event.fd == cn.fd as u32))
                             .map(|connection| connection.checksum.0 += &data);
 
                         let metadata = EventMetadata {
@@ -1185,7 +1185,7 @@ fn main() {
                     if let Some(addr) = p2p_cns.get(&key) {
                         watching
                             .get_mut(&event.pid)
-                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip))
+                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip && event.fd == cn.fd as u32))
                             .map(|connection| connection.checksum.1 += &data);
                         let metadata = EventMetadata {
                             id: ConnectionInfo {
@@ -1238,9 +1238,11 @@ fn main() {
                 }
             }
 
-            if env::var("DEBUGGER_CONTINUE").is_ok() {
-                terminating.store(false, Ordering::SeqCst);
-                while !terminating.load(Ordering::SeqCst) {}
+            if env::var("DEBUGGER_WAIT_FOREVER").is_ok() {
+                loop {
+                    std::hint::spin_loop();
+                    std::thread::yield_now();
+                }
             }
         }
     }

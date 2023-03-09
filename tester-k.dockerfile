@@ -16,7 +16,7 @@ WORKDIR /root
 
 COPY . .
 
-RUN cargo build --bin mina-tester-k --release
+RUN cargo build --bin mina-simulator --release
 
 FROM ${mina_daemon_image} as builder-tcpflow
 
@@ -33,6 +33,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install libpcap-
 
 COPY --from=builder-tcpflow /root/tcpflow/src/tcpflow /usr/local/bin/tcpflow
 
-COPY --from=builder /root/target/release/mina-tester-k /usr/local/bin/mina-tester-k
+COPY --from=builder /root/target/release/mina-simulator /usr/local/bin/mina-simulator
 
-ENTRYPOINT ["mina-tester-k", "registry"]
+ENTRYPOINT ["mina-simulator", "registry"]

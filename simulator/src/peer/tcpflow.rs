@@ -4,10 +4,11 @@ use std::{
     net::{SocketAddr, IpAddr},
     time::SystemTime,
     thread::{self, JoinHandle},
-    io::Read, collections::BTreeMap,
+    io::Read,
+    collections::BTreeMap,
 };
 
-use crate::{message::NetReport, constants};
+use crate::registry::{messages::NetReport, server};
 
 pub struct TcpFlow {
     child: Child,
@@ -16,7 +17,7 @@ pub struct TcpFlow {
 }
 
 impl TcpFlow {
-    pub fn run(this_ip: IpAddr) -> anyhow::Result<Self> {
+    pub fn spawn(this_ip: IpAddr) -> anyhow::Result<Self> {
         fs::remove_dir_all("/test").unwrap_or_default();
         fs::create_dir_all("/test")?;
 
@@ -63,7 +64,8 @@ impl TcpFlow {
                 .map(|x| x.children())
                 .flatten()
                 .filter(|x| {
-                    let size = x.children()
+                    let size = x
+                        .children()
                         .find(|x| x.tag_name().name() == "filesize")
                         .and_then(|a| a.text().and_then(|text| text.parse::<usize>().ok()))
                         .unwrap_or_default();
@@ -95,7 +97,7 @@ impl TcpFlow {
                         .value()
                         .parse::<u16>()
                         .ok()?;
-                    if srcport == constants::CENTER_PORT {
+                    if srcport == server::PORT {
                         // skip connection to itself
                         return None;
                     }
@@ -110,7 +112,7 @@ impl TcpFlow {
                         .value()
                         .parse::<u16>()
                         .ok()?;
-                    if dstport == constants::CENTER_PORT {
+                    if dstport == server::PORT {
                         // skip connection to itself
                         return None;
                     }
@@ -133,13 +135,16 @@ impl TcpFlow {
             }
         };
 
-        let mut lengths = cns.iter().filter_map(|cn| {
-            if self.this_ip == cn.local.ip() {
-                None
-            } else {
-                Some((cn.local.ip(), cn.bytes_number))
-            }
-        }).collect::<BTreeMap<_, _>>();
+        let mut lengths = cns
+            .iter()
+            .filter_map(|cn| {
+                if self.this_ip == cn.local.ip() {
+                    None
+                } else {
+                    Some((cn.local.ip(), cn.bytes_number))
+                }
+            })
+            .collect::<BTreeMap<_, _>>();
         // tcpflow counts each connection twice (from local to remote and vice versa)
         // let's ignore half of them
         cns.retain_mut(|cn| {
