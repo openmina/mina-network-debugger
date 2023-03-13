@@ -87,6 +87,10 @@ fn main() -> anyhow::Result<()> {
 
                     if !ok {
                         log::error!("test failed");
+                        let mut test_result = test_result;
+                        for (_, report) in &mut test_result {
+                            report.matches.clear();
+                        }
                         serde_json::to_writer_pretty(std::io::stdout(), &test_result)?;
                         process::exit(1);
                     }
