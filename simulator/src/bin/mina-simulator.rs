@@ -25,7 +25,21 @@ enum Command {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    env_logger::Builder::new()
+        .format(|buf, record| {
+            use std::{io::Write, time::SystemTime};
+            use time::OffsetDateTime;
+
+            let (hour, minute, second, micro) = OffsetDateTime::from(SystemTime::now()).time().as_hms_micro();
+            writeln!(buf,
+                "{hour:02}:{minute:02}:{second:02}.{micro:06} [{}] {}",
+                record.level(),
+                record.args()
+            )
+        })
+        .filter(None, log::LevelFilter::Info)
+        .init();
+
 
     match Command::from_args() {
         Command::Registry => server::run(),

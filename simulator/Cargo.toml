@@ -13,7 +13,7 @@ nix = { version = "0.26.2" }
 log = { version = "0.4.17" }
 hex = { version = "0.4.3" }
 roxmltree = { version = "0.18.0" }
-time = { version = "0.3.20", features = ["parsing"] }
+time = { version = "0.3.20", features = ["parsing", "formatting"] }
 rand = { version = "0.8.5" }
 
 # http
