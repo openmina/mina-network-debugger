@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, net::IpAddr};
 use super::messages::{Summary, MockReport, NetReport};
 
 pub fn test_ipc(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test verifies that each node's interprocess communication checksum matches the checksum recorded by the debugger.");
+    println!("This test verifies that each node's interprocess communication checksum matches the checksum recorded by the debugger.");
 
     let mut fail = false;
     for (&ip, summary) in summary {
@@ -27,7 +27,7 @@ pub fn test_ipc(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
 }
 
 pub fn test_all_messages_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test checks if each node has sent/received some messages.");
+    println!("This test checks if each node has sent/received some messages.");
     test_local(summary, |mock_report| {
         let success = mock_report.test.timestamps.total_messages != 0;
         if success {
@@ -40,7 +40,7 @@ pub fn test_all_messages_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::
 }
 
 pub fn test_all_messages_order(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test checks whether recorded messages are sorted by timestamp.");
+    println!("This test checks whether recorded messages are sorted by timestamp.");
     test_local(summary, |mock_report| {
         let success = mock_report.test.timestamps.ordered;
         if success {
@@ -54,7 +54,7 @@ pub fn test_all_messages_order(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::R
 }
 
 pub fn test_all_messages_time_filter(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test verifies that the time filter is working.");
+    println!("This test verifies that the time filter is working.");
     test_local(
         summary,
         |mock_report| {
@@ -71,7 +71,7 @@ pub fn test_all_messages_time_filter(summary: &BTreeMap<IpAddr, Summary>) -> any
 }
 
 pub fn test_ipc_events_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test checks if the debugger's `/libp2p_ipc/block/<N>` returns some events for each block.");
+    println!("This test checks if the debugger's `/libp2p_ipc/block/<N>` returns some events for each block.");
     test_local(summary, |mock_report| {
         let len = !mock_report.test.events.events.len();
         if len != 0 {
@@ -84,7 +84,7 @@ pub fn test_ipc_events_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Re
 }
 
 pub fn test_ipc_events_match(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test checks if the debugger's `/libp2p_ipc/block/<N>` returns correct data for each block, according to the mock node.");
+    println!("This test checks if the debugger's `/libp2p_ipc/block/<N>` returns correct data for each block, according to the mock node.");
     test_local(
         summary,
         |mock_report| {
@@ -102,7 +102,7 @@ pub fn test_ipc_events_match(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Res
 }
 
 pub fn test_ipc_events_consistent(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test checks if the debugger's `/libp2p_ipc/block/<N>` consistent with `/block/<N>` for each block.");
+    println!("This test checks if the debugger's `/libp2p_ipc/block/<N>` consistent with `/block/<N>` for each block.");
     test_local(
         summary,
         |mock_report| {
@@ -120,7 +120,7 @@ pub fn test_ipc_events_consistent(summary: &BTreeMap<IpAddr, Summary>) -> anyhow
 }
 
 pub fn test_stream_messages_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test checks if the test libp2p stream contains some messages.");
+    println!("This test checks if the test libp2p stream contains some messages.");
     test_local(summary, |mock_report| {
         let success = mock_report.test.order.messages != 0;
         if success {
@@ -133,7 +133,7 @@ pub fn test_stream_messages_number(summary: &BTreeMap<IpAddr, Summary>) -> anyho
 }
 
 pub fn test_stream_messages_order(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!("This test checks that the messages in the test libp2p stream are recorded in the same order as they were cast.");
+    println!("This test checks that the messages in the test libp2p stream are recorded in the same order as they were cast.");
     test_local(summary, |mock_report| {
         let success = mock_report.test.order.unordered_num.is_empty();
         if success {
@@ -147,7 +147,7 @@ pub fn test_stream_messages_order(summary: &BTreeMap<IpAddr, Summary>) -> anyhow
 }
 
 pub fn test_stream_messages_order_time(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
-    log::info!(
+    println!(
         "This test checks that the messages in the test libp2p stream have ordered timestamps."
     );
     test_local(
@@ -198,6 +198,7 @@ mod types {
     #[derive(Default, Serialize, Deserialize)]
     pub struct NetworkVerbose {
         pub matches: Vec<NetworkMatches>,
+        pub too_short_to_validate: Vec<NetworkMatches>,
         pub checksum_mismatch: Vec<NetworkMatches>,
         pub local_debugger_missing: Vec<NetworkMatches>,
         pub remote_debugger_missing: Vec<NetworkMatches>,
@@ -221,15 +222,17 @@ use self::types::{NetworkMatches, NetworkVerbose};
 pub fn test_network_checksum(
     summary: &BTreeMap<IpAddr, Summary>,
 ) -> BTreeMap<IpAddr, NetworkVerbose> {
+    println!("This test checks the CRC64 checksum of the traffic flowing over all connections for each node.");
+    println!("\
+        For each connection seen by tcpflow must exist only one debugger who seen this connection as incoming \
+        and only one (distinct) debugger who seen this connection as outgoing.
+    ");
     summary
         .iter()
         .filter_map(|(ip, this_summary)| {
             let debugger_report = this_summary.debugger_report.as_ref()?;
             let net_report = &this_summary.net_report;
 
-            // for each connection seen by tcpflow
-            // must exist only one debugger who seen this connection as incoming
-            // must exist only one (distinct) debugger who seen this connection as outgoing
             let mut network_verbose = NetworkVerbose::default();
             for r in net_report {
                 let NetReport {
@@ -239,6 +242,7 @@ pub fn test_network_checksum(
                     timestamp,
                     bytes_number,
                 } = *r;
+                log::info!("at {ip} found connection {local} <-> {remote}");
 
                 let remote_cn = summary
                     .get(&remote.ip())
@@ -255,6 +259,8 @@ pub fn test_network_checksum(
 
                 match (local_cn, remote_cn) {
                     (Some(l), Some(r)) => {
+                        log::info!("at {:?} seen by local debugger", l.timestamp);
+                        log::info!("at {:?} seen by remote debugger", r.timestamp);
                         let item = NetworkMatches {
                             bytes_number,
                             timestamp,
@@ -268,13 +274,21 @@ pub fn test_network_checksum(
                         // TODO:
                         // let l_bigger = bytes_number <= l.checksum.bytes_number();
                         // let r_bigger = bytes_number <= r.checksum.bytes_number();
-                        if l.checksum.matches(&r.checksum) {
+                        if let Some((x, y)) = l.checksum.matches_ext(&r.checksum) {
+                            log::info!("matches: ({x:016x}, {y:016x}) == ({y:016x}, {x:016x})");
                             network_verbose.matches.push(item);
+                        } else if l.checksum.too_short() || r.checksum.too_short() {
+                            log::warn!("traffic is too short to verify checksum");
+                            log::warn!("sometimes libp2p drop failed connection and not doing `flush`, so one debugger see some traffic, a=but another debugger see nothing, it is not the debugger's fault");
+                            network_verbose.too_short_to_validate.push(item);
                         } else {
+                            log::error!("checksum mismatches");
                             network_verbose.checksum_mismatch.push(item);
                         }
                     }
                     (Some(l), None) => {
+                        log::info!("at {:?} seen by local debugger", l.timestamp);
+                        log::error!("remote debugger doesn't see this connection");
                         network_verbose.local_debugger_missing.push(NetworkMatches {
                             bytes_number,
                             timestamp,
@@ -288,6 +302,8 @@ pub fn test_network_checksum(
                         break;
                     }
                     (None, Some(r)) => {
+                        log::error!("local debugger doesn't see this connection");
+                        log::info!("at {:?} seen by remote debugger", r.timestamp);
                         network_verbose
                             .remote_debugger_missing
                             .push(NetworkMatches {
@@ -303,6 +319,8 @@ pub fn test_network_checksum(
                         break;
                     }
                     (None, None) => {
+                        log::error!("local debugger doesn't see this connection");
+                        log::error!("remote debugger doesn't see this connection");
                         network_verbose.both_debuggers_missing.push(NetworkMatches {
                             bytes_number,
                             timestamp,

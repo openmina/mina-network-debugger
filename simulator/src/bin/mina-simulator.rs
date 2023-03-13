@@ -79,7 +79,7 @@ fn main() -> anyhow::Result<()> {
                     }
                     if let Some((ip, _)) = test_result
                         .iter()
-                        .find(|(_, report)| !report.local_debugger_missing.is_empty())
+                        .find(|(_, report)| !report.both_debuggers_missing.is_empty())
                     {
                         log::error!("checksum test failed {ip}, both debuggers missing");
                         ok = false;

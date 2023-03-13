@@ -23,12 +23,30 @@ impl ChecksumPair {
         self.0.matches(&other.1) && self.1.matches(&other.0)
     }
 
+    pub fn matches_ext(&self, other: &Self) -> Option<(u64, u64)> {
+        let x = self.0.crc
+            .into_iter()
+            .find(|l_crc| other.1.crc.into_iter().find(|r_crc| l_crc == r_crc).is_some());
+        let y = self.1.crc
+            .into_iter()
+            .find(|l_crc| other.0.crc.into_iter().find(|r_crc| l_crc == r_crc).is_some());
+
+        match (x, y) {
+            (Some(x), Some(y)) => Some((x, y)),
+            _ => None,
+        }
+    }
+
     pub fn matches_(&self, other: &Self) -> bool {
         self.0.matches(&other.0) && self.1.matches(&other.1)
     }
 
     pub fn bytes_number(&self) -> u64 {
         self.0.len + self.1.len
+    }
+
+    pub fn too_short(&self) -> bool {
+        self.0.cnt < 8 || self.1.cnt < 8
     }
 }
 
