@@ -8,17 +8,17 @@ trigger:
 
 steps:
 
-- name: publish-image
-  image: plugins/docker
-  settings:
-    dockerfile: Dockerfile
-    repo: openmina/mina-network-debugger
-    tags:
-      - ${DRONE_COMMIT_SHA:0:8}
-    password:
-      from_secret: docker_hub_password
-    username:
-      from_secret: docker_hub_username
+# - name: publish-image
+#   image: plugins/docker
+#   settings:
+#     dockerfile: Dockerfile
+#     repo: openmina/mina-network-debugger
+#     tags:
+#       - ${DRONE_COMMIT_SHA:0:8}
+#     password:
+#       from_secret: docker_hub_password
+#     username:
+#       from_secret: docker_hub_username
 
 - name: deploy
   image: alpine/k8s:1.23.17
@@ -30,7 +30,7 @@ steps:
       from_secret: k8s_config
   commands:
     - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
-    - ./collect_summary.sh ${DRONE_BUILD_NUMBER}
+    - DRONE_COMMIT_SHA=fd1a6a56d5d9ce151eb733e0256aeeb61a57a6bc ./collect_summary.sh ${DRONE_BUILD_NUMBER}
     - curl -s $URL > /test/summary.json
 
 - name: test-ipc
