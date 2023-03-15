@@ -330,11 +330,14 @@ pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestE
     let mut matching = true;
 
     let debugger_events = get_events();
-    if events.len() <= debugger_events.len() {
+    // Mock node may publish event and terminate immediately
+    // libp2p has no time to actually see this order, or vice versa
+    // Allow that last event of the mock node is not detected and vice versa
+    if (events.len() as isize - debugger_events.len() as isize).abs() <= 1 {
         // let events_set = events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
         // let debugger_events_set = debugger_events.iter().flat_map(|x| &x.events).cloned().collect::<BTreeSet<_>>();
         // matching &= events_set.eq(&debugger_events_set);
-        for i in 0..events.len() {
+        for i in 0..events.len().min(debugger_events.len()) {
             let DbEventWithMetadata { events, .. } = &events[i];
             let DbEventWithMetadata {
                 events: debugger_events,

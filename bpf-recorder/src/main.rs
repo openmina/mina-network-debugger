@@ -788,6 +788,7 @@ fn main() {
 
     let db_capnp = db.core();
 
+    // It is the iterator that returns raw data intercepted by eBPF in the kernel
     struct Source {
         _skeleton: SkeletonEmpty,
         _app: Box<App>,

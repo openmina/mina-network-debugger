@@ -5,6 +5,7 @@ use std::{
     fs::File,
 };
 
+/// Check whether the first command line argument matches the pattern
 pub fn cmd_prefix_matches(pid: u32, pattern: &str) -> io::Result<bool> {
     let mut tries = 5;
     while tries > 0 {
@@ -26,6 +27,8 @@ pub struct S {
 }
 
 impl S {
+    /// Read the UNIX timestamp of when this device was booted.
+    /// All eBPF timestamps refer to this time.
     pub fn read() -> io::Result<Self> {
         let mut s = S::default();
         for line in io::BufReader::new(File::open("/proc/stat")?).lines() {
