@@ -18,7 +18,8 @@ pub struct StraceLine {
 }
 
 pub fn process(mut source: Child, db: DbStrace, rx: mpsc::Receiver<()>) {
-    let read = source.stderr.as_mut().unwrap();
+    let read = source.stderr.as_mut()
+        .expect("must run this function only once, process must has stderr");
     let it = structure::iter_finished(raw::parse(read));
     for x in it {
         if rx.try_recv().is_ok() {

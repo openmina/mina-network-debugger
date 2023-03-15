@@ -23,6 +23,8 @@ impl ConsensusMessage {
         use blake2::digest::{typenum, FixedOutput, Mac, Update};
 
         let key;
+        // key for blake2 mac must be 64 bytes long or smaller
+        // this expression will construct valid key
         let key = if topic.as_bytes().len() <= 64 {
             topic.as_bytes()
         } else {
@@ -32,7 +34,7 @@ impl ConsensusMessage {
             key.as_slice()
         };
         blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
-            .unwrap()
+            .expect("key length is valid by construction")
             .chain(data)
             .finalize_fixed()
             .into()

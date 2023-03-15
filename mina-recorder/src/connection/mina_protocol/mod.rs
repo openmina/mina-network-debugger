@@ -96,7 +96,7 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
         let lock = cx.apps.lock();
         lock.get(&id.metadata.id.pid)
             .map(|(_, p)| *p)
-            .unwrap_or("0.0.0.0:8302".parse().unwrap())
+            .unwrap_or("0.0.0.0:8302".parse().expect("valid constant socket addr"))
     };
     let mut lock = cx.stats_state.lock();
     match stream.add(id, StreamKind::Meshsub, msg) {

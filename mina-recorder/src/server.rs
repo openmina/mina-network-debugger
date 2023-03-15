@@ -108,37 +108,6 @@ fn message_bin(
     })
 }
 
-fn strace(
-    db: DbCore,
-) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    use serde::Deserialize;
-
-    #[derive(Deserialize)]
-    pub struct Params {
-        // the start of the list, either id of record ...
-        id: Option<u64>,
-        // ... or timestamp
-        timestamp: Option<u64>,
-        // how many records to read, default is 100
-        limit: Option<usize>,
-    }
-
-    warp::path!("strace")
-        .and(warp::query::query())
-        .map(move |params| -> WithStatus<Json> {
-            let Params {
-                id,
-                timestamp,
-                limit,
-            } = params;
-            let v = db
-                .fetch_strace(id.unwrap_or_default(), timestamp.unwrap_or_default())
-                .unwrap()
-                .take(limit.unwrap_or(100));
-            reply::with_status(reply::json(&v.collect::<Vec<_>>()), StatusCode::OK)
-        })
-}
-
 fn stats(
     db: DbCore,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
@@ -356,7 +325,6 @@ fn routes(
                 .or(message(db.clone()))
                 .or(message_hex(db.clone()))
                 .or(messages(db.clone()))
-                .or(strace(db.clone()))
                 .or(stats(db.clone()))
                 .or(stats_last(db.clone()))
                 .or(stats_latest(db.clone()))

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io::Cursor, borrow::Cow};
+use std::{collections::BTreeMap, io::{Cursor, self}, borrow::Cow};
 
 use binprot::{BinProtRead, BinProtWrite};
 use mina_p2p_messages::{
@@ -25,6 +25,10 @@ struct Header {
 pub enum Error {
     #[error("response {id} without request")]
     ResponseWithoutRequest { id: i64 },
+    #[error("cannot decode size")]
+    DecodeSize,
+    #[error("write query header error: {0}")]
+    WriteQueryHeader(#[from] io::Error),
 }
 
 impl State {
@@ -53,7 +57,7 @@ impl State {
     }
 
     fn post_process<'a>(&mut self, bytes: &'a mut [u8]) -> Result<Option<Cow<'a, [u8]>>, Error> {
-        let (l0, _) = Self::decode_size(bytes).unwrap();
+        let (l0, _) = Self::decode_size(bytes).ok_or(Error::DecodeSize)?;
         let mut stream = Cursor::new(&mut bytes[l0..]);
         match MessageHeader::binprot_read(&mut stream) {
             Err(err) => {
@@ -71,7 +75,7 @@ impl State {
                     let q = QueryHeader { tag, version, id };
                     let mut b = [0; 8].to_vec();
                     b.push(2);
-                    q.binprot_write(&mut b).unwrap();
+                    q.binprot_write(&mut b)?;
                     let remaining = {
                         let len = stream.position().min(stream.get_ref().len() as u64);
                         &stream.get_ref()[(len as usize)..]

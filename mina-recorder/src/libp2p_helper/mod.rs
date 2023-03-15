@@ -117,7 +117,9 @@ impl CapnpReader {
                     node_address,
                     events,
                 };
-                db.put_capnp(key, value).unwrap();
+                if let Err(err) = db.put_capnp(key, value) {
+                    log::error!("writing capnp message in database {err}");
+                }
             }
         }
 
@@ -138,7 +140,7 @@ fn calc_hash(data: &[u8], topic: &str) -> [u8; 32] {
         key.as_slice()
     };
     blake2::Blake2bMac::<typenum::U32>::new_from_slice(key)
-        .unwrap()
+        .expect("key is valid by construction")
         .chain(data)
         .finalize_fixed()
         .into()
@@ -170,36 +172,36 @@ where
                 *chain_id = format!("/coda/0.0.1/{network_id}");
             }
             Ok(rpc_request::AddPeer(Ok(peer))) => {
-                let addr = peer.get_multiaddr().unwrap().get_representation().unwrap();
+                let addr = peer.get_multiaddr()?.get_representation()?;
                 log::debug!("capnp message {pid} {incoming} add_peer {addr}");
             }
             Ok(rpc_request::Publish(Ok(msg))) => {
-                let topic = msg.get_topic().unwrap();
+                let topic = msg.get_topic()?;
                 // log::info!("capnp message {pid} {incoming} publish {topic}");
 
-                let data = msg.get_data().unwrap();
+                let data = msg.get_data()?;
                 events.push(CapnpEvent::Publish {
                     msg: data[8..].to_vec(),
                     hash: calc_hash(data, topic),
                 });
             }
             Ok(rpc_request::OpenStream(Ok(stream))) => {
-                let peer = stream.get_peer().unwrap().get_id().unwrap();
-                let protocol = stream.get_protocol_id().unwrap();
+                let peer = stream.get_peer()?.get_id()?;
+                let protocol = stream.get_protocol_id()?;
                 log::debug!("capnp message {pid} {incoming} open stream {peer} {protocol}");
             }
             Ok(rpc_request::CloseStream(Ok(stream))) => {
-                let id = stream.get_stream_id().unwrap().get_id();
+                let id = stream.get_stream_id()?.get_id();
                 log::debug!("capnp message {pid} {incoming} close stream {id}");
             }
             Ok(rpc_request::ResetStream(Ok(stream))) => {
-                let id = stream.get_stream_id().unwrap().get_id();
+                let id = stream.get_stream_id()?.get_id();
                 log::debug!("capnp message {pid} {incoming} reset stream {id}");
             }
             Ok(rpc_request::SendStream(Ok(msg))) => {
-                let msg = msg.get_msg().unwrap();
-                let id = msg.get_stream_id().unwrap().get_id();
-                let data = msg.get_data().unwrap();
+                let msg = msg.get_msg()?;
+                let id = msg.get_stream_id()?.get_id();
+                let data = msg.get_data()?;
                 log::debug!(
                     "capnp message {pid} {incoming} send stream {id} data size: {}",
                     data.len()
@@ -247,39 +249,33 @@ where
     match t.which()? {
         message::PushMessage(Ok(msg)) => match msg.which() {
             Ok(push_message::PeerConnected(Ok(peer))) => {
-                let id = peer.get_peer_id().unwrap().get_id().unwrap();
+                let id = peer.get_peer_id()?.get_id()?;
                 log::info!("capnp message {pid} {incoming} connected {id}");
             }
             Ok(push_message::PeerDisconnected(Ok(peer))) => {
-                let id = peer.get_peer_id().unwrap().get_id().unwrap();
+                let id = peer.get_peer_id()?.get_id()?;
                 log::info!("capnp message {pid} {incoming} disconnected {id}");
             }
             Ok(push_message::IncomingStream(Ok(stream))) => {
-                let peer = stream
-                    .get_peer()
-                    .unwrap()
-                    .get_peer_id()
-                    .unwrap()
-                    .get_id()
-                    .unwrap();
-                let protocol = stream.get_protocol().unwrap();
-                let id = stream.get_stream_id().unwrap().get_id();
+                let peer = stream.get_peer()?.get_peer_id()?.get_id()?;
+                let protocol = stream.get_protocol()?;
+                let id = stream.get_stream_id()?.get_id();
                 log::debug!("capnp message {pid} {incoming} open stream {peer} {protocol} {id}");
             }
             Ok(push_message::StreamMessageReceived(Ok(msg))) => {
-                let msg = msg.get_msg().unwrap();
-                let id = msg.get_stream_id().unwrap().get_id();
-                let data = msg.get_data().unwrap();
+                let msg = msg.get_msg()?;
+                let id = msg.get_stream_id()?.get_id();
+                let data = msg.get_data()?;
                 log::debug!("capnp message {pid} {incoming} msg {id} {}", data.len());
             }
             Ok(push_message::GossipReceived(Ok(msg))) => {
-                let sender = msg.get_sender().unwrap();
-                let peer_id = sender.get_peer_id().unwrap().get_id().unwrap().to_owned();
-                let peer_host = sender.get_host().unwrap().to_owned();
+                let sender = msg.get_sender()?;
+                let peer_id = sender.get_peer_id()?.get_id()?.to_owned();
+                let peer_host = sender.get_host()?.to_owned();
                 let peer_port = sender.get_libp2p_port();
 
-                let data = msg.get_data().unwrap();
-                let x = msg.get_subscription_id().unwrap().get_id();
+                let data = msg.get_data()?;
+                let x = msg.get_subscription_id()?.get_id();
 
                 let topic = subscriptions
                     .get(&x)
@@ -299,8 +295,8 @@ where
         message::RpcResponse(Ok(response)) => match response.which() {
             Ok(rpc_response::Success(Ok(response))) => match response.which() {
                 Ok(rpc_response_success::Listen(Ok(addresses))) => {
-                    for addr in addresses.get_result().unwrap() {
-                        let addr = addr.get_representation().unwrap();
+                    for addr in addresses.get_result()? {
+                        let addr = addr.get_representation()?;
                         log::debug!("capnp message {pid} {incoming} listen {addr}");
                     }
                 }

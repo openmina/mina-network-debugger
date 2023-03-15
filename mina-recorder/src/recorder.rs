@@ -97,10 +97,16 @@ impl Aggregator {
         T: Serialize,
     {
         let url = self.url.clone();
+        let event_str = match serde_json::to_string(&event) {
+            Ok(v) => v,
+            Err(err) => {
+                log::error!("failed to post event on aggregator {err}");
+                return;
+            }
+        };
         let body = format!(
-            "{{\"alias\": \"{}\", \"event\": {} }}",
-            self.debugger_name,
-            serde_json::to_string(&event).unwrap(),
+            "{{\"alias\": \"{}\", \"event\": {event_str} }}",
+            self.debugger_name
         );
         if let Err(err) = self.client.post(url).body(body).send() {
             log::error!("failed to post event on aggregator {err}");
@@ -117,7 +123,7 @@ impl P2pRecorder {
             if let Ok(aggregator) = aggregator_str.parse::<reqwest::Url>() {
                 let debugger_name = env::var("DEBUGGER_NAME").unwrap_or("noname".to_owned());
                 let client = reqwest::blocking::Client::new();
-                let url = aggregator.join("new").unwrap();
+                let url = aggregator.join("new").expect("url is valid");
                 // let body = format!("{{\"alias\": {hostname:?}, \"port\": {port} }}");
                 // match client.post(url).body(body).send() {
                 //     Ok(_) => (),

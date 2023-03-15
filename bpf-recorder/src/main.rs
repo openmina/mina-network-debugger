@@ -981,7 +981,8 @@ fn main() {
                         better_time,
                         duration,
                     };
-                    let value = u32::from_ne_bytes(value.as_slice().try_into().unwrap());
+                    let value = u32::from_ne_bytes(value.as_slice().try_into()
+                        .expect("must be checked above `value.len() != 4`"));
                     log::info!("getsockopt {value}, {metadata}");
                     if value != 0 {
                         continue;
@@ -1223,8 +1224,14 @@ fn main() {
                 .ok()
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or_default();
-            for report in watching.values() {
-                let summary_json = serde_json::to_string(report).unwrap();
+            for (pid, report) in &watching {
+                let summary_json = match serde_json::to_string(report) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        log::error!("cannot post summary for pid: {pid}, error: {err}");
+                        continue;
+                    }
+                };
 
                 let r = client
                     .post(format!(

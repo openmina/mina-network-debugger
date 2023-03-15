@@ -61,10 +61,10 @@ impl Connection {
         let stats_out = self.stats_out.calc_speed(duration);
         let mut v = serde_json::to_value(self).expect("must not fail");
         v.as_object_mut()
-            .unwrap()
+            .expect("self must be a structure")
             .insert("stats_in".to_owned(), stats_in);
         v.as_object_mut()
-            .unwrap()
+            .expect("self must be a structure")
             .insert("stats_out".to_owned(), stats_out);
 
         v
@@ -85,7 +85,7 @@ impl ConnectionStats {
         let speed = serde_json::to_value(speed).expect("must not fail");
         let mut v = serde_json::to_value(self).expect("must not fail");
         v.as_object_mut()
-            .unwrap()
+            .expect("self must be a structure")
             .insert("speed".to_string(), speed);
         v
     }
@@ -304,7 +304,7 @@ impl Timestamp for Message {
     fn timestamp(&self) -> Duration {
         self.timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .expect("timestamp cannot be earlier the `UNIX_EPOCH`")
     }
 }
 
@@ -312,7 +312,7 @@ impl Timestamp for FullMessage {
     fn timestamp(&self) -> Duration {
         self.timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .expect("timestamp cannot be earlier the `UNIX_EPOCH`")
     }
 }
 
@@ -326,7 +326,7 @@ impl Timestamp for Connection {
     fn timestamp(&self) -> Duration {
         self.timestamp
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .expect("timestamp cannot be earlier the `UNIX_EPOCH`")
     }
 }
 
@@ -338,7 +338,8 @@ impl Timestamp for serde_json::Value {
         }
 
         match inner(self) {
-            Some(timestamp) => timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap(),
+            Some(timestamp) => timestamp.duration_since(SystemTime::UNIX_EPOCH)
+                .expect("timestamp cannot be earlier the `UNIX_EPOCH`"),
             None => Duration::ZERO,
         }
     }
@@ -459,7 +460,7 @@ impl fmt::Display for StatsV2DbKey {
             self.height,
             self.time
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
+                .expect("timestamp cannot be earlier the `UNIX_EPOCH`")
                 .as_nanos()
         )
     }

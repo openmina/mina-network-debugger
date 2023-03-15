@@ -56,22 +56,19 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
     let buf = Bytes::from(bytes);
     let msg = pb::Envelope::decode(buf).map_err(DecodeError::Protobuf)?;
 
-    let (r#type, public_key, peer_id) = msg
-        .public_key
-        .map(|pk| {
+    let (r#type, public_key, peer_id) = match msg.public_key {
+        None => ("".to_string(), "".to_string(), "".to_string()),
+        Some(pk) => {
             let libp2p_pk = match pk.r#type() {
-                keys_proto::KeyType::Rsa => unimplemented!(),
+                keys_proto::KeyType::Rsa => return Err(DecodeError::Rsa),
                 keys_proto::KeyType::Ed25519 => {
-                    let pk = ed25519::PublicKey::decode(&pk.data).unwrap();
-                    PublicKey::Ed25519(pk)
+                    PublicKey::Ed25519(ed25519::PublicKey::decode(&pk.data)?)
                 }
                 keys_proto::KeyType::Secp256k1 => {
-                    let pk = secp256k1::PublicKey::decode(&pk.data).unwrap();
-                    PublicKey::Secp256k1(pk)
+                    PublicKey::Secp256k1(secp256k1::PublicKey::decode(&pk.data)?)
                 }
                 keys_proto::KeyType::Ecdsa => {
-                    let pk = ecdsa::PublicKey::from_bytes(&pk.data).unwrap();
-                    PublicKey::Ecdsa(pk)
+                    PublicKey::Ecdsa(ecdsa::PublicKey::from_bytes(&pk.data)?)
                 }
             };
             let id = PeerId::from_public_key(&libp2p_pk);
@@ -80,8 +77,8 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
                 hex::encode(pk.data),
                 id.to_base58(),
             )
-        })
-        .unwrap_or(("".to_string(), "".to_string(), "".to_string()));
+        }
+    };
 
     let t = T {
         r#type,

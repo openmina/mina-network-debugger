@@ -314,43 +314,6 @@ mod acc {
     }
 }
 
-#[allow(dead_code)]
-mod acc_next {
-    use std::{task::Poll, mem};
-
-    use super::{Header, acc};
-
-    pub struct Output {
-        header: Header,
-        msg: Vec<u8>,
-        error: Option<String>,
-    }
-
-    #[derive(Default)]
-    pub struct State<const INCOMING: bool> {
-        inner: acc::State<INCOMING>,
-        header: Option<Header>,
-        acc: Vec<u8>,
-    }
-
-    impl<const INCOMING: bool> State<INCOMING> {
-        pub fn accumulate(&mut self, bytes: &[u8]) -> Poll<Output> {
-            if let Some(header) = &self.header {
-                self.acc.extend_from_slice(bytes);
-                if self.acc.len() >= header.payload_length() {
-                    return Poll::Ready(Output {
-                        header: self.header.take().unwrap(),
-                        msg: mem::take(&mut self.acc),
-                        error: None,
-                    });
-                }
-            }
-
-            unimplemented!()
-        }
-    }
-}
-
 impl<Inner> State<Inner>
 where
     Inner: From<StreamId>,

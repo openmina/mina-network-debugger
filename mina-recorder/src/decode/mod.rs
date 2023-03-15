@@ -36,6 +36,10 @@ pub enum DecodeError {
     Parse(nom::Err<ParseError<Vec<u8>>>),
     #[error("yamux parse error {0}")]
     Yamux(yamux_parser::HeaderParseError),
+    #[error("RSA key not supported")]
+    Rsa,
+    #[error("{0}")]
+    IdentityDecoding(#[from] libp2p_core::identity::error::DecodingError),
 }
 
 impl<'pa> From<nom::Err<ParseError<&'pa [u8]>>> for DecodeError {

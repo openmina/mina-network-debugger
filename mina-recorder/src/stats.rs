@@ -64,7 +64,7 @@ impl StatsState {
         db: &crate::database::DbFacade,
         peer: SocketAddr,
     ) {
-        let node_address = "0.0.0.0:0".parse().unwrap();
+        let node_address = "0.0.0.0:0".parse().expect("valid constant");
         let _ = self.observe(message_id, msg, incoming, time, time, peer, node_address);
         let block_stat = self.block_stat();
         db.stats(block_stat.height, node_address, &block_stat)
