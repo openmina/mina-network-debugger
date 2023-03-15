@@ -30,8 +30,11 @@ fn main() -> anyhow::Result<()> {
             use std::{io::Write, time::SystemTime};
             use time::OffsetDateTime;
 
-            let (hour, minute, second, micro) = OffsetDateTime::from(SystemTime::now()).time().as_hms_micro();
-            writeln!(buf,
+            let (hour, minute, second, micro) = OffsetDateTime::from(SystemTime::now())
+                .time()
+                .as_hms_micro();
+            writeln!(
+                buf,
                 "{hour:02}:{minute:02}:{second:02}.{micro:06} [{}] {}",
                 record.level(),
                 record.args()
@@ -39,7 +42,6 @@ fn main() -> anyhow::Result<()> {
         })
         .filter(None, log::LevelFilter::Info)
         .init();
-
 
     match Command::from_args() {
         Command::Registry => server::run(),

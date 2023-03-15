@@ -981,26 +981,30 @@ fn main() {
                         better_time,
                         duration,
                     };
-                    let value = u32::from_ne_bytes(value.as_slice().try_into()
-                        .expect("must be checked above `value.len() != 4`"));
+                    let value = u32::from_ne_bytes(
+                        value
+                            .as_slice()
+                            .try_into()
+                            .expect("must be checked above `value.len() != 4`"),
+                    );
                     log::info!("getsockopt {value}, {metadata}");
                     if value != 0 {
                         continue;
                     }
                     if let Some(report) = watching.get_mut(&event.pid) {
-                        let counter = report.network.iter()
+                        let counter = report
+                            .network
+                            .iter()
                             .filter(|cn| cn.ip == addr.ip())
                             .count();
-                        report.network.push(
-                            ConnectionMetadata {
-                                ip: addr.ip(),
-                                counter,
-                                incoming: false,
-                                fd: event.fd as i32,
-                                checksum: Default::default(),
-                                timestamp: better_time,
-                            },
-                        );
+                        report.network.push(ConnectionMetadata {
+                            ip: addr.ip(),
+                            counter,
+                            incoming: false,
+                            fd: event.fd as i32,
+                            checksum: Default::default(),
+                            timestamp: better_time,
+                        });
                     }
 
                     if let Some(old_addr) = p2p_cns.insert((event.pid, event.fd), addr) {
@@ -1010,23 +1014,28 @@ fn main() {
                         recorder.on_disconnect(metadata, buffered);
                     }
                     log::info!("new outgoing connection {}", metadata);
-                    recorder.on_connect::<true>(false, metadata, buffered, chain_id.get(&event.pid).cloned().unwrap_or_default());
+                    recorder.on_connect::<true>(
+                        false,
+                        metadata,
+                        buffered,
+                        chain_id.get(&event.pid).cloned().unwrap_or_default(),
+                    );
                 }
                 SnifferEventVariant::IncomingConnection(addr) => {
                     if let Some(report) = watching.get_mut(&event.pid) {
-                        let counter = report.network.iter()
+                        let counter = report
+                            .network
+                            .iter()
                             .filter(|cn| cn.ip == addr.ip())
                             .count();
-                        report.network.push(
-                            ConnectionMetadata {
-                                ip: addr.ip(),
-                                counter,
-                                incoming: true,
-                                fd: event.fd as i32,
-                                checksum: Default::default(),
-                                timestamp: better_time,
-                            },
-                        );
+                        report.network.push(ConnectionMetadata {
+                            ip: addr.ip(),
+                            counter,
+                            incoming: true,
+                            fd: event.fd as i32,
+                            checksum: Default::default(),
+                            timestamp: better_time,
+                        });
                     }
 
                     let metadata = EventMetadata {
@@ -1046,7 +1055,12 @@ fn main() {
                         recorder.on_disconnect(metadata, buffered);
                     }
                     log::info!("new incoming connection {}", metadata);
-                    recorder.on_connect::<true>(true, metadata, buffered, chain_id.get(&event.pid).cloned().unwrap_or_default());
+                    recorder.on_connect::<true>(
+                        true,
+                        metadata,
+                        buffered,
+                        chain_id.get(&event.pid).cloned().unwrap_or_default(),
+                    );
                 }
                 SnifferEventVariant::Disconnected => {
                     let key = (event.pid, event.fd);
@@ -1127,7 +1141,13 @@ fn main() {
                     if let Some(addr) = p2p_cns.get(&key) {
                         watching
                             .get_mut(&event.pid)
-                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip && event.fd == cn.fd as u32))
+                            .and_then(|report| {
+                                report
+                                    .network
+                                    .iter_mut()
+                                    .rev()
+                                    .find(|cn| addr.ip() == cn.ip && event.fd == cn.fd as u32)
+                            })
                             .map(|connection| connection.checksum.0 += &data);
 
                         let metadata = EventMetadata {
@@ -1186,7 +1206,13 @@ fn main() {
                     if let Some(addr) = p2p_cns.get(&key) {
                         watching
                             .get_mut(&event.pid)
-                            .and_then(|report| report.network.iter_mut().rev().find(|cn| addr.ip() == cn.ip && event.fd == cn.fd as u32))
+                            .and_then(|report| {
+                                report
+                                    .network
+                                    .iter_mut()
+                                    .rev()
+                                    .find(|cn| addr.ip() == cn.ip && event.fd == cn.fd as u32)
+                            })
                             .map(|connection| connection.checksum.1 += &data);
                         let metadata = EventMetadata {
                             id: ConnectionInfo {

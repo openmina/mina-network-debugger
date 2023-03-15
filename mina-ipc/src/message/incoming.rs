@@ -34,17 +34,9 @@ pub enum RpcRequest {
     GenerateKeypair,
     Subscribe { id: u64, topic: String },
     Publish { topic: String, data: Vec<u8> },
-    AddStreamHandler {
-        protocol: String,
-    },
-    OpenStream {
-        peer_id: String,
-        protocol: String,
-    },
-    SendStream {
-        data: Vec<u8>,
-        stream_id: u64,
-    },
+    AddStreamHandler { protocol: String },
+    OpenStream { peer_id: String, protocol: String },
+    SendStream { data: Vec<u8>, stream_id: u64 },
     Irrelevant,
 }
 

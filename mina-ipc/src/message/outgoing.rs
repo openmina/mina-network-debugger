@@ -131,7 +131,7 @@ where
                         Ok(rpc_response_success::OpenStream(x)) => {
                             let x = x?;
                             let sender = x.get_peer()?;
-    
+
                             RpcResponse::OutgoingStream(OutgoingStream {
                                 peer_id: sender.get_peer_id()?.get_id()?.to_owned(),
                                 peer_host: sender.get_host()?.to_owned(),

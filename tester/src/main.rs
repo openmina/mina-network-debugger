@@ -20,7 +20,7 @@ fn main() {
             let (mut stream, _) = listener.accept().unwrap();
             let stream_thread = thread::spawn(move || {
                 let mut buf = [0; 0x1000];
-                while stream.read(&mut buf).unwrap() != 0 {}    
+                while stream.read(&mut buf).unwrap() != 0 {}
             });
             stream_threads.push(stream_thread);
         }
@@ -61,9 +61,7 @@ fn main() {
     }
 
     let mut stream = TcpStream::connect(("127.0.0.1", P2P_PORT)).unwrap();
-    stream
-        .write_all(b"test-is-passed")
-        .unwrap();
+    stream.write_all(b"test-is-passed").unwrap();
     drop(stream);
 
     listener_thread.join().unwrap();

@@ -24,12 +24,22 @@ impl ChecksumPair {
     }
 
     pub fn matches_ext(&self, other: &Self) -> Option<(u64, u64)> {
-        let x = self.0.crc
-            .into_iter()
-            .find(|l_crc| other.1.crc.into_iter().find(|r_crc| l_crc == r_crc).is_some());
-        let y = self.1.crc
-            .into_iter()
-            .find(|l_crc| other.0.crc.into_iter().find(|r_crc| l_crc == r_crc).is_some());
+        let x = self.0.crc.into_iter().find(|l_crc| {
+            other
+                .1
+                .crc
+                .into_iter()
+                .find(|r_crc| l_crc == r_crc)
+                .is_some()
+        });
+        let y = self.1.crc.into_iter().find(|l_crc| {
+            other
+                .0
+                .crc
+                .into_iter()
+                .find(|r_crc| l_crc == r_crc)
+                .is_some()
+        });
 
         match (x, y) {
             (Some(x), Some(y)) => Some((x, y)),

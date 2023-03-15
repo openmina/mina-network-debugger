@@ -55,19 +55,16 @@ pub fn test_all_messages_order(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::R
 
 pub fn test_all_messages_time_filter(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
     println!("This test verifies that the time filter is working.");
-    test_local(
-        summary,
-        |mock_report| {
-            let success = mock_report.test.timestamps.timestamps_filter_ok;
-            if success {
-                log::info!("messages timestamp filter is ok");
-            } else {
-                log::error!("messages timestamp filter doesn't work");
-                log::info!("{:?}", mock_report.test.timestamps.group_report);
-            }
-            success
-        },
-    )
+    test_local(summary, |mock_report| {
+        let success = mock_report.test.timestamps.timestamps_filter_ok;
+        if success {
+            log::info!("messages timestamp filter is ok");
+        } else {
+            log::error!("messages timestamp filter doesn't work");
+            log::info!("{:?}", mock_report.test.timestamps.group_report);
+        }
+        success
+    })
 }
 
 pub fn test_ipc_events_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
@@ -85,38 +82,41 @@ pub fn test_ipc_events_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Re
 
 pub fn test_ipc_events_match(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
     println!("This test checks if the debugger's `/libp2p_ipc/block/<N>` returns correct data for each block, according to the mock node.");
-    test_local(
-        summary,
-        |mock_report| {
-            let success = mock_report.test.events.matching;
-            if success {
-                log::info!("ipc events reported by mock and reported by debugger are match");
-            } else {
-                log::error!("ipc events reported by mock and reported by debugger are not match");
-                log::info!("mock events: {:?}", mock_report.test.events.events);
-                log::info!("debugger events: {:?}", mock_report.test.events.debugger_events);
-            }
-            success
-        },
-    )
+    test_local(summary, |mock_report| {
+        let success = mock_report.test.events.matching;
+        if success {
+            log::info!("ipc events reported by mock and reported by debugger are match");
+        } else {
+            log::error!("ipc events reported by mock and reported by debugger are not match");
+            log::info!("mock events: {:?}", mock_report.test.events.events);
+            log::info!(
+                "debugger events: {:?}",
+                mock_report.test.events.debugger_events
+            );
+        }
+        success
+    })
 }
 
 pub fn test_ipc_events_consistent(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
     println!("This test checks if the debugger's `/libp2p_ipc/block/<N>` consistent with `/block/<N>` for each block.");
-    test_local(
-        summary,
-        |mock_report| {
-            let success = mock_report.test.events.consistent;
-            if success {
-                log::error!("ipc events are consistent with network events");
-            } else {
-                log::error!("ipc events are inconsistent with network events");
-                log::info!("debugger ipc events: {:?}", mock_report.test.events.debugger_events);
-                log::info!("debugger network events: {:?}", mock_report.test.events.network_events);
-            }
-            success
-        },
-    )
+    test_local(summary, |mock_report| {
+        let success = mock_report.test.events.consistent;
+        if success {
+            log::error!("ipc events are consistent with network events");
+        } else {
+            log::error!("ipc events are inconsistent with network events");
+            log::info!(
+                "debugger ipc events: {:?}",
+                mock_report.test.events.debugger_events
+            );
+            log::info!(
+                "debugger network events: {:?}",
+                mock_report.test.events.network_events
+            );
+        }
+        success
+    })
 }
 
 pub fn test_stream_messages_number(summary: &BTreeMap<IpAddr, Summary>) -> anyhow::Result<()> {
@@ -124,7 +124,10 @@ pub fn test_stream_messages_number(summary: &BTreeMap<IpAddr, Summary>) -> anyho
     test_local(summary, |mock_report| {
         let success = mock_report.test.order.messages != 0;
         if success {
-            log::info!("there are {} stream messages", mock_report.test.order.messages);
+            log::info!(
+                "there are {} stream messages",
+                mock_report.test.order.messages
+            );
         } else {
             log::error!("no stream messages");
         }
@@ -150,19 +153,16 @@ pub fn test_stream_messages_order_time(summary: &BTreeMap<IpAddr, Summary>) -> a
     println!(
         "This test checks that the messages in the test libp2p stream have ordered timestamps."
     );
-    test_local(
-        summary,
-        |mock_report| {
-            let success = mock_report.test.order.unordered_time.is_empty();
-            if success {
-                log::info!("stream messages are ordered by time");
-            } else {
-                log::error!("stream messages are unordered by time");
-                log::info!("{:?}", mock_report.test.order.unordered_time);
-            }
-            success
-        },
-    )
+    test_local(summary, |mock_report| {
+        let success = mock_report.test.order.unordered_time.is_empty();
+        if success {
+            log::info!("stream messages are ordered by time");
+        } else {
+            log::error!("stream messages are unordered by time");
+            log::info!("{:?}", mock_report.test.order.unordered_time);
+        }
+        success
+    })
 }
 
 fn test_local(
