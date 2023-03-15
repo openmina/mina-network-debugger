@@ -1259,15 +1259,30 @@ fn main() {
                     }
                 };
 
-                let r = client
-                    .post(format!(
-                        "http://{host}:80/report/debugger?build_number={build_number}"
-                    ))
-                    .body(summary_json)
-                    .send();
-                match r {
-                    Ok(v) => drop(v.status()),
-                    Err(err) => log::error!("{err}"),
+                const TRIES_NUMBER: usize = 60;
+                let mut tries = TRIES_NUMBER;
+                loop {
+                    let r = client
+                        .post(format!(
+                            "http://{host}:80/report/debugger?build_number={build_number}"
+                        ))
+                        .body(summary_json.clone())
+                        .send();
+                    match r {
+                        Ok(v) => {
+                            drop(v.status());
+                            break;
+                        }
+                        Err(err) => {
+                            tries -= 1;
+                            log::error!("try {}, {err}", TRIES_NUMBER - tries);
+                            if tries == 0 {
+                                break;
+                            } else {
+                                thread::sleep(Duration::from_secs(2));
+                            }
+                        }
+                    }
                 }
             }
 
