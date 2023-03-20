@@ -2,11 +2,9 @@ use std::{
     path::{PathBuf, Path},
     time::{Duration, SystemTime},
     cmp::Ordering,
-    sync::{Mutex, Arc},
+    sync::{Arc, Mutex},
     collections::{BTreeMap, HashSet, BTreeSet},
-    fs::{self, File},
-    io::{self, Write},
-    os::unix::prelude::FileExt,
+    io,
     convert::TryInto,
     net::SocketAddr,
 };
@@ -37,7 +35,7 @@ use crate::{
         meshsub_stats::{self, BlockStat, TxStat, Hash},
     },
     strace::StraceLine,
-    meshsub::{SnarkByHash, Event, SnarkWithHash},
+    meshsub::{SnarkByHash, Event, SnarkWithHash}, ChunkHeader,
 };
 
 #[derive(Debug, Error)]
@@ -88,52 +86,9 @@ impl<'pa> From<nom::Err<ParseError<&'pa [u8]>>> for DbError {
     }
 }
 
-pub struct StreamBytes {
-    offset: u64,
-    file: File,
-}
-
-impl StreamBytes {
-    fn new<P>(path: P) -> io::Result<StreamBytesSync>
-    where
-        P: AsRef<Path>,
-    {
-        let file = File::options()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(path)?;
-        let offset = file.metadata()?.len();
-        Ok(Arc::new(Mutex::new(StreamBytes { offset, file })))
-    }
-
-    pub fn write(&mut self, bytes: &[u8]) -> io::Result<u64> {
-        let offset = self.offset;
-        self.file.write_all(bytes)?;
-        self.file.flush()?;
-        self.offset += bytes.len() as u64;
-        Ok(offset)
-    }
-
-    pub fn read(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
-        let size = self.offset;
-        let border = offset + buf.len() as u64;
-        if border > size {
-            let msg = format!("read beyond end {border} > {size}");
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, msg));
-        }
-        self.file.read_exact_at(buf, offset)?;
-        Ok(())
-    }
-}
-
-type StreamBytesSync = Arc<Mutex<StreamBytes>>;
-
 #[derive(Clone)]
 pub struct DbCore {
-    path: PathBuf,
-    // stream_bytes: Arc<Mutex<BTreeMap<StreamFullId, StreamBytesSync>>>,
-    raw_streams: Arc<Mutex<BTreeMap<ConnectionId, StreamBytesSync>>>,
+    cache: Arc<Mutex<BTreeMap<ConnectionId, u64>>>,
     inner: Arc<rocksdb::DB>,
 }
 
@@ -236,20 +191,9 @@ impl DbCore {
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
-        fs::create_dir(path.join("streams"))
-            .or_else(|e| {
-                if e.kind() == io::ErrorKind::AlreadyExists {
-                    Ok(())
-                } else {
-                    Err(e)
-                }
-            })
-            .map_err(DbError::CreateDirError)?;
 
         Ok(DbCore {
-            path,
-            // stream_bytes: Arc::default(),
-            raw_streams: Default::default(),
+            cache: Arc::new(Mutex::new(BTreeMap::default())),
             inner: Arc::new(inner),
         })
     }
@@ -458,6 +402,44 @@ impl DbCore {
         Ok(())
     }
 
+    pub fn put_blob(&self, cn: ConnectionId, data: &[u8]) -> Result<u64, DbError> {
+        let mut lock = self.cache.lock().expect("must be ok");
+        let position = lock.entry(cn).or_default();
+        if *position == 0 {
+            let key = (cn, u64::MAX).chain(vec![]);
+            let mode = rocksdb::IteratorMode::From(&key, rocksdb::Direction::Reverse);
+            let offset = match self.inner.iterator_cf(self.blobs(), mode).next() {
+                None => 0,
+                Some(r) => {
+                    let (key, _) = r?;
+                    let (cn_last, offset) = <(ConnectionId, u64)>::absorb_ext(&key)?;
+                    if cn_last == cn {
+                        offset + 1
+                    } else {
+                        0
+                    }
+                }
+            };
+            *position = offset;
+        }
+        let offset = *position;
+        *position = offset + data.len() as u64;
+        drop(lock);
+
+        let key = (cn, offset).chain(vec![]);
+        self.inner.put_cf(self.blobs(), key, data)?;
+
+        Ok(offset)
+    }
+
+    pub fn fetch_blob(&self, cn: ConnectionId, offset: u64) -> Result<Vec<u8>, DbError> {
+        let key = (cn, offset).chain(vec![]);
+        let data = self.inner
+            .get_cf(self.blobs(), key)?
+            .ok_or(DbError::NoItemAtCursor(format!("{cn}, offset: {offset}")))?;
+        Ok(data[ChunkHeader::SIZE..].to_vec())
+    }
+
     #[allow(clippy::type_complexity)]
     fn decode<K, T>(item: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> Option<(K, T)>
     where
@@ -560,25 +542,6 @@ impl DbCore {
         self.get(self.connections(), id.to_be_bytes())
     }
 
-    pub fn get_raw_stream(&self, cn: ConnectionId) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
-        let mut lock = self.raw_streams.lock().expect("poisoned");
-        let sb = lock.get(&cn).cloned();
-        match sb {
-            None => {
-                let path = self.path.join("streams").join(cn.to_string());
-                let sb = StreamBytes::new(path).map_err(|err| DbError::IoCn(cn, err))?;
-                lock.insert(cn, sb.clone());
-                drop(lock);
-                Ok(sb)
-            }
-            Some(sb) => Ok(sb),
-        }
-    }
-
-    pub fn remove_raw_stream(&self, cn: ConnectionId) {
-        self.raw_streams.lock().expect("poisoned").remove(&cn);
-    }
-
     fn fetch_details(&self, (key, msg): (u64, Message)) -> Option<(u64, FullMessage)> {
         let r = self.get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes());
         let connection = match r {
@@ -606,19 +569,9 @@ impl DbCore {
 
     // TODO: preview is useless
     fn fetch_details_inner(&self, msg: Message, preview: bool) -> Result<FullMessage, DbError> {
-        let stream_full_id = StreamFullId {
-            cn: msg.connection_id,
-            id: msg.stream_id,
-        };
         let connection =
             self.get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes())?;
-        let mut buf = vec![0; msg.size as usize];
-        let sb = self.get_raw_stream(msg.connection_id)?;
-        let mut file = sb.lock().expect("poisoned");
-        file.read(msg.offset, &mut buf)
-            .map_err(|err| DbError::Io(stream_full_id, err))?;
-        drop(file);
-        self.remove_raw_stream(msg.connection_id);
+        let buf = self.fetch_blob(msg.connection_id, msg.offset)?;
         let message = match msg.stream_kind {
             StreamKind::Kad => crate::decode::kademlia::parse(buf, preview)?,
             StreamKind::Meshsub => crate::decode::meshsub::parse(buf, preview)?,
@@ -912,18 +865,7 @@ impl DbCore {
     pub fn fetch_full_message_bin(&self, id: u64) -> Result<Vec<u8>, DbError> {
         let msg = self.get::<Message, _>(self.messages(), id.to_be_bytes())?;
 
-        let stream_full_id = StreamFullId {
-            cn: msg.connection_id,
-            id: msg.stream_id,
-        };
-        let mut buf = vec![0; msg.size as usize];
-        let sb = self.get_raw_stream(msg.connection_id)?;
-        let mut file = sb.lock().expect("poisoned");
-        file.read(msg.offset, &mut buf)
-            .map_err(|err| DbError::Io(stream_full_id, err))?;
-        drop(file);
-        self.remove_raw_stream(msg.connection_id);
-        Ok(buf)
+        self.fetch_blob(msg.connection_id, msg.offset)
     }
 
     pub fn fetch_full_message_hex(&self, id: u64) -> Result<String, DbError> {
@@ -1032,13 +974,7 @@ impl DbCore {
                 .filter_map(Self::decode_index::<LedgerHashIdx>)
                 .take_while(|idx| idx.get_31().eq(&key_b[1..32]));
             for id in indexes {
-                let mut buf = vec![0; id.size as usize];
-                let sb = self.get_raw_stream(id.id.cn)?;
-                let mut file = sb.lock().expect("poisoned");
-                file.read(id.offset, &mut buf)
-                    .map_err(|err| DbError::Io(id.id, err))?;
-                drop(file);
-                self.remove_raw_stream(id.id.cn);
+                let buf = self.fetch_blob(id.id.cn, id.offset)?;
                 for event in crate::decode::meshsub::parse_it(&buf, false, true)? {
                     if let Event::PublishV2 { message, hash, .. } = event {
                         use self::SnarkWithHash::*;
@@ -1204,7 +1140,7 @@ fn duplicates_removed() {
         .try_into()
         .unwrap();
 
-    fs::remove_dir_all("/tmp/test_duplicates_removed").unwrap_or_default();
+    std::fs::remove_dir_all("/tmp/test_duplicates_removed").unwrap_or_default();
     let db = DbCore::open("/tmp/test_duplicates_removed").unwrap();
     let node_address = "0.0.0.0:0".parse().unwrap();
 

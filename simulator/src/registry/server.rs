@@ -41,7 +41,7 @@ fn routes(
     use warp::reply::{Json, WithStatus, with};
     use serde::Deserialize;
 
-    use super::{state::State, messages::Summary};
+    use super::state::State;
 
     #[derive(Deserialize)]
     struct Query {
@@ -91,7 +91,7 @@ fn routes(
 
             let summary = state.summary();
 
-            if partial.unwrap_or(false) || summary.values().all(Summary::full) {
+            if partial.unwrap_or(false) || summary.values().all(|x| x.debugger_report.is_some()) {
                 reply::with_status(reply::json(summary), StatusCode::OK)
             } else {
                 reply::with_status(reply::json(&None::<()>), StatusCode::OK)

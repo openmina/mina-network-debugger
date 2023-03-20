@@ -186,15 +186,12 @@ impl DbGroup {
             incoming,
         };
 
+        // TODO: avoid allocation
         let b = Vec::with_capacity(bytes.len() + ChunkHeader::SIZE);
         let mut b = header.chain(b);
         b.extend_from_slice(bytes);
 
-        let sb = self.inner.get_raw_stream(self.id)?;
-        let mut file = sb.lock().expect("poisoned");
-        file.write(&b)
-            .map_err(|err| DbError::IoCn(self.id, err))
-            .map(|offset| offset + ChunkHeader::SIZE as u64)
+        self.inner.put_blob(self.id, &b)
     }
 }
 
@@ -207,8 +204,6 @@ impl Drop for DbGroup {
                 log::error!("connection {id}, error: {err}")
             }
         }
-
-        self.inner.remove_raw_stream(self.id);
     }
 }
 
