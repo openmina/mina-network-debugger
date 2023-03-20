@@ -132,13 +132,13 @@ type StreamBytesSync = Arc<Mutex<StreamBytes>>;
 #[derive(Clone)]
 pub struct DbCore {
     path: PathBuf,
-    stream_bytes: Arc<Mutex<BTreeMap<StreamFullId, StreamBytesSync>>>,
+    // stream_bytes: Arc<Mutex<BTreeMap<StreamFullId, StreamBytesSync>>>,
     raw_streams: Arc<Mutex<BTreeMap<ConnectionId, StreamBytesSync>>>,
     inner: Arc<rocksdb::DB>,
 }
 
 impl DbCore {
-    const CFS: [&'static str; 14] = [
+    const CFS: [&'static str; 15] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::RANDOMNESS,
@@ -147,6 +147,7 @@ impl DbCore {
         Self::STATS_TX,
         Self::CAPNP,
         Self::STATS_BLOCK_V2,
+        Self::BLOBS,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
@@ -180,6 +181,8 @@ impl DbCore {
     const CAPNP: &'static str = "capnp_data";
 
     const STATS_BLOCK_V2: &'static str = "stats_block_v2";
+
+    const BLOBS: &'static str = "blobs";
 
     // indexes
 
@@ -221,12 +224,15 @@ impl DbCore {
             // CAPNP
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[6], Default::default()),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(4)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], opts_with_prefix_extractor(8)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(16)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(2)),
+            // BLOBS
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], Default::default()),
+            // INDEXES
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(8)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[11], opts_with_prefix_extractor(2)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[12], opts_with_prefix_extractor(18)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[13], opts_with_prefix_extractor(32)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[12], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[13], opts_with_prefix_extractor(18)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[14], opts_with_prefix_extractor(32)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -242,7 +248,7 @@ impl DbCore {
 
         Ok(DbCore {
             path,
-            stream_bytes: Arc::default(),
+            // stream_bytes: Arc::default(),
             raw_streams: Default::default(),
             inner: Arc::new(inner),
         })
@@ -280,6 +286,12 @@ impl DbCore {
 
     fn capnp(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::CAPNP).expect("must exist")
+    }
+
+    // TODO: store raw stream blobs in db, remove `raw_streams`
+    #[allow(dead_code)]
+    fn blobs(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::BLOBS).expect("must exist")
     }
 
     fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
@@ -567,31 +579,6 @@ impl DbCore {
         self.raw_streams.lock().expect("poisoned").remove(&cn);
     }
 
-    pub fn get_stream(
-        &self,
-        stream_full_id: StreamFullId,
-    ) -> Result<Arc<Mutex<StreamBytes>>, DbError> {
-        let mut lock = self.stream_bytes.lock().expect("poisoned");
-        let sb = lock.get(&stream_full_id).cloned();
-        match sb {
-            None => {
-                let path = self.path.join("streams").join(stream_full_id.to_string());
-                let sb = StreamBytes::new(path).map_err(|err| DbError::Io(stream_full_id, err))?;
-                lock.insert(stream_full_id, sb.clone());
-                drop(lock);
-                Ok(sb)
-            }
-            Some(sb) => Ok(sb),
-        }
-    }
-
-    pub fn remove_stream(&self, stream_full_id: StreamFullId) {
-        self.stream_bytes
-            .lock()
-            .expect("poisoned")
-            .remove(&stream_full_id);
-    }
-
     fn fetch_details(&self, (key, msg): (u64, Message)) -> Option<(u64, FullMessage)> {
         let r = self.get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes());
         let connection = match r {
@@ -626,12 +613,12 @@ impl DbCore {
         let connection =
             self.get::<Connection, _>(self.connections(), msg.connection_id.0.to_be_bytes())?;
         let mut buf = vec![0; msg.size as usize];
-        let sb = self.get_stream(stream_full_id)?;
+        let sb = self.get_raw_stream(msg.connection_id)?;
         let mut file = sb.lock().expect("poisoned");
         file.read(msg.offset, &mut buf)
             .map_err(|err| DbError::Io(stream_full_id, err))?;
         drop(file);
-        self.remove_stream(stream_full_id);
+        self.remove_raw_stream(msg.connection_id);
         let message = match msg.stream_kind {
             StreamKind::Kad => crate::decode::kademlia::parse(buf, preview)?,
             StreamKind::Meshsub => crate::decode::meshsub::parse(buf, preview)?,
@@ -930,11 +917,12 @@ impl DbCore {
             id: msg.stream_id,
         };
         let mut buf = vec![0; msg.size as usize];
-        let sb = self.get_stream(stream_full_id)?;
+        let sb = self.get_raw_stream(msg.connection_id)?;
         let mut file = sb.lock().expect("poisoned");
         file.read(msg.offset, &mut buf)
             .map_err(|err| DbError::Io(stream_full_id, err))?;
         drop(file);
+        self.remove_raw_stream(msg.connection_id);
         Ok(buf)
     }
 
@@ -1045,12 +1033,12 @@ impl DbCore {
                 .take_while(|idx| idx.get_31().eq(&key_b[1..32]));
             for id in indexes {
                 let mut buf = vec![0; id.size as usize];
-                let sb = self.get_stream(id.id)?;
+                let sb = self.get_raw_stream(id.id.cn)?;
                 let mut file = sb.lock().expect("poisoned");
                 file.read(id.offset, &mut buf)
                     .map_err(|err| DbError::Io(id.id, err))?;
                 drop(file);
-                self.remove_stream(id.id);
+                self.remove_raw_stream(id.id.cn);
                 for event in crate::decode::meshsub::parse_it(&buf, false, true)? {
                     if let Event::PublishV2 { message, hash, .. } = event {
                         use self::SnarkWithHash::*;

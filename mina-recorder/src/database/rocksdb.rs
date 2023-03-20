@@ -28,7 +28,7 @@ use crate::{
 use super::{
     core::{DbCore, DbError},
     types::{
-        Connection, ConnectionId, StreamFullId, Message, MessageId, StreamId, StreamKind,
+        Connection, ConnectionId, Message, MessageId, StreamId, StreamKind,
         ConnectionStats,
     },
 };
@@ -142,6 +142,7 @@ impl DbStrace {
     }
 }
 
+#[derive(Clone)]
 pub struct DbGroup {
     addr: SocketAddr,
     id: ConnectionId,
@@ -152,10 +153,8 @@ pub struct DbGroup {
 impl DbGroup {
     pub fn get(&self, id: StreamId) -> DbStream {
         DbStream {
-            addr: self.addr,
-            id: StreamFullId { cn: self.id, id },
-            messages: self.messages.clone(),
-            inner: self.inner.clone(),
+            group: self.clone(),
+            s_id: id,
         }
     }
 
@@ -179,7 +178,7 @@ impl DbGroup {
         incoming: bool,
         time: SystemTime,
         bytes: &[u8],
-    ) -> Result<(), DbError> {
+    ) -> Result<u64, DbError> {
         let header = ChunkHeader {
             size: bytes.len() as u32,
             time,
@@ -193,9 +192,9 @@ impl DbGroup {
 
         let sb = self.inner.get_raw_stream(self.id)?;
         let mut file = sb.lock().expect("poisoned");
-        let _ = file.write(&b).map_err(|err| DbError::IoCn(self.id, err))?;
-
-        Ok(())
+        file.write(&b)
+            .map_err(|err| DbError::IoCn(self.id, err))
+            .map(|offset| offset + ChunkHeader::SIZE as u64)
     }
 }
 
@@ -215,16 +214,8 @@ impl Drop for DbGroup {
 
 #[derive(Clone)]
 pub struct DbStream {
-    addr: SocketAddr,
-    id: StreamFullId,
-    messages: Arc<AtomicU64>,
-    inner: DbCore,
-}
-
-impl Drop for DbStream {
-    fn drop(&mut self) {
-        self.inner.remove_stream(self.id);
-    }
+    group: DbGroup,
+    s_id: StreamId,
 }
 
 impl DbStream {
@@ -236,10 +227,7 @@ impl DbStream {
     ) -> Result<MessageId, DbError> {
         let index_ledger_hash = std::env::var("DEBUGGER_INDEX_LEDGER_HASH").is_ok();
 
-        let sb = self.inner.get_stream(self.id)?;
-        let mut file = sb.lock().expect("poisoned");
-        let offset = file.write(bytes).map_err(|err| DbError::Io(self.id, err))?;
-        drop(file);
+        let offset = self.group.add_raw(EncryptionStatus::DecryptedNoise, did.incoming, did.metadata.time, bytes)?;
 
         let mut ledger_hashes = vec![];
         let tys = match stream_kind {
@@ -264,10 +252,10 @@ impl DbStream {
             StreamKind::Yamux => vec![MessageType::Yamux],
         };
 
-        let id = MessageId(self.messages.fetch_add(1, SeqCst));
+        let id = MessageId(self.group.messages.fetch_add(1, SeqCst));
         let v = Message {
-            connection_id: self.id.cn,
-            stream_id: self.id.id,
+            connection_id: self.group.id,
+            stream_id: self.s_id,
             stream_kind,
             incoming: did.incoming,
             timestamp: did.metadata.time,
@@ -275,9 +263,9 @@ impl DbStream {
             size: bytes.len() as u32,
             brief: tys.iter().map(|ty| ty.to_string()).join(","),
         };
-        self.inner
-            .put_message(&self.addr, id, v, tys, ledger_hashes)?;
-        self.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
+        self.group.inner
+            .put_message(&self.group.addr, id, v, tys, ledger_hashes)?;
+        self.group.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(id)
     }

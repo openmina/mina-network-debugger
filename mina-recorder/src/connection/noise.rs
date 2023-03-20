@@ -15,7 +15,6 @@ use thiserror::Error;
 
 use crate::{
     database::{StreamId, StreamKind, RandomnessDatabase, ConnectionStats},
-    chunk::EncryptionStatus,
 };
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
@@ -168,12 +167,6 @@ where
                                 .add(&id, StreamKind::Handshake, bytes)?;
                         }
                         Msg::Other => {
-                            db.add_raw(
-                                EncryptionStatus::DecryptedNoise,
-                                id.incoming,
-                                id.metadata.time,
-                                bytes,
-                            )?;
                             self.inner.on_data(id, bytes, cx, db)?;
                         }
                     }
