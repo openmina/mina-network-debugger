@@ -15,6 +15,7 @@ steps:
     repo: openmina/mina-network-debugger
     tags:
       - ${DRONE_COMMIT_SHA:0:8}
+      - latest
     password:
       from_secret: docker_hub_password
     username:
