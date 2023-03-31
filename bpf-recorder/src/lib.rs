@@ -60,6 +60,7 @@ pub enum DataTag {
     Alias,
     Random,
     GetSockOpt,
+    SnarkWorker,
 }
 
 impl DataTag {
@@ -76,6 +77,7 @@ impl DataTag {
             DataTag::Alias,
             DataTag::Random,
             DataTag::GetSockOpt,
+            DataTag::SnarkWorker,
         ];
         values.into_iter().find(|&v| v as u32 == c)
     }
@@ -102,6 +104,7 @@ pub mod sniffer_event {
     #[derive(Debug)]
     pub enum SnifferEventVariant {
         NewApp(String),
+        NewSnarkWorkerApp,
         Bind(SocketAddr),
         IncomingConnection(SocketAddr),
         OutgoingConnection(SocketAddr),
@@ -197,6 +200,8 @@ pub mod sniffer_event {
                 ret(SnifferEventVariant::Random(data.to_vec()))
             } else if let DataTag::GetSockOpt = tag {
                 ret(SnifferEventVariant::GetSockOpt(data.to_vec()))
+            } else if let DataTag::SnarkWorker = tag {
+                ret(SnifferEventVariant::NewSnarkWorkerApp)
             } else {
                 Ok(None)
             }

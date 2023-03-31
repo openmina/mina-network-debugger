@@ -18,6 +18,8 @@ pub struct App {
     // 0x1000 processes maximum
     #[hashmap(size = 0x1000)]
     pub pid: ebpf::HashMapRef<4, 4>,
+    #[hashmap(size = 0x1000)]
+    pub pid_snark_worker: ebpf::HashMapRef<4, 4>,
     #[prog("tracepoint/syscalls/sys_enter_execve")]
     pub execve: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_enter_execveat")]
@@ -94,6 +96,24 @@ impl App {
         let pid = (x >> 32) as u32;
 
         if let Some(&flags) = self.pid.get(&pid.to_ne_bytes()) {
+            let flags = u32::from_ne_bytes(flags);
+
+            if flags == 0xffffffff {
+                return Ok(());
+            }
+        }
+
+        Err(0)
+    }
+
+    #[inline(always)]
+    fn check_pid_snark_worker(&self) -> Result<(), i32> {
+        use ebpf::helpers;
+
+        let x = unsafe { helpers::get_current_pid_tgid() };
+        let pid = (x >> 32) as u32;
+
+        if let Some(&flags) = self.pid_snark_worker.get(&pid.to_ne_bytes()) {
             let flags = u32::from_ne_bytes(flags);
 
             if flags == 0xffffffff {
@@ -269,9 +289,92 @@ impl App {
         Err(0)
     }
 
+    fn check_snark_worker(&mut self, argv: *const *const u8) -> Result<bool, i32> {
+        use core::ptr;
+        use ebpf::helpers;
+
+        if argv.is_null() {
+            return Err(0);
+        }
+
+        let mut arg_str = self.event_queue.reserve(8)?;
+        let mut str_bytes = match self.event_queue.reserve(16) {
+            Ok(v) => v,
+            Err(err) => {
+                arg_str.discard();
+                return Err(err);
+            }
+        };
+        loop {
+            let c = unsafe {
+                // needed third argument, add 2 to the pointer
+                helpers::probe_read_user(arg_str.as_mut().as_mut_ptr() as _, 8, argv.add(2) as _)
+            };
+
+            if c != 0 {
+                break;
+            }
+
+            let entry = unsafe { *(arg_str.as_ref().as_ptr() as *const *const u8) };
+            if entry.is_null() {
+                break;
+            }
+
+            let c = unsafe {
+                helpers::probe_read_user_str(str_bytes.as_mut().as_mut_ptr() as _, 16, entry as _)
+            };
+            if c < 12 {
+                break;
+            }
+
+            let prefix = true
+                && str_bytes.as_ref()[0] == b's'
+                && str_bytes.as_ref()[1] == b'n'
+                && str_bytes.as_ref()[2] == b'a'
+                && str_bytes.as_ref()[3] == b'r'
+                && str_bytes.as_ref()[4] == b'k'
+                && str_bytes.as_ref()[5] == b'-'
+                && str_bytes.as_ref()[6] == b'w'
+                && str_bytes.as_ref()[7] == b'o'
+                && str_bytes.as_ref()[8] == b'r'
+                && str_bytes.as_ref()[9] == b'k'
+                && str_bytes.as_ref()[10] == b'e'
+                && str_bytes.as_ref()[11] == b'r';
+
+            str_bytes.discard();
+            arg_str.discard();
+
+            if prefix {
+                // handle snark worker
+                let (pid, tid) = {
+                    let x = unsafe { helpers::get_current_pid_tgid() };
+                    ((x >> 32) as u32, (x & 0xffffffff) as u32)
+                };
+
+                let ts = unsafe { helpers::ktime_get_boot_ns() };
+                let event = Event::new(pid, tid, ts, ts);
+                let event = event.set_tag_fd(DataTag::SnarkWorker, 0).set_ok(0);
+                send::dyn_sized::<typenum::B0>(&mut self.event_queue, event, ptr::null())?;
+
+                self.pid_snark_worker
+                    .insert(pid.to_ne_bytes(), 0x_ffff_ffff_u32.to_ne_bytes())?;
+            }
+
+            return Ok(prefix);
+        }
+
+        str_bytes.discard();
+        arg_str.discard();
+
+        Ok(false)
+    }
+
     #[inline(always)]
     pub fn execve(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         let argv = ctx.read_here::<*const *const u8>(0x18);
+        if let Ok(true) = self.check_snark_worker(argv) {
+            return Ok(());
+        }
         self.check_name(argv)?;
         let env = ctx.read_here::<*const *const u8>(0x20);
         self.check_env_flag(env)
@@ -280,17 +383,25 @@ impl App {
     #[inline(always)]
     pub fn execveat(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         let argv = ctx.read_here::<*const *const u8>(0x20);
+        if let Ok(true) = self.check_snark_worker(argv) {
+            return Ok(());
+        }
         self.check_name(argv)?;
         let env = ctx.read_here::<*const *const u8>(0x28);
         self.check_env_flag(env)
     }
 
     #[inline(always)]
-    fn enter(&mut self, data: context::Variant) -> Result<(), i32> {
+    fn enter(&mut self, snark_worker: bool, data: context::Variant) -> Result<(), i32> {
         use core::{mem, ptr};
         use ebpf::helpers;
 
-        self.check_pid()?;
+        if snark_worker {
+            self.check_pid().or_else(|_| self.check_pid_snark_worker())?;
+        } else {
+            self.check_pid()?;
+        }
+
         let (_, thread_id) = {
             let x = unsafe { helpers::get_current_pid_tgid() };
             ((x >> 32) as u32, (x & 0xffffffff) as u32)
@@ -314,7 +425,13 @@ impl App {
     fn exit(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         use ebpf::helpers;
 
-        self.check_pid()?;
+        let snark_worker = match self.check_pid() {
+            Ok(()) => false,
+            Err(_) => {
+                self.check_pid_snark_worker()?;
+                true
+            }
+        };
         let (_, thread_id) = {
             let x = unsafe { helpers::get_current_pid_tgid() };
             ((x >> 32) as u32, (x & 0xffffffff) as u32)
@@ -327,9 +444,36 @@ impl App {
         {
             Some(context::Parameters { data, ts: ts0 }) => {
                 let ret = ctx.read_here(0x10);
-                self.on_ret(ret, data, ts0, ts1)
+                if snark_worker {
+                    self.on_ret_snark_worker(ret, data, ts0, ts1)
+                } else {
+                    self.on_ret(ret, data, ts0, ts1)
+                }
             }
             None => Err(-1),
+        }
+    }
+
+    #[inline(never)]
+    fn on_ret_snark_worker(&mut self, ret: i64, data: context::Variant, ts0: u64, ts1: u64) -> Result<(), i32> {
+        use ebpf::helpers;
+
+        let (pid, tid) = {
+            let x = unsafe { helpers::get_current_pid_tgid() };
+            ((x >> 32) as u32, (x & 0xffffffff) as u32)
+        };
+
+        let event = Event::new(pid, tid, ts0, ts1);
+        let ptr = data.ptr();
+        let event = match data {
+            context::Variant::Write { fd, .. } => event.set_tag_fd(DataTag::Write, fd),
+            context::Variant::Read { fd, .. } => event.set_tag_fd(DataTag::Read, fd),
+            _ => return Ok(()),
+        };
+        if ret >= 0 {
+            send::dyn_sized::<typenum::B0>(&mut self.event_queue, event.set_ok(ret as _), ptr)
+        } else {
+            return Ok(());
         }
     }
 
@@ -534,7 +678,7 @@ impl App {
 
     #[inline(always)]
     pub fn enter_bind(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(context::Variant::Bind {
+        self.enter(false, context::Variant::Bind {
             fd: ctx.read_here::<u64>(0x10) as u32,
             addr_ptr: ctx.read_here::<u64>(0x18),
             addr_len: ctx.read_here::<u64>(0x20),
@@ -548,7 +692,7 @@ impl App {
 
     #[inline(always)]
     pub fn enter_connect(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(context::Variant::Connect {
+        self.enter(false, context::Variant::Connect {
             fd: ctx.read_here::<u64>(0x10) as u32,
             addr_ptr: ctx.read_here::<u64>(0x18),
             addr_len: ctx.read_here::<u64>(0x20),
@@ -565,13 +709,13 @@ impl App {
         let level = ctx.read_here::<u64>(0x18);
         let opt = ctx.read_here::<u64>(0x20);
         if level == 1 && opt == 4 {
-            self.enter(context::Variant::GetSockOptL1O4 {
+            self.enter(false, context::Variant::GetSockOptL1O4 {
                 fd: ctx.read_here::<u64>(0x10) as u32,
                 val_ptr: ctx.read_here::<u64>(0x28),
                 len_ptr: ctx.read_here::<u64>(0x30),
             })
         } else {
-            self.enter(context::Variant::GetSockOptIrrelevant {
+            self.enter(false, context::Variant::GetSockOptIrrelevant {
                 fd: ctx.read_here::<u64>(0x10) as u32,
                 val_ptr: ctx.read_here::<u64>(0x28),
                 len_ptr: ctx.read_here::<u64>(0x30),
@@ -586,7 +730,7 @@ impl App {
 
     #[inline(always)]
     pub fn enter_accept4(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(context::Variant::Accept {
+        self.enter(false, context::Variant::Accept {
             listen_on_fd: ctx.read_here::<u64>(0x10) as u32,
             addr_ptr: ctx.read_here::<u64>(0x18),
             addr_len_ptr: ctx.read_here::<u64>(0x20),
@@ -634,7 +778,7 @@ impl App {
 
     #[inline(always)]
     pub fn enter_write(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(context::Variant::Write {
+        self.enter(true, context::Variant::Write {
             fd: ctx.read_here::<u64>(0x10) as u32,
             data_ptr: ctx.read_here::<u64>(0x18),
             _pad: 0,
@@ -648,7 +792,7 @@ impl App {
 
     #[inline(always)]
     pub fn enter_read(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(context::Variant::Read {
+        self.enter(true, context::Variant::Read {
             fd: ctx.read_here::<u64>(0x10) as u32,
             data_ptr: ctx.read_here::<u64>(0x18),
             _pad: 0,
@@ -662,7 +806,7 @@ impl App {
 
     #[inline(always)]
     pub fn enter_sendto(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(context::Variant::Send {
+        self.enter(false, context::Variant::Send {
             fd: ctx.read_here::<u64>(0x10) as u32,
             data_ptr: ctx.read_here::<u64>(0x18),
             _pad: 0,
@@ -676,7 +820,7 @@ impl App {
 
     #[inline(always)]
     pub fn enter_recvfrom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(context::Variant::Recv {
+        self.enter(false, context::Variant::Recv {
             fd: ctx.read_here::<u64>(0x10) as u32,
             data_ptr: ctx.read_here::<u64>(0x18),
             _pad: 0,
@@ -691,7 +835,7 @@ impl App {
     #[inline(always)]
     pub fn enter_getrandom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         let len = ctx.read_here::<u64>(0x18);
-        self.enter(context::Variant::GetRandom {
+        self.enter(false, context::Variant::GetRandom {
             _fd: 0,
             data_ptr: ctx.read_here::<u64>(0x10),
             data_len: len,
@@ -730,6 +874,7 @@ fn main() {
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
         EventMetadata, ConnectionInfo, server, P2pRecorder, libp2p_helper::CapnpReader,
+        SnarkWorkerState,
     };
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
@@ -878,6 +1023,9 @@ fn main() {
     let mut subscriptions = BTreeMap::new();
     let mut chain_id = BTreeMap::new();
     let mut max_lag = Duration::ZERO;
+
+    let mut snark_workers = BTreeMap::new();
+
     while !terminating.load(Ordering::SeqCst) {
         for (event, buffered) in source.by_ref() {
             let event = match event {
@@ -929,6 +1077,9 @@ fn main() {
             };
             let duration = Duration::from_nanos(event.ts1 - event.ts0);
             match event.variant {
+                SnifferEventVariant::NewSnarkWorkerApp => {
+                    snark_workers.insert(event.pid, SnarkWorkerState::default());
+                }
                 SnifferEventVariant::NewApp(alias) => {
                     log::info!("exec {alias} pid: {}", event.pid);
                     recorder.on_alias(event.pid, alias);
@@ -1107,6 +1258,10 @@ fn main() {
                     }
                 }
                 SnifferEventVariant::IncomingData(data) => {
+                    if let Some(snark_worker_state) = snark_workers.get_mut(&event.pid) {
+                        snark_worker_state.handle_data(true, event.fd, data);
+                        continue;
+                    }
                     if event.fd == 0 || event.fd == 1 {
                         watching
                             .get_mut(&event.pid)
@@ -1172,6 +1327,10 @@ fn main() {
                     }
                 }
                 SnifferEventVariant::OutgoingData(data) => {
+                    if let Some(snark_worker_state) = snark_workers.get_mut(&event.pid) {
+                        snark_worker_state.handle_data(false, event.fd, data);
+                        continue;
+                    }
                     if event.fd == 0 || event.fd == 1 {
                         watching
                             .get_mut(&event.pid)
