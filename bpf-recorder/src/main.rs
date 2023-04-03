@@ -53,6 +53,8 @@ pub struct App {
     // 0x4000 simultaneous connections maximum
     #[hashmap(size = 0x4000)]
     pub connections: ebpf::HashMapRef<8, 4>,
+    #[hashmap(size = 0x4000)]
+    pub whitelist: ebpf::HashMapRef<18, 4>,
     #[prog("tracepoint/syscalls/sys_enter_write")]
     pub enter_write: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_exit_write")]
@@ -75,6 +77,8 @@ pub struct App {
     pub exit_getrandom: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_enter_shutdown")]
     pub enter_shutdown: ebpf::ProgRef,
+    #[prog("xdp")]
+    pub disable_connections: ebpf::ProgRef,
 }
 
 #[cfg(feature = "kern")]
@@ -85,6 +89,35 @@ mod send;
 
 #[cfg(feature = "kern")]
 use bpf_recorder::{DataTag, Event};
+
+#[cfg(feature = "kern")]
+#[no_mangle]
+pub unsafe extern "C" fn memset(s: *mut u8, c: core::ffi::c_int, n: usize) {
+    let base = s as usize;
+    for i in 0..n {
+        *((base + i) as *mut u8) = c as u8;
+    }
+}
+
+#[cfg(feature = "kern")]
+#[no_mangle]
+pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *mut u8, n: usize) {
+    let dest_base = dest as usize;
+    let src_base = src as usize;
+    for i in 0..n {
+        *((dest_base + i) as *mut u8) = *((src_base + i) as *mut u8);
+    }
+}
+
+#[cfg(feature = "kern")]
+#[no_mangle]
+pub unsafe extern "C" fn memmove(dest: *mut u8, src: *mut u8, n: usize) {
+    let dest_base = dest as usize;
+    let src_base = src as usize;
+    for i in 0..n {
+        *((dest_base + i) as *mut u8) = *((src_base + i) as *mut u8);
+    }
+}
 
 #[cfg(feature = "kern")]
 impl App {
@@ -487,7 +520,7 @@ impl App {
             return Ok(());
         }
 
-        fn check_addr(ptr: *const u8) -> Result<(), i32> {
+        fn check_addr(ptr: *const u8) -> Result<[u8; 16], i32> {
             const AF_INET: u16 = 2;
             const AF_INET6: u16 = 10;
 
@@ -497,20 +530,24 @@ impl App {
                 // cannot read first two bytes of the address
                 return Err(0);
             }
+            let mut ip = [0; 16];
             if ty == AF_INET {
-                let mut ip = [0u8; 4];
+                ip[10] = 0xff;
+                ip[11] = 0xff;
+
                 let c = unsafe {
-                    helpers::probe_read_user(ip.as_mut_ptr() as *mut _, 4, ptr.offset(4) as _)
+                    helpers::probe_read_user(ip[12..].as_mut_ptr() as *mut _, 4, ptr.offset(4) as _)
                 };
                 if c != 0 {
                     return Err(0);
                 }
-
-                // if ip[0] == 127 && ip[1] == 0 && ip[2] == 0 {
-                //     return Err(0);
-                // }
             } else if ty == AF_INET6 {
-                // filter there something
+                let c = unsafe {
+                    helpers::probe_read_user(ip.as_mut_ptr() as *mut _, 16, ptr.offset(8) as _)
+                };
+                if c != 0 {
+                    return Err(0);
+                }
             } else {
                 // ignore everything else
                 return Err(0);
@@ -527,7 +564,7 @@ impl App {
                 return Err(0);
             }
 
-            Ok(())
+            Ok(ip)
         }
 
         let (pid, tid) = {
@@ -555,7 +592,7 @@ impl App {
                 }
             }
             context::Variant::Connect { fd, addr_len, .. } => {
-                check_addr(ptr)?;
+                let _ip = check_addr(ptr)?;
 
                 const EINPROGRESS: i64 = -115;
                 let event = event.set_tag_fd(DataTag::Connect, fd);
@@ -599,7 +636,7 @@ impl App {
                 if ret < 0 {
                     event.set_err(ret)
                 } else {
-                    check_addr(ptr)?;
+                    let _ip = check_addr(ptr)?;
                     let socket_id = ((fd as u64) << 32) + (pid as u64);
                     self.connections
                         .insert(socket_id.to_ne_bytes(), 0x1_u32.to_ne_bytes())?;
@@ -851,6 +888,108 @@ impl App {
     pub fn enter_shutdown(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         self.enter_close(ctx)
     }
+
+    #[inline(always)]
+    fn disable_connections(
+        &mut self,
+        ctx: ebpf::xdp::Context,
+    ) -> Result<ebpf::xdp::Action, i32> {
+        use network_types::{
+            eth::{EthHdr, EtherType},
+            ip::{Ipv4Hdr, Ipv6Hdr, IpProto},
+            tcp::TcpHdr,
+        };
+        use ebpf::xdp::Action;
+
+        let packet_ptr = ctx.data as usize as *const u8;
+
+        let ethhdr = unsafe { &*(packet_ptr as *const EthHdr) };
+
+        if packet_ptr as usize + EthHdr::LEN >= ctx.data_end as usize {
+            return Ok(Action::Aborted);
+        }
+
+        // whitelist is wildcard
+        if self.whitelist.get(&[0; 18]).is_some() {
+            return Ok(Action::Pass);
+        }
+
+        match ethhdr.ether_type {
+            EtherType::Ipv4 => {
+                let ipv4hdr = unsafe { packet_ptr.add(EthHdr::LEN) } as *const Ipv4Hdr;
+                if ipv4hdr as usize + Ipv4Hdr::LEN >= ctx.data_end as usize {
+                    return Ok(Action::Aborted);
+                }
+                let ipv4hdr = unsafe { &*ipv4hdr };
+
+                let IpProto::Tcp = ipv4hdr.proto else {
+                    return Ok(Action::Pass)
+                };
+
+                let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv4Hdr::LEN) } as *const TcpHdr;
+                if tcphdr as usize + TcpHdr::LEN >= ctx.data_end as usize {
+                    return Ok(Action::Aborted);
+                }
+                let tcphdr = unsafe { &*tcphdr };
+
+                let dst_port = u16::from_be(tcphdr.dest);
+                if let 80 | 443 | 8000 | 3085 = dst_port {
+                    return Ok(Action::Pass);
+                }
+
+                let mut b = [0; 18];
+                b[10] = 0xff;
+                b[11] = 0xff;
+                // This is not typo, ip to little endian, port to big endian
+                // and next time both ip and port to big endian
+                b[12..16].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_le_bytes());
+                b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
+                if self.whitelist.get(&b).is_some() {
+                    return Ok(Action::Pass);
+                }
+                b[12..16].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_be_bytes());
+                b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
+                if self.whitelist.get(&b).is_some() {
+                    return Ok(Action::Pass);
+                }
+
+                Ok(Action::Drop)
+            }
+            EtherType::Ipv6 => {
+                let ipv6hdr = unsafe { packet_ptr.add(EthHdr::LEN) } as *const Ipv6Hdr;
+                if ipv6hdr as usize + Ipv6Hdr::LEN >= ctx.data_end as usize {
+                    return Ok(Action::Aborted);
+                }
+                let ipv6hdr = unsafe { &*ipv6hdr };
+
+                let IpProto::Tcp = ipv6hdr.next_hdr else {
+                    return Ok(Action::Pass)
+                };
+
+                let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv6Hdr::LEN) } as *const TcpHdr;
+                if tcphdr as usize + TcpHdr::LEN >= ctx.data_end as usize {
+                    return Ok(Action::Aborted);
+                }
+                let tcphdr = unsafe { &*tcphdr };
+
+                let dst_port = u16::from_be(tcphdr.dest);
+                if let 80 | 443 | 8000 | 3085 = dst_port {
+                    return Ok(Action::Pass);
+                }
+
+                let mut b = [0; 18];
+                let ip = unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 };
+                b[..16].clone_from_slice(&ip);
+                b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
+                if self.whitelist.get(&b).is_some() {
+                    return Ok(Action::Pass);
+                }
+
+                Ok(Action::Drop)
+            }
+            _ => Ok(Action::Pass),
+        }
+    }
 }
 
 #[cfg(feature = "user")]
@@ -859,11 +998,11 @@ fn main() {
         collections::{BTreeMap, BTreeSet},
         sync::{
             atomic::{AtomicBool, Ordering},
-            Arc,
+            Arc, mpsc,
         },
         time::{SystemTime, Duration},
         env, thread,
-        path::PathBuf,
+        path::PathBuf, net::SocketAddr,
     };
 
     use bpf_recorder::{
@@ -913,7 +1052,8 @@ fn main() {
     // builder.try_init().expect("cannot setup logging");
     env_logger::init();
 
-    let (db, callback, server_thread) = server::spawn(port, db_path, key_path, cert_path);
+    let (tx, rx) = mpsc::sync_channel(100);
+    let (db, callback, server_thread) = server::spawn(port, db_path, tx, key_path, cert_path);
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
@@ -933,16 +1073,56 @@ fn main() {
 
     let db_capnp = db.core();
 
+    let interface = env::var("FIREWALL_INTERFACE").unwrap_or("eth0".to_string());
+
     // It is the iterator that returns raw data intercepted by eBPF in the kernel
     struct Source {
         _skeleton: SkeletonEmpty,
-        _app: Box<App>,
+        _queue: ebpf::RingBufferRef,
         rb: RingBuffer,
         terminating: Arc<AtomicBool>,
     }
 
+    struct Blocker {
+        whitelist: ebpf::HashMapRef<18, 4>,
+        co: BTreeSet<[u8; 18]>,
+    }
+
+    impl Blocker {
+        pub fn clear_whitelist(&mut self) {
+            for item in &self.co {
+                self.whitelist.remove(item).unwrap();
+            }
+            self.whitelist.insert([0; 18], [0, 0, 0, 1]).unwrap();
+            self.co.clear();
+            log::info!("firewall: clear whitelist");
+        }
+
+        pub fn set_whitelist(&mut self, addresses: Vec<SocketAddr>) {
+            self.whitelist.remove(&[0; 18]).unwrap();
+            for addr in addresses {
+                let ip = match addr {
+                    SocketAddr::V4(v) => {
+                        v.ip().to_ipv6_mapped().octets()
+                    }
+                    SocketAddr::V6(v) => {
+                        v.ip().octets()
+                    }
+                };
+                let mut b = [0; 18];
+                b[..16].clone_from_slice(&ip);
+                b[16..].clone_from_slice(&addr.port().to_be_bytes());
+                self.whitelist.insert(b, [0, 0, 0, 1]).unwrap();
+                self.co.insert(b);
+                log::info!("firewall: whitelist {addr}");
+            }
+        }
+    }
+
+    unsafe impl Send for Blocker {}
+
     impl Source {
-        pub fn initialize(terminating: Arc<AtomicBool>) -> Self {
+        pub fn initialize(terminating: Arc<AtomicBool>, mut interface: String) -> (Self, Blocker) {
             static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
 
             let mut skeleton = Skeleton::<App>::open("bpf-recorder\0", CODE)
@@ -950,6 +1130,13 @@ fn main() {
             skeleton
                 .load()
                 .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
+
+            skeleton.app.whitelist.insert([0; 18], [0, 0, 0, 1]).unwrap();
+
+            interface.push('\0');
+            let if_index = unsafe { libc::if_nametoindex(interface.as_ptr() as _) };
+            skeleton.attach_xdp("disable_connections", if_index as i32).unwrap();
+
             let (skeleton, mut app) = skeleton
                 .attach()
                 .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
@@ -977,12 +1164,18 @@ fn main() {
                 }
             };
 
-            Source {
-                _skeleton: skeleton,
-                _app: app,
-                rb,
-                terminating,
-            }
+            (
+                Source {
+                    _skeleton: skeleton,
+                    _queue: app.event_queue,
+                    rb,
+                    terminating,
+                },
+                Blocker {
+                    whitelist: app.whitelist,
+                    co: BTreeSet::new(),
+                },
+            )
         }
     }
 
@@ -996,12 +1189,31 @@ fn main() {
         }
     }
 
-    let mut source = if dry {
-        Box::new(std::iter::empty()) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>
+    let (mut source, blocker) = if dry {
+        (
+            Box::new(std::iter::empty()) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>,
+            None,
+        )
     } else {
-        Box::new(Source::initialize(terminating.clone()))
-            as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>
+        let (source, blocker) = Source::initialize(terminating.clone(), interface);
+        (
+            Box::new(source) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>,
+            Some(blocker)
+        )
     };
+
+    thread::spawn(move || {
+        if let Some(mut blocker) = blocker {
+            log::info!("firewall: start thread");
+            while let Ok(cmd) = rx.recv() {
+                match cmd {
+                    None => blocker.clear_whitelist(),
+                    Some(addresses) => blocker.set_whitelist(addresses),
+                }
+            }
+            log::warn!("firewall: terminate thread");
+        }
+    });
 
     let test = env::var("TEST").is_ok();
 

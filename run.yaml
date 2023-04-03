@@ -55,14 +55,13 @@ spec:
           args:
             - |
               sleep 10
-              # cd /root && DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y install git automake make gcc g++ zlib1g-dev libssl-dev libboost-dev libpcap-dev libcairo2 libcairo2-dev libpython2.7-dev && git clone --recursive --branch tcpflow-1.6.1 https://github.com/simsong/tcpflow.git && cd tcpflow && ./bootstrap.sh && ./configure && make
-              # /root/tcpflow/src/tcpflow -i lo &
               curl https://raw.githubusercontent.com/MinaProtocol/mina/2884275/genesis_ledgers/berkeley.json -o /berkeley.json
               mkdir -p /key
               chmod 700 /key
               mina libp2p generate-keypair --privkey-path /key/privkey
-              mina advanced generate-keypair --privkey-path /key/snark-producer.key
-              mina daemon --external-port 8302 --config-file /berkeley.json --run-snark-worker "$(cat /key/snark-producer.key.pub)" --libp2p-keypair /key/privkey --peer-list-url https://storage.googleapis.com/seed-lists/berkeley_seeds.txt --insecure-rest-server --file-log-level Debug -log-level Info
+              # mina advanced generate-keypair --privkey-path /key/snark-producer.key
+              # --run-snark-worker "$(cat /key/snark-producer.key.pub)"
+              mina daemon --external-port 8302 --config-file /berkeley.json --libp2p-keypair /key/privkey --peer-list-url https://storage.googleapis.com/seed-lists/berkeley_seeds.txt --insecure-rest-server --file-log-level Debug -log-level Info
           ports:
             - name: external-ip
               containerPort: 8302

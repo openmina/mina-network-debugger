@@ -1,4 +1,4 @@
-use std::{thread, path::Path};
+use std::{thread, path::Path, sync::mpsc, net::SocketAddr};
 
 use warp::{
     Filter, Rejection, Reply,
@@ -265,6 +265,37 @@ fn libp2p_ipc_latest(
         })
 }
 
+fn firewall_whitelist_set(
+    tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("firewall" / "whitelist")
+        .and(warp::body::json())
+        .and(warp::post())
+        .map(move |addresses: Vec<String>| -> WithStatus<Json> {
+            let mut a = vec![];
+            for addr in addresses {
+                let Ok(addr) = addr.parse() else {
+                    return reply::with_status(reply::json(&format!("cannot parse address {addr}")), StatusCode::INTERNAL_SERVER_ERROR);
+                };
+                a.push(addr);
+            }
+
+            tx.send(Some(a)).unwrap_or_default();
+            reply::with_status(reply::json(&()), StatusCode::OK)
+        })
+}
+
+fn firewall_whitelist_clear(
+    tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
+) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
+    warp::path!("firewall" / "whitelist" / "clear")
+        .and(warp::post())
+        .map(move || -> WithStatus<Json> {
+            tx.send(None).unwrap_or_default();
+            reply::with_status(reply::json(&()), StatusCode::OK)
+        })
+}
+
 fn version(
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("version")
@@ -288,6 +319,7 @@ fn openapi(
 
 fn routes(
     db: DbCore,
+    tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
 
@@ -318,7 +350,7 @@ fn routes(
         // .with(with::header("Access-Control-Allow-Origin", "*"))
         .with(cors_filter.clone());
 
-    warp::get()
+    let gets = warp::get()
         .and(
             connection(db.clone())
                 .or(connections(db.clone()))
@@ -339,7 +371,11 @@ fn routes(
                 .or(libp2p_ipc_latest(db.clone()))
                 .or(libp2p_ipc_all(db))
                 .or(version().or(openapi())),
-        )
+        );
+    let posts = warp::post()
+        .and(firewall_whitelist_set(tx.clone()).or(firewall_whitelist_clear(tx)));
+
+    gets.or(posts)
         .with(with::header("Content-Type", "application/json"))
         // .with(with::header("Access-Control-Allow-Origin", "*"))
         .with(cors_filter)
@@ -349,6 +385,7 @@ fn routes(
 pub fn spawn<P, Q, R>(
     port: u16,
     path: P,
+    blocker_tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
     key_path: Option<Q>,
     cert_path: Option<R>,
 ) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
@@ -379,7 +416,7 @@ where
     };
     log::info!("using db {}", path.as_ref().display());
     let addr = ([0, 0, 0, 0], port);
-    let routes = routes(db.core());
+    let routes = routes(db.core(), blocker_tx);
     let shutdown = async move {
         rx.await.expect("corresponding sender should exist");
         log::info!("terminating http server...");

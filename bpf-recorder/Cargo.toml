@@ -30,6 +30,7 @@ env_logger = { version = "0.10.0", default-features = false, optional = true }
 hex = { version = "0.4.3", optional = true }
 libbpf-sys = { version = "1.0.4", optional = true }
 libc = { version = "0.2.138", optional = true }
+network-types = { version = "0.0.4", optional = true }
 
 serde = { version = "1.0", optional = true }
 serde_json = { version = "1.0", optional = true }
@@ -42,7 +43,7 @@ simulator = { path = "../simulator", optional = true }
 
 [features]
 default = ["user"]
-kern = ["ebpf-kern/macros", "typenum"]
+kern = ["ebpf-kern/macros", "typenum", "network-types"]
 user = [
     "ebpf-user/macros",
     "ctrlc/termination",

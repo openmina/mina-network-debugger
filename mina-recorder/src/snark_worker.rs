@@ -10,7 +10,8 @@ impl SnarkWorkerState {
         } else {
             "->"
         };
-        log::info!("snark worker {fd} {arrow} {}", hex::encode(data));
+        let _ = (fd, arrow, data);
+        // log::info!("snark worker {fd} {arrow} {}", hex::encode(data));
     }
 }
 
