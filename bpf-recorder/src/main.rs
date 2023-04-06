@@ -1095,7 +1095,7 @@ fn main() {
             }
             self.whitelist.insert([0; 18], [0, 0, 0, 1]).unwrap();
             self.co.clear();
-            log::info!("firewall: clear whitelist");
+            log::info!("firewall: whitelist disable");
         }
 
         pub fn set_whitelist(&mut self, addresses: Vec<SocketAddr>) {
@@ -1203,20 +1203,20 @@ fn main() {
         )
     };
 
-    thread::spawn(move || {
+    let blocker = thread::spawn(move || {
         if let Some(mut blocker) = blocker {
             log::info!("firewall: start thread");
             while let Ok(cmd) = rx.recv() {
                 match cmd {
                     None => break,
                     Some(addresses) => if addresses.is_empty() {
-                        blocker.clear_whitelist()
+                        blocker.clear_whitelist();
                     } else {
-                        blocker.set_whitelist(addresses)
+                        blocker.set_whitelist(addresses);
                     },
                 }
             }
-            log::warn!("firewall: terminate thread");
+            log::info!("firewall: terminate thread");
         }
     });
 
@@ -1681,5 +1681,7 @@ fn main() {
     log::info!("terminated");
 
     tx.send(None).unwrap_or_default();
+    blocker.join().unwrap();
+
     drop(source);
 }

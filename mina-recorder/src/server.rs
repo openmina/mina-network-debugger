@@ -268,7 +268,7 @@ fn libp2p_ipc_latest(
 fn firewall_whitelist_set(
     tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("firewall" / "whitelist")
+    warp::path!("firewall" / "whitelist" / "enable")
         .and(warp::body::json())
         .and(warp::post())
         .map(move |addresses: Vec<String>| -> WithStatus<Json> {
@@ -288,7 +288,7 @@ fn firewall_whitelist_set(
 fn firewall_whitelist_clear(
     tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
-    warp::path!("firewall" / "whitelist" / "clear")
+    warp::path!("firewall" / "whitelist" / "disable")
         .and(warp::post())
         .map(move || -> WithStatus<Json> {
             tx.send(Some(vec![])).unwrap_or_default();
