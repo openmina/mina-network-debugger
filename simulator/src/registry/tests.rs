@@ -351,35 +351,35 @@ pub fn test_split(
     let mut dots_after_reunite = Vec::new();
     for (ip, summary) in summary {
         let r = summary.mock_split_report.as_ref().ok_or(anyhow::anyhow!("no report from {ip}"))?;
-        for peer in &r.peers_before {
+        for peer in &r.before.0 {
             dots_before.push((ip, peer.host.clone()));
         }
-        for peer in &r.peers_after_split {
+        for peer in &r.after_split.0 {
             dots_after_split.push((ip, peer.host.clone()));
         }
-        for peer in &r.peers_after_reunite {
+        for peer in &r.after_reunite.0 {
             dots_after_reunite.push((ip, peer.host.clone()));
         }
     }
 
     println!("before:");
-    println!("graph {{");
+    println!("digraph {{");
     for (a, b) in dots_before {
-        println!("{a} -- {b};");
+        println!("    \"{a}\" -> \"{b}\";");
     }
     println!("}}");
 
     println!("after split:");
-    println!("graph {{");
+    println!("digraph {{");
     for (a, b) in dots_after_split {
-        println!("{a} -- {b};");
+        println!("    \"{a}\" -> \"{b}\";");
     }
     println!("}}");
 
     println!("after reunite:");
-    println!("graph {{");
+    println!("digraph {{");
     for (a, b) in dots_after_reunite {
-        println!("{a} -- {b};");
+        println!("    \"{a}\" -> \"{b}\";");
     }
     println!("}}");
 

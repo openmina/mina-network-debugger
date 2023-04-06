@@ -77,22 +77,7 @@ pub struct ConnectionMetadata {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MockSplitReport {
-    pub peers_before: Vec<Peer>,
-    pub split_time: SystemTime,
-    pub peers_after_split: Vec<Peer>,
-    pub reunite_time: SystemTime,
-    pub peers_after_reunite: Vec<Peer>,
-    pub events: Vec<MockSplitEvent>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum MockSplitEvent {
-    Connected {
-        peer_id: String,
-        timestamp: SystemTime,
-    },
-    Disconnected {
-        peer_id: String,
-        timestamp: SystemTime,
-    },
+    pub before: (Vec<Peer>, SystemTime),
+    pub after_split: (Vec<Peer>, SystemTime),
+    pub after_reunite: (Vec<Peer>, SystemTime),
 }

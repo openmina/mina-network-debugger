@@ -13,7 +13,7 @@ image:
 
 # peer-main - simulate block propagation
 # peer-split - simulate network split and reunite
-simulation: "peer-split"
+simulation: "peer-main"
 
 # number of blocks mock node will be running to produce
 blocks: 20

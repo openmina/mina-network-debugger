@@ -2,9 +2,82 @@ use std::{
     net::{SocketAddr, IpAddr},
     collections::BTreeMap,
 };
+use tokio::sync::{mpsc, oneshot};
 
 use super::messages::{Registered, Summary, PeerInfo, NetReport, MockReport, DebuggerReport, MockSplitReport};
-use crate::libp2p_helper::Process;
+use crate::{libp2p_helper::Process, peer::split_behavior};
+
+#[derive(Default)]
+pub struct SplitContext {
+    thread: Option<mpsc::UnboundedSender<(IpAddr, oneshot::Sender<()>)>>,
+}
+
+impl SplitContext {
+    pub fn request(&mut self, registered: usize, fr: IpAddr) -> oneshot::Receiver<()> {
+        use std::time::Duration;
+        use tokio::time;
+        use reqwest::blocking::ClientBuilder;
+
+        let (tx, rx) = oneshot::channel();
+        let sender = self.thread.get_or_insert_with(|| {
+            let (ttx, mut trx) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                let client = ClientBuilder::new().timeout(Duration::from_secs(10)).build()?;
+                let mut requested = BTreeMap::<_, oneshot::Sender<()>>::default();
+                loop {
+                    match time::timeout(Duration::from_secs(40), trx.recv()).await {
+                        Ok(Some((addr, tx))) => {
+                            requested.insert(SocketAddr::new(addr, split_behavior::PEER_PORT), tx);
+                            if requested.len() == registered {
+                                break;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+
+                let left = requested.keys().take(requested.len() / 2).cloned().collect::<Vec<_>>();
+                let right = requested.keys().skip(requested.len() / 2).cloned().collect::<Vec<_>>();
+
+                let keys = requested.keys().cloned().collect::<Vec<_>>();
+                for tx in requested.into_values() {
+                    tx.send(()).unwrap_or_default();
+                }
+                time::sleep(Duration::from_secs(10)).await;
+
+                for target in &keys {
+                    let whitelist = if left.contains(target) {
+                        &left
+                    } else {
+                        &right
+                    };
+                    let url = format!("http://{}:8000/firewall/whitelist/enable", target.ip());
+                    let whitelist = serde_json::to_string(&whitelist).unwrap();
+                    log::info!("POST {url}, body: {whitelist}");
+                    match client.post(url).body(whitelist).send() {
+                        Ok(response) => log::info!("{}", response.status()),
+                        Err(err) => log::error!("{err}"),
+                    }
+                }
+                time::sleep(Duration::from_secs(60)).await;
+                for target in &keys {
+                    let url = format!("http://{}:8000/firewall/whitelist/disable", target.ip());
+                    log::info!("POST {url}");
+                    match client.post(url).send() {
+                        Ok(response) => log::info!("{}", response.status()),
+                        Err(err) => log::error!("{err}"),
+                    }
+                }
+
+                Ok::<_, anyhow::Error>(())
+            });
+            ttx
+        });
+        sender.send((fr, tx)).unwrap_or_default();
+
+        rx
+    }
+}
 
 #[derive(Default)]
 pub struct State {
@@ -21,10 +94,6 @@ impl State {
 
     pub fn build_number(&self) -> u32 {
         self.build_number
-    }
-
-    pub fn peers(&self) -> Vec<IpAddr> {
-        self.summary.keys().cloned().collect()
     }
 
     pub fn register(&mut self, addr: SocketAddr, build_number: u32, nodes: u32) -> anyhow::Result<Registered> {
