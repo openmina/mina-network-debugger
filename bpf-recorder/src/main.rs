@@ -1053,7 +1053,7 @@ fn main() {
     env_logger::init();
 
     let (tx, rx) = mpsc::sync_channel(100);
-    let (db, callback, server_thread) = server::spawn(port, db_path, tx, key_path, cert_path);
+    let (db, callback, server_thread) = server::spawn(port, db_path, tx.clone(), key_path, cert_path);
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
@@ -1078,7 +1078,7 @@ fn main() {
     // It is the iterator that returns raw data intercepted by eBPF in the kernel
     struct Source {
         _skeleton: SkeletonEmpty,
-        _queue: ebpf::RingBufferRef,
+        _app: Box<App>,
         rb: RingBuffer,
         terminating: Arc<AtomicBool>,
     }
@@ -1163,16 +1163,17 @@ fn main() {
                     std::process::exit(1);
                 }
             };
+            let whitelist = app.whitelist.clone();
 
             (
                 Source {
                     _skeleton: skeleton,
-                    _queue: app.event_queue,
+                    _app: app,
                     rb,
                     terminating,
                 },
                 Blocker {
-                    whitelist: app.whitelist,
+                    whitelist,
                     co: BTreeSet::new(),
                 },
             )
@@ -1207,8 +1208,12 @@ fn main() {
             log::info!("firewall: start thread");
             while let Ok(cmd) = rx.recv() {
                 match cmd {
-                    None => blocker.clear_whitelist(),
-                    Some(addresses) => blocker.set_whitelist(addresses),
+                    None => break,
+                    Some(addresses) => if addresses.is_empty() {
+                        blocker.clear_whitelist()
+                    } else {
+                        blocker.set_whitelist(addresses)
+                    },
                 }
             }
             log::warn!("firewall: terminate thread");
@@ -1674,5 +1679,7 @@ fn main() {
     let _ = server_thread;
 
     log::info!("terminated");
+
+    tx.send(None).unwrap_or_default();
     drop(source);
 }

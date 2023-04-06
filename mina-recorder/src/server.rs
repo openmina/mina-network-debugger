@@ -291,7 +291,7 @@ fn firewall_whitelist_clear(
     warp::path!("firewall" / "whitelist" / "clear")
         .and(warp::post())
         .map(move || -> WithStatus<Json> {
-            tx.send(None).unwrap_or_default();
+            tx.send(Some(vec![])).unwrap_or_default();
             reply::with_status(reply::json(&()), StatusCode::OK)
         })
 }
