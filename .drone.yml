@@ -21,7 +21,7 @@ steps:
     username:
       from_secret: docker_hub_username
 
-- name: deploy
+- name: simulate-main
   image: alpine/k8s:1.23.17
   volumes:
     - name: test-result
@@ -31,7 +31,7 @@ steps:
       from_secret: k8s_config
   commands:
     - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
-    - ./collect_summary.sh ${DRONE_BUILD_NUMBER}
+    - ./simulate_main.sh ${DRONE_BUILD_NUMBER}
     - curl -s $URL > /test/summary.json
 
 - name: test-ipc
@@ -121,6 +121,27 @@ steps:
       path: /test
   commands:
     - mina-simulator test --name network-checksum --summary-json /test/summary.json
+
+- name: simulate-split
+  image: alpine/k8s:1.23.17
+  volumes:
+    - name: test-result
+      path: /test
+  environment:
+    DRONE_KUBECONFIG:
+      from_secret: k8s_config
+  commands:
+    - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
+    - ./simulate_split.sh ${DRONE_BUILD_NUMBER}
+    - curl -s $URL > /test/summary-split.json
+
+- name: test-split
+  image: vladsimplestakingcom/mina-tester-k:latest
+  volumes:
+    - name: test-result
+      path: /test
+  commands:
+    - mina-simulator test --name split --summary-json /test/summary-split.json
 
 environment:
   BLOCKS: 20
