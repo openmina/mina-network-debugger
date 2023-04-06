@@ -11,6 +11,10 @@ image:
   pullPolicy: Always
   tag: "latest"
 
+# peer-main - simulate block propagation
+# peer-split - simulate network split and reunite
+simulation: "peer-split"
+
 # number of blocks mock node will be running to produce
 blocks: 20
 

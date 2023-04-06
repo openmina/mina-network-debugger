@@ -32,6 +32,10 @@ spec:
         - name: mock-registry
           image: vladsimplestakingcom/mina-tester-k:latest
           imagePullPolicy: Always
+          command: [ "sh", "-c" ]
+          args:
+            - |
+              mina-simulator registry --nodes={{ .Values.parallelism }}
           env:
             - name: RUST_LOG
               value: info
@@ -44,7 +48,7 @@ metadata:
   name: mock
 spec:
   parallelism: {{ .Values.parallelism }}
-  ttlSecondsAfterFinished: 0
+  ttlSecondsAfterFinished: 600
   template:
     metadata:
       labels:
@@ -104,7 +108,7 @@ spec:
           args:
             - |
               sleep 5
-              mina-simulator peer --blocks={{ .Values.blocks }} --delay={{ .Values.delay }}
+              mina-simulator {{ .Values.simulation }} --blocks={{ .Values.blocks }} --delay={{ .Values.delay }}
           env:
             - name: "RUST_LOG"
               value: info

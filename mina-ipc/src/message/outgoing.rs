@@ -1,4 +1,5 @@
 use capnp::message::{Reader, ReaderSegments};
+use serde::{Serialize, Deserialize};
 
 use crate::libp2p_ipc_capnp::{
     daemon_interface::{message, push_message},
@@ -29,6 +30,7 @@ pub enum RpcResponse {
     SuccessUnknown(u16),
     Error(String),
     Configure,
+    ListPeers(Vec<Peer>),
     GenerateKeypair {
         peer_id: String,
         public_key: Vec<u8>,
@@ -58,6 +60,13 @@ impl RpcResponse {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Peer {
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+}
+
 #[derive(Debug)]
 pub enum PushMessage {
     Unknown(u16),
@@ -69,9 +78,7 @@ pub enum PushMessage {
     },
     GossipReceived {
         subscription_id: u64,
-        peer_id: String,
-        peer_host: String,
-        peer_port: u16,
+        peer: Peer,
         data: Vec<u8>,
     },
     IncomingStream {
@@ -128,6 +135,20 @@ where
                                 secret_key,
                             }
                         }
+                        Ok(rpc_response_success::ListPeers(x)) => {
+                            let res = x?.get_result()?;
+                            let peers = (0..res.len())
+                                .filter_map(|i| {
+                                    let peer = res.get(i);
+                                    Some(Peer {
+                                        id: peer.get_peer_id().ok()?.get_id().ok()?.to_owned(),
+                                        host: peer.get_host().ok()?.to_owned(),
+                                        port: peer.get_libp2p_port(),
+                                    })
+                                })
+                                .collect();
+                            RpcResponse::ListPeers(peers)
+                        }
                         Ok(rpc_response_success::OpenStream(x)) => {
                             let x = x?;
                             let sender = x.get_peer()?;
@@ -172,9 +193,11 @@ where
 
                         PushMessage::GossipReceived {
                             subscription_id: x.get_subscription_id()?.get_id(),
-                            peer_id: sender.get_peer_id()?.get_id()?.to_owned(),
-                            peer_host: sender.get_host()?.to_owned(),
-                            peer_port: sender.get_libp2p_port(),
+                            peer: Peer {
+                                id: sender.get_peer_id()?.get_id()?.to_owned(),
+                                host: sender.get_host()?.to_owned(),
+                                port: sender.get_libp2p_port(),
+                            },
                             data: data.to_owned(),
                         }
                     }

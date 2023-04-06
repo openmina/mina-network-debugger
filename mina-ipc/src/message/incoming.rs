@@ -31,6 +31,7 @@ pub enum RpcRequest {
     Configure(Config),
     SetGatingConfig(GatingConfig),
     AddPeer { is_seed: bool, multiaddr: String },
+    ListPeers,
     GenerateKeypair,
     Subscribe { id: u64, topic: String },
     Publish { topic: String, data: Vec<u8> },
@@ -130,6 +131,10 @@ impl<'a> CapnpEncode<'a> for Msg {
                         let mut builder = builder.init_add_peer();
                         builder.set_is_seed(*is_seed);
                         builder.init_multiaddr().set_representation(multiaddr);
+                        Ok(())
+                    }
+                    RpcRequest::ListPeers => {
+                        builder.init_list_peers();
                         Ok(())
                     }
                     RpcRequest::GenerateKeypair => {

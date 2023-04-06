@@ -3,7 +3,7 @@ use std::{
     collections::BTreeMap,
 };
 
-use super::messages::{Registered, Summary, PeerInfo, NetReport, MockReport, DebuggerReport};
+use super::messages::{Registered, Summary, PeerInfo, NetReport, MockReport, DebuggerReport, MockSplitReport};
 use crate::libp2p_helper::Process;
 
 #[derive(Default)]
@@ -23,7 +23,11 @@ impl State {
         self.build_number
     }
 
-    pub fn register(&mut self, addr: SocketAddr, build_number: u32) -> anyhow::Result<Registered> {
+    pub fn peers(&self) -> Vec<IpAddr> {
+        self.summary.keys().cloned().collect()
+    }
+
+    pub fn register(&mut self, addr: SocketAddr, build_number: u32, nodes: u32) -> anyhow::Result<Registered> {
         let process = self.process.get_or_insert_with(|| match Process::spawn() {
             (v, _) => v,
         });
@@ -40,10 +44,8 @@ impl State {
         let Some((peer_id, _, secret_key)) = process.generate_keypair()? else {
             return Err(anyhow::anyhow!("cannot generate key pair"));
         };
-        log::debug!(
-            "already registered {} nodes, new peer_id {peer_id}",
-            self.summary.len()
-        );
+        let already_registered = self.summary.len() as u32;
+        log::debug!("already registered {already_registered} nodes, new peer_id {peer_id}");
 
         let info = PeerInfo {
             ip: addr.ip(),
@@ -60,6 +62,8 @@ impl State {
                 // .take(Self::SEED_NODES)
                 .map(|(k, s)| (*k, s.peer_id.clone()))
                 .collect(),
+            // last registered node is a leader
+            leader: already_registered == nodes - 1,
         };
         self.summary.insert(
             addr.ip(),
@@ -82,6 +86,12 @@ impl State {
     pub fn add_mock_report(&mut self, addr: SocketAddr, report: MockReport) {
         if let Some(summary) = self.summary.get_mut(&addr.ip()) {
             summary.mock_report = Some(report);
+        }
+    }
+
+    pub fn add_mock_split_report(&mut self, addr: SocketAddr, report: MockSplitReport) {
+        if let Some(summary) = self.summary.get_mut(&addr.ip()) {
+            summary.mock_split_report = Some(report);
         }
     }
 

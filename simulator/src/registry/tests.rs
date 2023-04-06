@@ -340,3 +340,54 @@ pub fn test_network_checksum(
         })
         .collect()
 }
+
+pub fn test_split(
+    summary: &BTreeMap<IpAddr, Summary>,
+) -> anyhow::Result<()> {
+    let mut fail = false;
+
+    let mut dots_before = Vec::new();
+    let mut dots_after_split = Vec::new();
+    let mut dots_after_reunite = Vec::new();
+    for (ip, summary) in summary {
+        let r = summary.mock_split_report.as_ref().ok_or(anyhow::anyhow!("no report from {ip}"))?;
+        for peer in &r.peers_before {
+            dots_before.push((ip, peer.host.clone()));
+        }
+        for peer in &r.peers_after_split {
+            dots_after_split.push((ip, peer.host.clone()));
+        }
+        for peer in &r.peers_after_reunite {
+            dots_after_reunite.push((ip, peer.host.clone()));
+        }
+    }
+
+    println!("before:");
+    println!("graph {{");
+    for (a, b) in dots_before {
+        println!("{a} -- {b};");
+    }
+    println!("}}");
+
+    println!("after split:");
+    println!("graph {{");
+    for (a, b) in dots_after_split {
+        println!("{a} -- {b};");
+    }
+    println!("}}");
+
+    println!("after reunite:");
+    println!("graph {{");
+    for (a, b) in dots_after_reunite {
+        println!("{a} -- {b};");
+    }
+    println!("}}");
+
+    let _ = &mut fail;
+
+    if fail {
+        Err(anyhow::anyhow!("test failed"))
+    } else {
+        Ok(())
+    }
+}

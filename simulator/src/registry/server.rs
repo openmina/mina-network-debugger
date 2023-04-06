@@ -2,7 +2,7 @@ use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
 
 pub const PORT: u16 = 80;
 
-pub fn run() -> anyhow::Result<()> {
+pub fn run(nodes: u32) -> anyhow::Result<()> {
     use tokio::{runtime::Builder, sync::oneshot};
     use signal_hook::{consts, iterator::Signals};
 
@@ -14,7 +14,7 @@ pub fn run() -> anyhow::Result<()> {
 
     let addr = ([0, 0, 0, 0], PORT);
     let (tx, rx) = oneshot::channel();
-    let server = warp::serve(routes());
+    let server = warp::serve(routes(nodes));
     let (_, server) =
         server.bind_with_graceful_shutdown(addr, async { rx.await.unwrap_or_default() });
 
@@ -32,11 +32,16 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 fn routes(
+    nodes: u32,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use std::{
         sync::{Arc, Mutex},
-        net::SocketAddr,
+        net::{SocketAddr, IpAddr},
+        time::Duration,
+        thread,
     };
+
+    use reqwest::blocking::{ClientBuilder, Client};
 
     use warp::reply::{Json, WithStatus, with};
     use serde::Deserialize;
@@ -54,6 +59,44 @@ fn routes(
     }
 
     let state = Arc::new(Mutex::new(State::default()));
+
+    let split = warp::path!("split")
+        .and(warp::post())
+        .map({
+            let state = state.clone();
+
+            move || {
+                fn enable(client: &Client, peers: Vec<IpAddr>) -> anyhow::Result<()> {
+                    let left = peers.iter().take(peers.len() / 2).cloned().collect::<Vec<_>>();
+                    let right = peers.iter().skip(peers.len() / 2).cloned().collect::<Vec<_>>();
+
+                    for target in peers.iter() {
+                        let whitelist = if left.contains(target) {
+                            &left
+                        } else {
+                            &right
+                        };
+                        let url = format!("http://{target}:8000/firewall/whitelist");
+                        let whitelist = serde_json::to_string(whitelist).unwrap();
+                        let _status = client.post(url).body(whitelist).send()?.status();
+                    }
+                    thread::sleep(Duration::from_secs(30));
+                    for target in peers.iter() {
+                        let url = format!("http://{target}:8000/firewall/whitelist/clear");
+                        let _status = client.post(url).send()?.status();
+                    }
+
+                    Ok(())
+                }
+
+                let peers = state.lock().expect("must not panic during mutex hold").peers();
+                let client = ClientBuilder::new().timeout(Duration::from_secs(10)).build().unwrap();
+                thread::spawn(move || {
+                    enable(&client, peers).unwrap();
+                });
+                reply::with_status(reply::json(&""), StatusCode::OK)
+            }
+        });
 
     let register = warp::path!("register")
         .and(warp::filters::addr::remote())
@@ -73,7 +116,7 @@ fn routes(
                     .as_ref()
                     .lock()
                     .expect("must not panic during mutex hold")
-                    .register(addr, build_number)
+                    .register(addr, build_number, nodes)
                 {
                     Ok(response) => reply::with_status(reply::json(&response), StatusCode::OK),
                     Err(err) => reply::with_status(
@@ -161,6 +204,38 @@ fn routes(
             }
         });
 
+        let mock_split_report = warp::path!("mock_split_report")
+            .and(warp::filters::addr::remote())
+            .and(warp::body::json())
+            .and(warp::query())
+            .and(warp::post())
+            .map({
+                let state = state.clone();
+                move |addr: Option<SocketAddr>, report, Query { build_number }| {
+                    let Some(addr) = addr else {
+                        log::error!("could not determine registrant address");
+                        return reply::with_status(
+                            reply::json(&"could not determine registrant address"),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        );
+                    };
+                    log::info!("receive node split report from {addr}, build {build_number}");
+                    log::debug!("{report:?}");
+
+                    let mut lock = state.lock().expect("must not panic during mutex hold");
+                    if lock.build_number() != build_number {
+                        log::warn!(
+                            "ignore node split report {build_number}, current {}",
+                            lock.build_number()
+                        );
+                        return reply::with_status(reply::json(&""), StatusCode::GONE);
+                    }
+                    lock.add_mock_split_report(addr, report);
+
+                    reply::with_status(reply::json(&""), StatusCode::OK)
+                }
+            });
+
     let debugger_report = warp::path!("report" / "debugger")
         .and(warp::filters::addr::remote())
         .and(warp::body::json())
@@ -199,7 +274,8 @@ fn routes(
     });
 
     let get_paths = warp::get().and(register.or(summary));
-    let post_paths = warp::post().and(net_report.or(mock_report).or(debugger_report).or(reset));
+    let post_paths = warp::post()
+        .and(net_report.or(mock_report).or(mock_split_report).or(debugger_report).or(reset).or(split));
     let json_content = with::header("Content-Type", "application/json");
 
     let cors_filter = warp::cors()

@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Serialize, Deserialize};
 
-use mina_ipc::message::ChecksumPair;
+use mina_ipc::message::{ChecksumPair, outgoing::Peer};
 
 use super::super::peer::tests::TestReport;
 
@@ -17,6 +17,7 @@ pub struct Registered {
     pub external: IpAddr,
     pub prev: Option<IpAddr>,
     pub peers: BTreeMap<IpAddr, String>,
+    pub leader: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -25,12 +26,15 @@ pub struct PeerInfo {
     pub peer_id: String,
 }
 
+// TODO: make generic report
 #[derive(Default, Serialize, Deserialize)]
 pub struct Summary {
     pub peer_id: String,
     pub mock_report: Option<MockReport>,
     pub debugger_report: Option<DebuggerReport>,
     pub net_report: Vec<NetReport>,
+    // TODO:
+    pub mock_split_report: Option<MockSplitReport>,
 }
 
 impl Summary {
@@ -69,4 +73,26 @@ pub struct ConnectionMetadata {
     pub fd: i32,
     pub checksum: ChecksumPair,
     pub timestamp: SystemTime,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MockSplitReport {
+    pub peers_before: Vec<Peer>,
+    pub split_time: SystemTime,
+    pub peers_after_split: Vec<Peer>,
+    pub reunite_time: SystemTime,
+    pub peers_after_reunite: Vec<Peer>,
+    pub events: Vec<MockSplitEvent>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum MockSplitEvent {
+    Connected {
+        peer_id: String,
+        timestamp: SystemTime,
+    },
+    Disconnected {
+        peer_id: String,
+        timestamp: SystemTime,
+    },
 }

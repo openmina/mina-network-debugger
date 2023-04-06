@@ -52,7 +52,7 @@ pub fn run(
         }
     };
 
-    // spawn tcpflow to observer network
+    // spawn tcpflow to observe the network
     let network_observer = match TcpFlow::spawn(this_ip) {
         Ok(v) => v,
         Err(err) => {
@@ -148,14 +148,16 @@ fn run_inner(
             match msg {
                 outgoing::PushMessage::GossipReceived {
                     subscription_id: 0,
-                    peer_id,
-                    peer_host,
-                    peer_port,
+                    peer: outgoing::Peer {
+                        id,
+                        host,
+                        port,
+                    },
                     data,
                 } => match ConsensusMessage::from_bytes(&data).unwrap() {
                     ConsensusMessage::Test(msg) => {
                         log::info!(
-                            "worker {this_addr} received from {peer_id} {peer_host}:{peer_port}, msg: {msg}"
+                            "worker {this_addr} received from {id} {host}:{port}, msg: {msg}"
                         );
                         let parse_block_height = |s: &str| s.split("slot: ").nth(1)?.parse().ok();
                         events.push(DbEventWithMetadata {
@@ -164,8 +166,8 @@ fn run_inner(
                                 .expect("msg")
                                 .as_micros() as u64,
                             events: vec![DbEvent::ReceivedGossip {
-                                peer_id,
-                                peer_address: format!("{peer_host}:{peer_port}"),
+                                peer_id: id,
+                                peer_address: format!("{host}:{port}"),
                                 msg: GossipNetMessageV2Short::TestMessage {
                                     height: parse_block_height(&msg).unwrap_or(u32::MAX),
                                 },

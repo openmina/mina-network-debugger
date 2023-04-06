@@ -9,8 +9,17 @@ use simulator::{
 
 #[derive(StructOpt)]
 enum Command {
-    Registry,
-    Peer {
+    Registry {
+        #[structopt(short, long)]
+        nodes: u32,
+    },
+    PeerMain {
+        #[structopt(short, long)]
+        blocks: u32,
+        #[structopt(short, long)]
+        delay: u32,
+    },
+    PeerSplit {
         #[structopt(short, long)]
         blocks: u32,
         #[structopt(short, long)]
@@ -44,13 +53,23 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     match Command::from_args() {
-        Command::Registry => server::run(),
-        Command::Peer { blocks, delay } => {
+        Command::Registry { nodes } => server::run(nodes),
+        Command::PeerMain { blocks, delay } => {
             let registry = env::var("REGISTRY")?;
             let build_number = env::var("BUILD_NUMBER")?.parse::<u32>()?;
             let this_ip = env::var("MY_POD_IP")?.parse::<IpAddr>()?;
 
-            if let Err(err) = peer::behavior::run(blocks, delay, &registry, build_number, this_ip) {
+            if let Err(err) = peer::main_behavior::run(blocks, delay, &registry, build_number, this_ip) {
+                log::error!("{err}");
+            }
+            Ok(())
+        }
+        Command::PeerSplit { blocks, delay } => {
+            let _ = (blocks, delay);
+            let registry = env::var("REGISTRY")?;
+            let build_number = env::var("BUILD_NUMBER")?.parse::<u32>()?;
+
+            if let Err(err) = peer::split_behavior::run(&registry, build_number) {
                 log::error!("{err}");
             }
             Ok(())
@@ -113,6 +132,7 @@ fn main() -> anyhow::Result<()> {
 
                     Ok(())
                 }
+                "split" => tests::test_split(&summary),
                 name => {
                     log::warn!("unknown test name: {name}");
                     Ok(())

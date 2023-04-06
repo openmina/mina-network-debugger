@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use mina_ipc::message::{incoming, outgoing, ChecksumIo, ChecksumPair, Config};
+use mina_ipc::message::{incoming, outgoing::{self, Peer}, ChecksumIo, ChecksumPair, Config};
 
 pub struct Process {
     this: Child,
@@ -125,6 +125,15 @@ impl Process {
         self.stdin.lock().unwrap().encode(&value)?;
         let _ = self.rpc_rx.recv();
         Ok(())
+    }
+
+    pub fn list_peers(&mut self) -> mina_ipc::Result<Option<Vec<Peer>>> {
+        let value = incoming::Msg::RpcRequest(incoming::RpcRequest::ListPeers);
+        self.stdin.lock().unwrap().encode(&value)?;
+        let Ok(outgoing::RpcResponse::ListPeers(peers)) = self.rpc_rx.recv() else {
+            return Ok(None);
+        };
+        Ok(Some(peers))
     }
 
     pub fn publish(&mut self, topic: String, data: Vec<u8>) -> mina_ipc::Result<()> {
