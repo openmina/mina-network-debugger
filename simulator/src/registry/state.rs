@@ -14,7 +14,6 @@ pub struct SplitContext {
 
 impl SplitContext {
     pub fn request(&mut self, registered: usize, fr: IpAddr) -> oneshot::Receiver<()> {
-        use std::time::Duration;
         use tokio::time;
         use reqwest::blocking::ClientBuilder;
 
@@ -22,10 +21,10 @@ impl SplitContext {
         let sender = self.thread.get_or_insert_with(|| {
             let (ttx, mut trx) = mpsc::unbounded_channel();
             tokio::spawn(async move {
-                let client = ClientBuilder::new().timeout(Duration::from_secs(10)).build()?;
+                let client = ClientBuilder::new().timeout(split_behavior::time::REGISTRY_TIMEOUT).build()?;
                 let mut requested = BTreeMap::<_, oneshot::Sender<()>>::default();
                 loop {
-                    match time::timeout(Duration::from_secs(40), trx.recv()).await {
+                    match time::timeout(split_behavior::time::WAIT_TIMEOUT, trx.recv()).await {
                         Ok(Some((addr, tx))) => {
                             requested.insert(SocketAddr::new(addr, split_behavior::PEER_PORT), tx);
                             if requested.len() == registered {
@@ -43,7 +42,7 @@ impl SplitContext {
                 for tx in requested.into_values() {
                     tx.send(()).unwrap_or_default();
                 }
-                time::sleep(Duration::from_secs(10)).await;
+                time::sleep(split_behavior::time::SHIFT).await;
 
                 for target in &keys {
                     let whitelist = if left.contains(target) {
@@ -59,7 +58,7 @@ impl SplitContext {
                         Err(err) => log::error!("{err}"),
                     }
                 }
-                time::sleep(Duration::from_secs(60)).await;
+                time::sleep(split_behavior::time::SPLIT).await;
                 for target in &keys {
                     let url = format!("http://{}:8000/firewall/whitelist/disable", target.ip());
                     log::info!("POST {url}");

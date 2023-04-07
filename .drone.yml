@@ -30,6 +30,8 @@ steps:
     DRONE_KUBECONFIG:
       from_secret: k8s_config
   commands:
+    # reset previous summary
+    - curl -X POST -s $URL_RESET || true
     - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
     - ./simulate_main.sh ${DRONE_BUILD_NUMBER}
     - curl -s $URL > /test/summary.json
@@ -131,6 +133,8 @@ steps:
     DRONE_KUBECONFIG:
       from_secret: k8s_config
   commands:
+    # reset previous summary
+    - curl -X POST -s $URL_RESET || true
     - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
     - ./simulate_split.sh ${DRONE_BUILD_NUMBER}
     - curl -s $URL > /test/summary-split.json
@@ -149,6 +153,7 @@ environment:
   PARALLElISM: 10
   RUST_LOG: info
   URL: http://1.k8.openmina.com:31876/summary
+  URL_RESET: http://1.k8.openmina.com:31876/reset
 
 volumes:
 - name: test-result

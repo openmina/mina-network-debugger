@@ -1,4 +1,4 @@
-use std::{fs, thread, time::{Duration, SystemTime}, sync::mpsc, path::Path};
+use std::{fs, thread, time::SystemTime, sync::mpsc, path::Path};
 
 use mina_ipc::message::{outgoing::PushMessage, Config};
 use reqwest::{blocking::{ClientBuilder, Client}, Url};
@@ -6,6 +6,34 @@ use reqwest::{blocking::{ClientBuilder, Client}, Url};
 use crate::{libp2p_helper::Process, registry::{server, messages::{Registered, MockSplitReport}}};
 
 pub const PEER_PORT: u16 = 8302;
+
+pub mod time {
+    use std::time::Duration;
+
+    // Timeout for the registry to perform RPC on the debugger.
+    pub const REGISTRY_TIMEOUT: Duration = Duration::from_secs(10);
+
+    // Registry is waiting for nodes to register for split.
+    // Registry know how many nodes should participate and will waiting all nodes,
+    // unless the timeout occur. The timeout may occur because some nodes failed to start
+    // (because of DNS failure) and thus, some nodes will not participate in the simulation.
+    pub const WAIT_TIMEOUT: Duration = Duration::from_secs(40);
+
+    // Timeout for mock node to register for split on the registry server.
+    // Must be much bigger then `REGISTRY_TIMEOUT`.
+    pub const MOCK_TIMEOUT: Duration = Duration::from_secs(120);
+
+    // Time for newly created node to connect to other nodes.
+    pub const INITIALIZATION: Duration = Duration::from_secs(20);
+
+    // Time shift between mock node and registry.
+    // The actual split happens when all nodes registered for the split plus this shift.
+    pub const SHIFT: Duration = Duration::from_secs(10);
+
+    pub const SPLIT: Duration = Duration::from_secs(90);
+
+    pub const REUNITE: Duration = Duration::from_secs(90);
+}
 
 pub fn run(
     registry: &str,
@@ -16,7 +44,7 @@ pub fn run(
 
     // try create an http client, stop the libp2p_helper and thus the bpf debugger if failed
     let client = ClientBuilder::new()
-        .timeout(Duration::from_secs(120))
+        .timeout(time::MOCK_TIMEOUT)
         .build();
     let client = match client {
         Ok(v) => v,
@@ -89,7 +117,7 @@ fn run_inner(registry: &Url, client: &Client, build_number: u32, process: &mut P
         log::info!("join receiver");
     });
 
-    thread::sleep(Duration::from_secs(10));
+    thread::sleep(time::INITIALIZATION);
 
     let before = (
         process.list_peers()?.unwrap_or_default(),
@@ -98,14 +126,17 @@ fn run_inner(registry: &Url, client: &Client, build_number: u32, process: &mut P
 
     let url = registry.join("split")?;
     client.get(url).send()?.status();
-    thread::sleep(Duration::from_secs(60));
+
+    // wait the libp2p notice the split
+    thread::sleep(time::SPLIT);
 
     let after_split = (
         process.list_peers()?.unwrap_or_default(),
         SystemTime::now(),
     );
 
-    thread::sleep(Duration::from_secs(60));
+    // wait the libp2p notice the connectivity is restored and reconnect
+    thread::sleep(time::REUNITE);
 
     let after_reunite = (
         process.list_peers()?.unwrap_or_default(),

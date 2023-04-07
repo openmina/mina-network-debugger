@@ -2577,6 +2577,7 @@ dependencies = [
  "log",
  "mina-ipc",
  "nix 0.26.2",
+ "petgraph",
  "rand 0.8.5",
  "reqwest",
  "roxmltree",

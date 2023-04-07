@@ -4,17 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# system
 structopt = { version = "0.3.26" }
 env_logger = { version = "0.10.0" }
 anyhow = { version = "1.0" }
 signal-hook = { version = "0.3.15" }
 nix = { version = "0.26.2" }
 
+# utils
 log = { version = "0.4.17" }
 hex = { version = "0.4.3" }
 roxmltree = { version = "0.18.0" }
 time = { version = "0.3.20", features = ["parsing", "formatting"] }
 rand = { version = "0.8.5" }
+
+# graph
+petgraph = { version = "0.6.3" }
 
 # http
 serde = { version = "1.0" }

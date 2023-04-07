@@ -344,46 +344,65 @@ pub fn test_network_checksum(
 pub fn test_split(
     summary: &BTreeMap<IpAddr, Summary>,
 ) -> anyhow::Result<()> {
+    use petgraph::{prelude::DiGraph, algo, dot};
+
     let mut fail = false;
 
-    let mut dots_before = Vec::new();
-    let mut dots_after_split = Vec::new();
-    let mut dots_after_reunite = Vec::new();
-    for (ip, summary) in summary {
-        let r = summary.mock_split_report.as_ref().ok_or(anyhow::anyhow!("no report from {ip}"))?;
+    let mut before = DiGraph::new();
+    let mut before_ips = BTreeMap::new();
+
+    let mut after_split = DiGraph::new();
+    let mut after_split_ips = BTreeMap::new();
+
+    let mut after_reunite = DiGraph::new();
+    let mut after_reunite_ips = BTreeMap::new();
+
+    for (ip_a, summary) in summary {
+        let Some(r) = summary.mock_split_report.as_ref() else {
+            log::warn!("no report from {ip_a}");
+            continue;
+        };
+
+        let before_a = *before_ips.entry(*ip_a).or_insert_with(|| before.add_node(*ip_a));
+        let after_split_a = *after_split_ips.entry(*ip_a).or_insert_with(|| after_split.add_node(*ip_a));
+        let after_reunite_a = *after_reunite_ips.entry(*ip_a).or_insert_with(|| after_reunite.add_node(*ip_a));
+
         for peer in &r.before.0 {
-            dots_before.push((ip, peer.host.clone()));
+            let ip_b = peer.host.parse::<IpAddr>().unwrap();
+            let b = *before_ips.entry(ip_b).or_insert_with(|| before.add_node(ip_b));
+            before.add_edge(before_a, b, ());
         }
         for peer in &r.after_split.0 {
-            dots_after_split.push((ip, peer.host.clone()));
+            let ip_b = peer.host.parse::<IpAddr>().unwrap();
+            let b = *after_split_ips.entry(ip_b).or_insert_with(|| after_split.add_node(ip_b));
+            after_split.add_edge(after_split_a, b, ());
         }
         for peer in &r.after_reunite.0 {
-            dots_after_reunite.push((ip, peer.host.clone()));
+            let ip_b = peer.host.parse::<IpAddr>().unwrap();
+            let b = *after_reunite_ips.entry(ip_b).or_insert_with(|| after_reunite.add_node(ip_b));
+            after_reunite.add_edge(after_reunite_a, b, ());
         }
     }
 
-    println!("before:");
-    println!("digraph {{");
-    for (a, b) in dots_before {
-        println!("    \"{a}\" -> \"{b}\";");
-    }
-    println!("}}");
+    let config = [dot::Config::EdgeNoLabel];
 
-    println!("after split:");
-    println!("digraph {{");
-    for (a, b) in dots_after_split {
-        println!("    \"{a}\" -> \"{b}\";");
+    if algo::connected_components(&before) != 1 {
+        fail = true;
+        log::error!("network was not fully connected before the split");
     }
-    println!("}}");
+    println!("{:?}", dot::Dot::with_config(&before, &config));
 
-    println!("after reunite:");
-    println!("digraph {{");
-    for (a, b) in dots_after_reunite {
-        println!("    \"{a}\" -> \"{b}\";");
+    if algo::connected_components(&after_split) != 2 {
+        fail = true;
+        log::error!("network was not split");
     }
-    println!("}}");
+    println!("{:?}", dot::Dot::with_config(&after_split, &config));
 
-    let _ = &mut fail;
+    if algo::connected_components(&after_reunite) != 1 {
+        fail = true;
+        log::error!("network was not reunited");
+    }
+    println!("{:?}", dot::Dot::with_config(&after_reunite, &config));
 
     if fail {
         Err(anyhow::anyhow!("test failed"))
