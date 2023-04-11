@@ -30,11 +30,13 @@ RUN curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
 COPY . .
 RUN cargo install --path bpf-recorder bpf-recorder
 RUN cargo install --path mina-aggregator mina-aggregator
+RUN cargo install --path topology-tool topology-tool
 
 FROM ubuntu:20.04
 
 RUN apt-get update && apt-get install -y zlib1g libelf1 libgcc1 libssl-dev
 COPY --from=builder /root/.cargo/bin/bpf-recorder /usr/bin/bpf-recorder
 COPY --from=builder /root/.cargo/bin/mina-aggregator /usr/bin/mina-aggregator
+COPY --from=builder /root/.cargo/bin/topology-tool /usr/bin/topology-tool
 
 ENTRYPOINT ["/usr/bin/bpf-recorder"]

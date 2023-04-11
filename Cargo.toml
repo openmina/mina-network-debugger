@@ -7,4 +7,5 @@ members = [
     "tester",
     "mina-ipc",
     "simulator",
+    "topology-tool",
 ]

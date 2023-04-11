@@ -2916,6 +2916,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "topology-tool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "petgraph",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "structopt",
+ "time",
+]
+
+[[package]]
 name = "tower-service"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
