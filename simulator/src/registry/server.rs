@@ -61,8 +61,6 @@ fn routes(
     let split = warp::path!("split")
         .and(warp::filters::addr::remote())
         .and_then({
-            let split_context = split_context.clone();
-
             move |addr: Option<SocketAddr>| {
                 let split_context = split_context.clone();
                 async move {
@@ -74,7 +72,13 @@ fn routes(
                         ));
                     };
 
-                    let rx = split_context.lock().unwrap().request(nodes as usize, addr.ip());
+                    let rx = {
+                        let se = split_context.clone();
+                        let mut lock = split_context.lock().unwrap();
+                        let rx = lock.request(nodes as usize, addr.ip(), se);
+                        drop(lock);
+                        rx
+                    };
                     rx.await.unwrap_or_default();
 
                     Ok(reply::with_status(reply::json(&""), StatusCode::OK))

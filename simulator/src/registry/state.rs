@@ -1,6 +1,6 @@
 use std::{
     net::{SocketAddr, IpAddr},
-    collections::BTreeMap,
+    collections::BTreeMap, sync::{Arc, Mutex},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -13,7 +13,12 @@ pub struct SplitContext {
 }
 
 impl SplitContext {
-    pub fn request(&mut self, registered: usize, fr: IpAddr) -> oneshot::Receiver<()> {
+    pub fn reset(&mut self) {
+        self.thread = None;
+    }
+
+    // WARNING: reference to self is dangerous, this code is complicated, beware
+    pub fn request(&mut self, registered: usize, fr: IpAddr, se: Arc<Mutex<Self>>) -> oneshot::Receiver<()> {
         use tokio::time;
         use reqwest::blocking::ClientBuilder;
 
@@ -43,6 +48,8 @@ impl SplitContext {
                     tx.send(()).unwrap_or_default();
                 }
                 time::sleep(split_behavior::time::SHIFT).await;
+
+                se.lock().unwrap().reset();
 
                 for target in &keys {
                     let whitelist = if left.contains(target) {
