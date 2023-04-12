@@ -1090,15 +1090,28 @@ fn main() {
 
     impl Blocker {
         pub fn clear_whitelist(&mut self) {
-            for item in &self.co {
-                self.whitelist.remove(item).unwrap();
+            let fd = match self.whitelist.kind_mut() {
+                ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
+                _ => unreachable!(),
+            };
+
+            let key = std::ptr::null_mut();
+            let mut next_key = [0; 18];
+            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) } == 0 {
+                self.whitelist.remove(&next_key).unwrap();
             }
+
+            // for item in &self.co {
+            //     self.whitelist.remove(item).unwrap();
+            // }
             self.whitelist.insert([0; 18], [0, 0, 0, 1]).unwrap();
             self.co.clear();
             log::info!("firewall: whitelist disable");
         }
 
         pub fn set_whitelist(&mut self, addresses: Vec<SocketAddr>) {
+            self.clear_whitelist();
+
             self.whitelist.remove(&[0; 18]).unwrap();
             for addr in addresses {
                 let ip = match addr {
@@ -1114,8 +1127,8 @@ fn main() {
                 b[16..].clone_from_slice(&addr.port().to_be_bytes());
                 self.whitelist.insert(b, [0, 0, 0, 1]).unwrap();
                 self.co.insert(b);
-                log::info!("firewall: whitelist {addr}");
             }
+            log::info!("firewall: whitelist {:?}", self.co);
         }
     }
 

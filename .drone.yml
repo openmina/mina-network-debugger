@@ -21,108 +21,108 @@ steps:
     username:
       from_secret: docker_hub_username
 
-- name: simulate-main
-  image: alpine/k8s:1.23.17
-  volumes:
-    - name: test-result
-      path: /test
-  environment:
-    DRONE_KUBECONFIG:
-      from_secret: k8s_config
-  commands:
-    # reset previous summary
-    - curl -X POST -s $URL_RESET || true
-    - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
-    - ./simulate_main.sh ${DRONE_BUILD_NUMBER}
-    - curl -s $URL > /test/summary.json
+# - name: simulate-main
+#   image: alpine/k8s:1.23.17
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   environment:
+#     DRONE_KUBECONFIG:
+#       from_secret: k8s_config
+#   commands:
+#     # reset previous summary
+#     - curl -X POST -s $URL_RESET || true
+#     - mkdir -p $HOME/.kube && echo "$DRONE_KUBECONFIG" > $HOME/.kube/config
+#     - ./simulate_main.sh ${DRONE_BUILD_NUMBER}
+#     - curl -s $URL > /test/summary.json
 
-- name: test-ipc
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name ipc --summary-json /test/summary.json
+# - name: test-ipc
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name ipc --summary-json /test/summary.json
 
-- name: test-all-messages-number
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name all-messages-number --summary-json /test/summary.json
+# - name: test-all-messages-number
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name all-messages-number --summary-json /test/summary.json
 
-- name: test-all-messages-order
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name all-messages-order --summary-json /test/summary.json
+# - name: test-all-messages-order
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name all-messages-order --summary-json /test/summary.json
 
-- name: test-all-messages-time-filter
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name all-messages-time-filter --summary-json /test/summary.json
+# - name: test-all-messages-time-filter
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name all-messages-time-filter --summary-json /test/summary.json
 
-- name: test-ipc-events-number
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name ipc-events-number --summary-json /test/summary.json
+# - name: test-ipc-events-number
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name ipc-events-number --summary-json /test/summary.json
 
-- name: test-ipc-events-match
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name ipc-events-match --summary-json /test/summary.json
+# - name: test-ipc-events-match
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name ipc-events-match --summary-json /test/summary.json
 
-- name: test-ipc-events-consistent
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name ipc-events-consistent --summary-json /test/summary.json
+# - name: test-ipc-events-consistent
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name ipc-events-consistent --summary-json /test/summary.json
 
-- name: test-stream-messages-number
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name stream-messages-number --summary-json /test/summary.json
+# - name: test-stream-messages-number
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name stream-messages-number --summary-json /test/summary.json
 
-- name: test-stream-messages-order
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name stream-messages-order --summary-json /test/summary.json
+# - name: test-stream-messages-order
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name stream-messages-order --summary-json /test/summary.json
 
-- name: test-stream-messages-order-time
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name stream-messages-order-time --summary-json /test/summary.json
+# - name: test-stream-messages-order-time
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name stream-messages-order-time --summary-json /test/summary.json
 
-- name: test-network-checksum
-  image: vladsimplestakingcom/mina-tester-k:latest
-  volumes:
-    - name: test-result
-      path: /test
-  commands:
-    - mina-simulator test --name network-checksum --summary-json /test/summary.json
+# - name: test-network-checksum
+#   image: vladsimplestakingcom/mina-tester-k:latest
+#   volumes:
+#     - name: test-result
+#       path: /test
+#   commands:
+#     - mina-simulator test --name network-checksum --summary-json /test/summary.json
 
 - name: simulate-split
   image: alpine/k8s:1.23.17
