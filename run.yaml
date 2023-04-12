@@ -55,7 +55,7 @@ spec:
           args:
             - |
               sleep 10
-              curl https://raw.githubusercontent.com/MinaProtocol/mina/2884275/genesis_ledgers/berkeley.json -o /berkeley.json
+              curl https://raw.githubusercontent.com/MinaProtocol/mina/b1facec/genesis_ledgers/berkeley.json -o /berkeley.json
               mkdir -p /key
               chmod 700 /key
               mina libp2p generate-keypair --privkey-path /key/privkey

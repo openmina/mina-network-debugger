@@ -202,6 +202,13 @@ pub mod sniffer_event {
                 ret(SnifferEventVariant::GetSockOpt(data.to_vec()))
             } else if let DataTag::SnarkWorker = tag {
                 ret(SnifferEventVariant::NewSnarkWorkerApp)
+            } else if let DataTag::Debug = tag {
+                if data.len() == 4 {
+                    log::info!("DEBUG: line: {}", u32::from_ne_bytes(data.try_into().unwrap()));
+                } else {
+                    log::info!("DEBUG: hex: {}", hex::encode(data));
+                }
+                Ok(None)
             } else {
                 Ok(None)
             }

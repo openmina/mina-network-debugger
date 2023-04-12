@@ -901,41 +901,73 @@ impl App {
         };
         use ebpf::xdp::Action;
 
-        let packet_ptr = ctx.data as usize as *const u8;
+        // fn debug(app: &mut App, v: u32) {
+        //     let event = Event::new(0, 0, 0, 0);
+        //     let event = event.set_tag_fd(DataTag::Debug, 100);
+        //     let event = event.set_ok(4);
+        //     let data = 0u32.to_ne_bytes();
+        //     if let Ok(mut buffer) = app.event_queue.reserve(core::mem::size_of::<Event>() + 4) {
+        //         let p_buffer = buffer.as_mut().as_mut_ptr() as *mut Event;
+        //         unsafe {
+        //             core::ptr::write(p_buffer, event);
+        //             (p_buffer.add(1) as *mut [u8; 4]).write(data);
+        //         }
+    
+        //         buffer.submit();
+        //     }
+        // }
 
-        let ethhdr = unsafe { &*(packet_ptr as *const EthHdr) };
-
-        if packet_ptr as usize + EthHdr::LEN >= ctx.data_end as usize {
-            return Ok(Action::Aborted);
-        }
+        // debug(self, line!());
 
         // whitelist is wildcard
         if self.whitelist.get(&[0; 18]).is_some() {
+            // debug(self, line!());
             return Ok(Action::Pass);
         }
 
+        // debug(self, line!());
+
+        let packet_ptr = ctx.data as usize as *const u8;
+
+        let ethhdr = packet_ptr as *const EthHdr;
+
+        if ethhdr as usize + EthHdr::LEN >= ctx.data_end as usize {
+            // debug(self, line!());
+            return Ok(Action::Aborted);
+        }
+        let ethhdr = unsafe { &*(packet_ptr as *const EthHdr) };
+
+        // debug(self, line!());
+
         match ethhdr.ether_type {
             EtherType::Ipv4 => {
+                // debug(self, line!());
+
                 let ipv4hdr = unsafe { packet_ptr.add(EthHdr::LEN) } as *const Ipv4Hdr;
                 if ipv4hdr as usize + Ipv4Hdr::LEN >= ctx.data_end as usize {
+                    // debug(self, line!());
                     return Ok(Action::Aborted);
                 }
                 let ipv4hdr = unsafe { &*ipv4hdr };
 
                 let IpProto::Tcp = ipv4hdr.proto else {
+                    // debug(self, line!());
                     return Ok(Action::Pass)
                 };
 
                 let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv4Hdr::LEN) } as *const TcpHdr;
                 if tcphdr as usize + TcpHdr::LEN >= ctx.data_end as usize {
+                    // debug(self, line!());
                     return Ok(Action::Aborted);
                 }
                 let tcphdr = unsafe { &*tcphdr };
 
                 let dst_port = u16::from_be(tcphdr.dest);
                 if let 80 | 443 | 8000 | 3085 = dst_port {
+                    // debug(self, line!());
                     return Ok(Action::Pass);
                 }
+                // debug(self, line!());
 
                 let mut b = [0; 18];
                 b[10] = 0xff;
@@ -945,43 +977,58 @@ impl App {
                 b[12..16].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_le_bytes());
                 b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
                 if self.whitelist.get(&b).is_some() {
+                    // debug(self, line!());
                     return Ok(Action::Pass);
                 }
                 b[12..16].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_be_bytes());
                 b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
                 if self.whitelist.get(&b).is_some() {
+                    // debug(self, line!());
                     return Ok(Action::Pass);
                 }
+                // debug(self, line!());
 
                 Ok(Action::Drop)
             }
             EtherType::Ipv6 => {
+                // debug(self, line!());
+
                 let ipv6hdr = unsafe { packet_ptr.add(EthHdr::LEN) } as *const Ipv6Hdr;
                 if ipv6hdr as usize + Ipv6Hdr::LEN >= ctx.data_end as usize {
+                    // debug(self, line!());
+
                     return Ok(Action::Aborted);
                 }
                 let ipv6hdr = unsafe { &*ipv6hdr };
 
                 let IpProto::Tcp = ipv6hdr.next_hdr else {
+                    // debug(self, line!());
+
                     return Ok(Action::Pass)
                 };
 
                 let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv6Hdr::LEN) } as *const TcpHdr;
                 if tcphdr as usize + TcpHdr::LEN >= ctx.data_end as usize {
+                    // debug(self, line!());
+
                     return Ok(Action::Aborted);
                 }
                 let tcphdr = unsafe { &*tcphdr };
 
                 let dst_port = u16::from_be(tcphdr.dest);
                 if let 80 | 443 | 8000 | 3085 = dst_port {
+                    // debug(self, line!());
+
                     return Ok(Action::Pass);
                 }
+                // debug(self, line!());
 
                 let mut b = [0; 18];
                 let ip = unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 };
                 b[..16].clone_from_slice(&ip);
                 b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
                 if self.whitelist.get(&b).is_some() {
+                    // debug(self, line!());
                     return Ok(Action::Pass);
                 }
 
