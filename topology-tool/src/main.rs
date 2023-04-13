@@ -23,6 +23,8 @@ struct Args {
     prods: u16,
     #[structopt(long)]
     prod0s: u16,
+    #[structopt(long)]
+    seeds: u16,
     #[structopt(subcommand)]
     command: Command,
 }
@@ -74,6 +76,17 @@ struct NodeInfo {
     peers: Vec<IpAddr>,
 }
 
+impl NodeInfo {
+    pub fn left(&self) -> bool {
+        self.name.bytes().last().unwrap_or_default() % 2 == 0
+    }
+}
+
+// fn parse_trailing_digits(s: &str) -> usize {
+//     let b = s.bytes().rev().take_while(|x| x.is_ascii_digit()).collect::<Vec<_>>();
+//     b.into_iter().rev().fold(0, |acc, n| acc * 10 + ((n - b'0') as usize))
+// }
+
 fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
     fn debugger_firewall_enable_url(url: &str, name: &str) -> Url {
         format!("{url}/{name}/bpf-debugger/firewall/whitelist/enable")
@@ -81,24 +94,33 @@ fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
             .unwrap()
     }
 
-    let ports = [10909];
+    let ports = [10909, 10001];
 
-    let len = graph.len();
     let left = graph
         .iter()
-        .take(len / 2)
-        .map(|x| ports.into_iter().map(|port| SocketAddr::new(x.ip, port)))
+        .filter_map(|x| {
+            if x.left() {
+                Some(ports.into_iter().map(|port| SocketAddr::new(x.ip, port)))
+            } else {
+                None
+            }
+        })
         .flatten()
         .collect::<Vec<_>>();
     let right = graph
         .iter()
-        .skip(len / 2)
-        .map(|x| ports.into_iter().map(|port| SocketAddr::new(x.ip, port)))
+        .filter_map(|x| {
+            if !x.left() {
+                Some(ports.into_iter().map(|port| SocketAddr::new(x.ip, port)))
+            } else {
+                None
+            }
+        })
         .flatten()
         .collect::<Vec<_>>();
 
     for node in graph {
-        let whitelist = if left.iter().find(|x| x.ip() == node.ip).is_some() {
+        let whitelist = if node.left() {
             &left
         } else {
             &right
@@ -234,6 +256,7 @@ fn main() -> anyhow::Result<()> {
         prods,
         prod0s,
         command,
+        seeds,
     } = Args::from_args();
     let client = ClientBuilder::new()
         .timeout(Duration::from_secs(10))
@@ -241,14 +264,15 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
 
     let nodes_names = (0..nodes).map(|i| format!("node{}", i + 1));
-    let snarkers_names = (0..snarkers).map(|i| format!("snarker00{}", i + 1));
+    let snarkers_names = (0..snarkers).map(|i| format!("snarker{:03}", i + 1));
     let prods_names = (1..prods).map(|i| format!("prod{}", i + 1));
     let prod0s_names = (0..prod0s).map(|i| format!("prod0{}", i + 1));
+    let seeds_names = (0..seeds).map(|i| format!("seed{}", i + 1));
     let names = nodes_names
         .chain(snarkers_names)
         .chain(prods_names)
         .chain(prod0s_names)
-        .chain(std::iter::once("seed1".to_owned()));
+        .chain(seeds_names);
 
     let graph = names
         .filter_map(|name| match query_peer(&client, &url, &name) {
