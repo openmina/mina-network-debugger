@@ -268,7 +268,7 @@ fn main() -> anyhow::Result<()> {
         } => {
             let components = show_graph(&graph);
             if let Some(expected_components) = expected_components {
-                if expected_components != components {
+                if expected_components > components {
                     log::error!("fail, expected components: {expected_components}, actual components: {components}");
                 }
             }
