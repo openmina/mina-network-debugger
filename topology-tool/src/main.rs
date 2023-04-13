@@ -12,8 +12,9 @@ use structopt::StructOpt;
 
 #[derive(StructOpt)]
 struct Args {
+    // http://1.k8.openmina.com:31366
     #[structopt(long)]
-    port: u16,
+    url: String,
     #[structopt(long)]
     nodes: u16,
     #[structopt(long)]
@@ -73,9 +74,9 @@ struct NodeInfo {
     peers: Vec<IpAddr>,
 }
 
-fn enable_firewall(client: &Client, port: u16, graph: &[NodeInfo]) {
-    fn debugger_firewall_enable_url(port: u16, name: &str) -> Url {
-        format!("http://1.k8.openmina.com:{port}/{name}/bpf-debugger/firewall/whitelist/enable")
+fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
+    fn debugger_firewall_enable_url(url: &str, name: &str) -> Url {
+        format!("{url}/{name}/bpf-debugger/firewall/whitelist/enable")
             .parse()
             .unwrap()
     }
@@ -104,7 +105,7 @@ fn enable_firewall(client: &Client, port: u16, graph: &[NodeInfo]) {
         };
         log::info!("{whitelist:?}");
         let whitelist = serde_json::to_string(whitelist).unwrap();
-        let url = debugger_firewall_enable_url(port, &node.name);
+        let url = debugger_firewall_enable_url(&url, &node.name);
         match client
             .post(url.clone())
             .header("content-type", "application/json")
@@ -117,15 +118,15 @@ fn enable_firewall(client: &Client, port: u16, graph: &[NodeInfo]) {
     }
 }
 
-fn disable_firewall(client: &Client, port: u16, graph: &[NodeInfo]) {
-    fn debugger_firewall_disable_url(port: u16, name: &str) -> Url {
-        format!("http://1.k8.openmina.com:{port}/{name}/bpf-debugger/firewall/whitelist/disable")
+fn disable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
+    fn debugger_firewall_disable_url(url: &str, name: &str) -> Url {
+        format!("{url}/{name}/bpf-debugger/firewall/whitelist/disable")
             .parse()
             .unwrap()
     }
 
     for node in graph {
-        let url = debugger_firewall_disable_url(port, &node.name);
+        let url = debugger_firewall_disable_url(&url, &node.name);
         match client.post(url.clone()).send() {
             Ok(response) => log::info!("{url}: {}", response.status()),
             Err(err) => log::error!("{url}: {err}"),
@@ -133,15 +134,15 @@ fn disable_firewall(client: &Client, port: u16, graph: &[NodeInfo]) {
     }
 }
 
-fn query_peer(client: &Client, port: u16, name: &str) -> anyhow::Result<NodeInfo> {
-    fn graphql_url(port: u16, name: &str) -> Url {
-        format!("http://1.k8.openmina.com:{port}/{name}/graphql")
+fn query_peer(client: &Client, url: &str, name: &str) -> anyhow::Result<NodeInfo> {
+    fn graphql_url(url: &str, name: &str) -> Url {
+        format!("{url}/{name}/graphql")
             .parse()
             .unwrap()
     }
 
     let response = client
-        .post(graphql_url(port, &name))
+        .post(graphql_url(url, &name))
         .body(r#"{"query":"query MyQuery { daemonStatus { addrsAndPorts { externalIp } } }"}"#)
         .header("content-type", "application/json")
         .send()?
@@ -153,7 +154,7 @@ fn query_peer(client: &Client, port: u16, name: &str) -> anyhow::Result<NodeInfo
     };
 
     let response = client
-        .post(graphql_url(port, &name))
+        .post(graphql_url(url, &name))
         .body(r#"{"query":"query MyQuery { getPeers { host } }"}"#)
         .header("content-type", "application/json")
         .send()?
@@ -227,7 +228,7 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let Args {
-        port,
+        url,
         nodes,
         snarkers,
         prods,
@@ -240,7 +241,7 @@ fn main() -> anyhow::Result<()> {
         .unwrap();
 
     let nodes_names = (0..nodes).map(|i| format!("node{}", i + 1));
-    let snarkers_names = (0..snarkers).map(|i| format!("snarker{}", i + 1));
+    let snarkers_names = (0..snarkers).map(|i| format!("snarker00{}", i + 1));
     let prods_names = (1..prods).map(|i| format!("prod{}", i + 1));
     let prod0s_names = (0..prod0s).map(|i| format!("prod0{}", i + 1));
     let names = nodes_names
@@ -250,7 +251,7 @@ fn main() -> anyhow::Result<()> {
         .chain(std::iter::once("seed1".to_owned()));
 
     let graph = names
-        .filter_map(|name| match query_peer(&client, port, &name) {
+        .filter_map(|name| match query_peer(&client, &url, &name) {
             Ok(v) => Some(v),
             Err(err) => {
                 log::error!("name {name}, error: {err}");
@@ -260,8 +261,8 @@ fn main() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     match command {
-        Command::EnableFirewall => enable_firewall(&client, port, &graph),
-        Command::DisableFirewall => disable_firewall(&client, port, &graph),
+        Command::EnableFirewall => enable_firewall(&client, url, &graph),
+        Command::DisableFirewall => disable_firewall(&client, url, &graph),
         Command::ShowGraph {
             expected_components,
         } => {
