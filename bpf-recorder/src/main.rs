@@ -972,14 +972,6 @@ impl App {
                 let mut b = [0; 18];
                 b[10] = 0xff;
                 b[11] = 0xff;
-                // This is not typo, ip to little endian, port to big endian
-                // and next time both ip and port to big endian
-                b[12..16].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_le_bytes());
-                b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
-                if self.whitelist.get(&b).is_some() {
-                    // debug(self, line!());
-                    return Ok(Action::Pass);
-                }
                 b[12..16].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_be_bytes());
                 b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
                 if self.whitelist.get(&b).is_some() {
