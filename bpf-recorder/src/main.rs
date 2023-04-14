@@ -53,8 +53,12 @@ pub struct App {
     // 0x4000 simultaneous connections maximum
     #[hashmap(size = 0x4000)]
     pub connections: ebpf::HashMapRef<8, 4>,
+    // the whitelist is only applied to TCP packets
+    // whose src or dst port is listed in `whitelist_ports`
     #[hashmap(size = 0x4000)]
-    pub whitelist: ebpf::HashMapRef<18, 4>,
+    pub whitelist: ebpf::HashMapRef<16, 4>,
+    #[hashmap(size = 0x100)]
+    pub whitelist_ports: ebpf::HashMapRef<2, 4>,
     #[prog("tracepoint/syscalls/sys_enter_write")]
     pub enter_write: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_exit_write")]
@@ -919,8 +923,8 @@ impl App {
 
         // debug(self, line!());
 
-        // whitelist is wildcard
-        if self.whitelist.get(&[0; 18]).is_some() {
+        // whitelist is disabled
+        if self.whitelist.get(&[0; 16]).is_some() {
             // debug(self, line!());
             return Ok(Action::Pass);
         }
@@ -950,6 +954,7 @@ impl App {
                 }
                 let ipv4hdr = unsafe { &*ipv4hdr };
 
+                // do not block non TCP packets
                 let IpProto::Tcp = ipv4hdr.proto else {
                     // debug(self, line!());
                     return Ok(Action::Pass)
@@ -962,18 +967,21 @@ impl App {
                 }
                 let tcphdr = unsafe { &*tcphdr };
 
+                let src_port = u16::from_be(tcphdr.source);
                 let dst_port = u16::from_be(tcphdr.dest);
-                if let 80 | 443 | 8000 | 3085 = dst_port {
-                    // debug(self, line!());
+
+                // do not block such packet
+                if self.whitelist_ports.get(&src_port.to_be_bytes()).is_none() &&
+                    self.whitelist_ports.get(&dst_port.to_be_bytes()).is_none()
+                {
                     return Ok(Action::Pass);
                 }
                 // debug(self, line!());
 
-                let mut b = [0; 18];
+                let mut b = [0; 16];
                 b[10] = 0xff;
                 b[11] = 0xff;
-                b[12..16].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_be_bytes());
-                b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
+                b[12..].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_be_bytes());
                 if self.whitelist.get(&b).is_some() {
                     // debug(self, line!());
                     return Ok(Action::Pass);
@@ -993,6 +1001,7 @@ impl App {
                 }
                 let ipv6hdr = unsafe { &*ipv6hdr };
 
+                // do not block non TCP packets
                 let IpProto::Tcp = ipv6hdr.next_hdr else {
                     // debug(self, line!());
 
@@ -1007,19 +1016,18 @@ impl App {
                 }
                 let tcphdr = unsafe { &*tcphdr };
 
+                let src_port = u16::from_be(tcphdr.source);
                 let dst_port = u16::from_be(tcphdr.dest);
-                if let 80 | 443 | 8000 | 3085 = dst_port {
-                    // debug(self, line!());
-
+                // do not block such packet
+                if self.whitelist_ports.get(&src_port.to_be_bytes()).is_none() &&
+                    self.whitelist_ports.get(&dst_port.to_be_bytes()).is_none()
+                {
                     return Ok(Action::Pass);
                 }
                 // debug(self, line!());
 
-                let mut b = [0; 18];
                 let ip = unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 };
-                b[..16].clone_from_slice(&ip);
-                b[16..18].clone_from_slice(&u16::from_be(tcphdr.source).to_be_bytes());
-                if self.whitelist.get(&b).is_some() {
+                if self.whitelist.get(&ip).is_some() {
                     // debug(self, line!());
                     return Ok(Action::Pass);
                 }
@@ -1041,7 +1049,7 @@ fn main() {
         },
         time::{SystemTime, Duration},
         env, thread,
-        path::PathBuf, net::SocketAddr,
+        path::PathBuf, net::IpAddr,
     };
 
     use bpf_recorder::{
@@ -1052,7 +1060,7 @@ fn main() {
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
         EventMetadata, ConnectionInfo, server, P2pRecorder, libp2p_helper::CapnpReader,
-        SnarkWorkerState,
+        SnarkWorkerState, firewall::{FirewallCommand, EnableWhitelist},
     };
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
@@ -1123,8 +1131,8 @@ fn main() {
     }
 
     struct Blocker {
-        whitelist: ebpf::HashMapRef<18, 4>,
-        co: BTreeSet<[u8; 18]>,
+        whitelist: ebpf::HashMapRef<16, 4>,
+        whitelist_ports: ebpf::HashMapRef<2, 4>,
     }
 
     impl Blocker {
@@ -1134,40 +1142,50 @@ fn main() {
                 _ => unreachable!(),
             };
 
-            let key = std::ptr::null_mut();
-            let mut next_key = [0; 18];
+            // remove all entries
+            let mut key = std::ptr::null();
+            let mut next_key = [0; 16];
             while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) } == 0 {
                 self.whitelist.remove(&next_key).unwrap();
+                key = &next_key as *const _ as _;
             }
 
-            // for item in &self.co {
-            //     self.whitelist.remove(item).unwrap();
-            // }
-            self.whitelist.insert([0; 18], [0, 0, 0, 1]).unwrap();
-            self.co.clear();
+            let fd = match self.whitelist_ports.kind_mut() {
+                ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
+                _ => unreachable!(),
+            };
+
+            // remove all entries
+            let mut key = std::ptr::null();
+            let mut next_key = [0; 2];
+            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) } == 0 {
+                self.whitelist_ports.remove(&next_key).unwrap();
+                key = &next_key as *const _ as _;
+            }
+
+            // insert mark that whitelist is disabled
+            self.whitelist.insert([0; 16], [0, 0, 0, 1]).unwrap();
+
             log::info!("firewall: whitelist disable");
         }
 
-        pub fn set_whitelist(&mut self, addresses: Vec<SocketAddr>) {
+        pub fn set_whitelist(&mut self, EnableWhitelist { ips, ports }: EnableWhitelist) {
             self.clear_whitelist();
 
-            self.whitelist.remove(&[0; 18]).unwrap();
-            for addr in addresses {
-                let ip = match addr {
-                    SocketAddr::V4(v) => {
-                        v.ip().to_ipv6_mapped().octets()
-                    }
-                    SocketAddr::V6(v) => {
-                        v.ip().octets()
-                    }
+            // remove mark that whitelist is disabled
+            self.whitelist.remove(&[0; 16]).unwrap_or_default();
+
+            for &addr in &ips {
+                let ipv6 = match addr {
+                    IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                    IpAddr::V6(ip) => ip,
                 };
-                let mut b = [0; 18];
-                b[..16].clone_from_slice(&ip);
-                b[16..].clone_from_slice(&addr.port().to_be_bytes());
-                self.whitelist.insert(b, [0, 0, 0, 1]).unwrap();
-                self.co.insert(b);
+                self.whitelist.insert(ipv6.octets(), [0, 0, 0, 1]).unwrap();
             }
-            log::info!("firewall: whitelist {:?}", self.co);
+            for &port in &ports {
+                self.whitelist_ports.insert(port.to_be_bytes(), [0, 0, 0, 1]).unwrap();
+            }
+            log::info!("firewall: whitelist {ips:?}, ports: {ports:?}");
         }
     }
 
@@ -1183,7 +1201,7 @@ fn main() {
                 .load()
                 .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
 
-            skeleton.app.whitelist.insert([0; 18], [0, 0, 0, 1]).unwrap();
+            skeleton.app.whitelist.insert([0; 16], [0, 0, 0, 1]).unwrap();
 
             interface.push('\0');
             let if_index = unsafe { libc::if_nametoindex(interface.as_ptr() as _) };
@@ -1216,6 +1234,7 @@ fn main() {
                 }
             };
             let whitelist = app.whitelist.clone();
+            let whitelist_ports = app.whitelist_ports.clone();
 
             (
                 Source {
@@ -1226,7 +1245,7 @@ fn main() {
                 },
                 Blocker {
                     whitelist,
-                    co: BTreeSet::new(),
+                    whitelist_ports,
                 },
             )
         }
@@ -1261,11 +1280,8 @@ fn main() {
             while let Ok(cmd) = rx.recv() {
                 match cmd {
                     None => break,
-                    Some(addresses) => if addresses.is_empty() {
-                        blocker.clear_whitelist();
-                    } else {
-                        blocker.set_whitelist(addresses);
-                    },
+                    Some(FirewallCommand::DisableWhitelist) => blocker.clear_whitelist(),
+                    Some(FirewallCommand::EnableWhitelist(x)) => blocker.set_whitelist(x),
                 }
             }
             log::info!("firewall: terminate thread");

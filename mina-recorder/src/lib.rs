@@ -55,3 +55,5 @@ pub mod libp2p_helper;
 pub mod libp2p_ipc_capnp {
     include!(concat!(env!("OUT_DIR"), "/libp2p_ipc_capnp.rs"));
 }
+
+pub mod firewall;

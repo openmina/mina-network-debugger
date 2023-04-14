@@ -1,13 +1,13 @@
 use std::{
     time::Duration,
-    net::{IpAddr, SocketAddr},
+    net::IpAddr,
 };
 
 use reqwest::{
     Url,
     blocking::{ClientBuilder, Client},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -94,39 +94,46 @@ fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
             .unwrap()
     }
 
+    #[derive(Serialize, Debug)]
+    pub struct EnableWhitelist {
+        pub ips: Vec<IpAddr>,
+        pub ports: Vec<u16>,
+    }
+
     let ports = [10909, 10001];
 
     let left = graph
         .iter()
         .filter_map(|x| {
             if x.left() {
-                Some(ports.into_iter().map(|port| SocketAddr::new(x.ip, port)))
+                Some(x.ip)
             } else {
                 None
             }
         })
-        .flatten()
         .collect::<Vec<_>>();
     let right = graph
         .iter()
         .filter_map(|x| {
             if !x.left() {
-                Some(ports.into_iter().map(|port| SocketAddr::new(x.ip, port)))
+                Some(x.ip)
             } else {
                 None
             }
         })
-        .flatten()
         .collect::<Vec<_>>();
 
     for node in graph {
-        let whitelist = if node.left() {
-            &left
-        } else {
-            &right
+        let whitelist = EnableWhitelist {
+            ips: if node.left() {
+                left.clone()
+            } else {
+                right.clone()
+            },
+            ports: ports.to_vec(),
         };
         log::info!("{whitelist:?}");
-        let whitelist = serde_json::to_string(whitelist).unwrap();
+        let whitelist = serde_json::to_string(&whitelist).unwrap();
         let url = debugger_firewall_enable_url(&url, &node.name);
         match client
             .post(url.clone())

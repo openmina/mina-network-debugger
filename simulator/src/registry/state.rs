@@ -2,6 +2,7 @@ use std::{
     net::{SocketAddr, IpAddr},
     collections::BTreeMap, sync::{Arc, Mutex},
 };
+use serde::Serialize;
 use tokio::sync::{mpsc, oneshot};
 
 use super::messages::{Registered, Summary, PeerInfo, NetReport, MockReport, DebuggerReport, MockSplitReport};
@@ -10,6 +11,12 @@ use crate::{libp2p_helper::Process, peer::split_behavior};
 #[derive(Default)]
 pub struct SplitContext {
     thread: Option<mpsc::UnboundedSender<(IpAddr, oneshot::Sender<()>)>>,
+}
+
+#[derive(Serialize)]
+pub struct EnableWhitelist {
+    pub ips: Vec<IpAddr>,
+    pub ports: Vec<u16>,
 }
 
 impl SplitContext {
@@ -31,7 +38,7 @@ impl SplitContext {
                 loop {
                     match time::timeout(split_behavior::time::WAIT_TIMEOUT, trx.recv()).await {
                         Ok(Some((addr, tx))) => {
-                            requested.insert(SocketAddr::new(addr, split_behavior::PEER_PORT), tx);
+                            requested.insert(addr, tx);
                             if requested.len() == registered {
                                 break;
                             }
@@ -52,12 +59,15 @@ impl SplitContext {
                 se.lock().unwrap().reset();
 
                 for target in &keys {
-                    let whitelist = if left.contains(target) {
-                        &left
-                    } else {
-                        &right
+                    let whitelist = EnableWhitelist {
+                        ips: if left.contains(target) {
+                            left.clone()
+                        } else {
+                            right.clone()
+                        },
+                        ports: vec![split_behavior::PEER_PORT],
                     };
-                    let url = format!("http://{}:8000/firewall/whitelist/enable", target.ip());
+                    let url = format!("http://{}:8000/firewall/whitelist/enable", target);
                     let whitelist = serde_json::to_string(&whitelist).unwrap();
                     log::info!("POST {url}, body: {whitelist}");
                     match client.post(url).body(whitelist).send() {
@@ -67,7 +77,7 @@ impl SplitContext {
                 }
                 time::sleep(split_behavior::time::SPLIT).await;
                 for target in &keys {
-                    let url = format!("http://{}:8000/firewall/whitelist/disable", target.ip());
+                    let url = format!("http://{}:8000/firewall/whitelist/disable", target);
                     log::info!("POST {url}");
                     match client.post(url).send() {
                         Ok(response) => log::info!("{}", response.status()),

@@ -1,4 +1,4 @@
-use std::{thread, path::Path, sync::mpsc, net::SocketAddr};
+use std::{thread, path::Path, sync::mpsc};
 
 use warp::{
     Filter, Rejection, Reply,
@@ -6,7 +6,7 @@ use warp::{
     http::StatusCode,
 };
 
-use crate::meshsub_stats::BlockStat;
+use crate::{meshsub_stats::BlockStat, firewall::FirewallCommand};
 
 use super::database::{DbCore, DbFacade, Params};
 
@@ -266,32 +266,24 @@ fn libp2p_ipc_latest(
 }
 
 fn firewall_whitelist_set(
-    tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
+    tx: mpsc::SyncSender<Option<FirewallCommand>>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("firewall" / "whitelist" / "enable")
         .and(warp::body::json())
         .and(warp::post())
-        .map(move |addresses: Vec<String>| -> WithStatus<Json> {
-            let mut a = vec![];
-            for addr in addresses {
-                let Ok(addr) = addr.parse() else {
-                    return reply::with_status(reply::json(&format!("cannot parse address {addr}")), StatusCode::INTERNAL_SERVER_ERROR);
-                };
-                a.push(addr);
-            }
-
-            tx.send(Some(a)).unwrap_or_default();
+        .map(move |enable_whitelist| -> WithStatus<Json> {
+            tx.send(Some(FirewallCommand::EnableWhitelist(enable_whitelist))).unwrap_or_default();
             reply::with_status(reply::json(&()), StatusCode::OK)
         })
 }
 
 fn firewall_whitelist_clear(
-    tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
+    tx: mpsc::SyncSender<Option<FirewallCommand>>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("firewall" / "whitelist" / "disable")
         .and(warp::post())
         .map(move || -> WithStatus<Json> {
-            tx.send(Some(vec![])).unwrap_or_default();
+            tx.send(Some(FirewallCommand::DisableWhitelist)).unwrap_or_default();
             reply::with_status(reply::json(&()), StatusCode::OK)
         })
 }
@@ -319,7 +311,7 @@ fn openapi(
 
 fn routes(
     db: DbCore,
-    tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
+    tx: mpsc::SyncSender<Option<FirewallCommand>>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
 
@@ -385,7 +377,7 @@ fn routes(
 pub fn spawn<P, Q, R>(
     port: u16,
     path: P,
-    blocker_tx: mpsc::SyncSender<Option<Vec<SocketAddr>>>,
+    blocker_tx: mpsc::SyncSender<Option<FirewallCommand>>,
     key_path: Option<Q>,
     cert_path: Option<R>,
 ) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
