@@ -1205,7 +1205,9 @@ fn main() {
 
             interface.push('\0');
             let if_index = unsafe { libc::if_nametoindex(interface.as_ptr() as _) };
-            skeleton.attach_xdp("disable_connections", if_index as i32).unwrap();
+
+            const XDP_FLAGS_SKB_MODE: u32 = 1 << 1;
+            skeleton.attach_xdp("disable_connections", if_index as i32, XDP_FLAGS_SKB_MODE).unwrap();
 
             let (skeleton, mut app) = skeleton
                 .attach()
