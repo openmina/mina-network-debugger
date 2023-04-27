@@ -59,6 +59,9 @@ pub struct App {
     pub whitelist: ebpf::HashMapRef<16, 4>,
     #[hashmap(size = 0x100)]
     pub whitelist_ports: ebpf::HashMapRef<2, 4>,
+    // (src_ip, src_port, dst_ip, dst_port) -> (packets_count, bytes_count)
+    #[hashmap(size = 0x4000)]
+    pub blocked: ebpf::HashMapRef<36, 8>,
     #[prog("tracepoint/syscalls/sys_enter_write")]
     pub enter_write: ebpf::ProgRef,
     #[prog("tracepoint/syscalls/sys_exit_write")]
@@ -434,7 +437,8 @@ impl App {
         use ebpf::helpers;
 
         if snark_worker {
-            self.check_pid().or_else(|_| self.check_pid_snark_worker())?;
+            self.check_pid()
+                .or_else(|_| self.check_pid_snark_worker())?;
         } else {
             self.check_pid()?;
         }
@@ -492,7 +496,13 @@ impl App {
     }
 
     #[inline(never)]
-    fn on_ret_snark_worker(&mut self, ret: i64, data: context::Variant, ts0: u64, ts1: u64) -> Result<(), i32> {
+    fn on_ret_snark_worker(
+        &mut self,
+        ret: i64,
+        data: context::Variant,
+        ts0: u64,
+        ts1: u64,
+    ) -> Result<(), i32> {
         use ebpf::helpers;
 
         let (pid, tid) = {
@@ -719,11 +729,14 @@ impl App {
 
     #[inline(always)]
     pub fn enter_bind(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(false, context::Variant::Bind {
-            fd: ctx.read_here::<u64>(0x10) as u32,
-            addr_ptr: ctx.read_here::<u64>(0x18),
-            addr_len: ctx.read_here::<u64>(0x20),
-        })
+        self.enter(
+            false,
+            context::Variant::Bind {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                addr_ptr: ctx.read_here::<u64>(0x18),
+                addr_len: ctx.read_here::<u64>(0x20),
+            },
+        )
     }
 
     #[inline(always)]
@@ -733,11 +746,14 @@ impl App {
 
     #[inline(always)]
     pub fn enter_connect(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(false, context::Variant::Connect {
-            fd: ctx.read_here::<u64>(0x10) as u32,
-            addr_ptr: ctx.read_here::<u64>(0x18),
-            addr_len: ctx.read_here::<u64>(0x20),
-        })
+        self.enter(
+            false,
+            context::Variant::Connect {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                addr_ptr: ctx.read_here::<u64>(0x18),
+                addr_len: ctx.read_here::<u64>(0x20),
+            },
+        )
     }
 
     #[inline(always)]
@@ -750,17 +766,23 @@ impl App {
         let level = ctx.read_here::<u64>(0x18);
         let opt = ctx.read_here::<u64>(0x20);
         if level == 1 && opt == 4 {
-            self.enter(false, context::Variant::GetSockOptL1O4 {
-                fd: ctx.read_here::<u64>(0x10) as u32,
-                val_ptr: ctx.read_here::<u64>(0x28),
-                len_ptr: ctx.read_here::<u64>(0x30),
-            })
+            self.enter(
+                false,
+                context::Variant::GetSockOptL1O4 {
+                    fd: ctx.read_here::<u64>(0x10) as u32,
+                    val_ptr: ctx.read_here::<u64>(0x28),
+                    len_ptr: ctx.read_here::<u64>(0x30),
+                },
+            )
         } else {
-            self.enter(false, context::Variant::GetSockOptIrrelevant {
-                fd: ctx.read_here::<u64>(0x10) as u32,
-                val_ptr: ctx.read_here::<u64>(0x28),
-                len_ptr: ctx.read_here::<u64>(0x30),
-            })
+            self.enter(
+                false,
+                context::Variant::GetSockOptIrrelevant {
+                    fd: ctx.read_here::<u64>(0x10) as u32,
+                    val_ptr: ctx.read_here::<u64>(0x28),
+                    len_ptr: ctx.read_here::<u64>(0x30),
+                },
+            )
         }
     }
 
@@ -771,11 +793,14 @@ impl App {
 
     #[inline(always)]
     pub fn enter_accept4(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(false, context::Variant::Accept {
-            listen_on_fd: ctx.read_here::<u64>(0x10) as u32,
-            addr_ptr: ctx.read_here::<u64>(0x18),
-            addr_len_ptr: ctx.read_here::<u64>(0x20),
-        })
+        self.enter(
+            false,
+            context::Variant::Accept {
+                listen_on_fd: ctx.read_here::<u64>(0x10) as u32,
+                addr_ptr: ctx.read_here::<u64>(0x18),
+                addr_len_ptr: ctx.read_here::<u64>(0x20),
+            },
+        )
     }
 
     #[inline(always)]
@@ -819,11 +844,14 @@ impl App {
 
     #[inline(always)]
     pub fn enter_write(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(true, context::Variant::Write {
-            fd: ctx.read_here::<u64>(0x10) as u32,
-            data_ptr: ctx.read_here::<u64>(0x18),
-            _pad: 0,
-        })
+        self.enter(
+            true,
+            context::Variant::Write {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                data_ptr: ctx.read_here::<u64>(0x18),
+                _pad: 0,
+            },
+        )
     }
 
     #[inline(always)]
@@ -833,11 +861,14 @@ impl App {
 
     #[inline(always)]
     pub fn enter_read(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(true, context::Variant::Read {
-            fd: ctx.read_here::<u64>(0x10) as u32,
-            data_ptr: ctx.read_here::<u64>(0x18),
-            _pad: 0,
-        })
+        self.enter(
+            true,
+            context::Variant::Read {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                data_ptr: ctx.read_here::<u64>(0x18),
+                _pad: 0,
+            },
+        )
     }
 
     #[inline(always)]
@@ -847,11 +878,14 @@ impl App {
 
     #[inline(always)]
     pub fn enter_sendto(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(false, context::Variant::Send {
-            fd: ctx.read_here::<u64>(0x10) as u32,
-            data_ptr: ctx.read_here::<u64>(0x18),
-            _pad: 0,
-        })
+        self.enter(
+            false,
+            context::Variant::Send {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                data_ptr: ctx.read_here::<u64>(0x18),
+                _pad: 0,
+            },
+        )
     }
 
     #[inline(always)]
@@ -861,11 +895,14 @@ impl App {
 
     #[inline(always)]
     pub fn enter_recvfrom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
-        self.enter(false, context::Variant::Recv {
-            fd: ctx.read_here::<u64>(0x10) as u32,
-            data_ptr: ctx.read_here::<u64>(0x18),
-            _pad: 0,
-        })
+        self.enter(
+            false,
+            context::Variant::Recv {
+                fd: ctx.read_here::<u64>(0x10) as u32,
+                data_ptr: ctx.read_here::<u64>(0x18),
+                _pad: 0,
+            },
+        )
     }
 
     #[inline(always)]
@@ -876,11 +913,14 @@ impl App {
     #[inline(always)]
     pub fn enter_getrandom(&mut self, ctx: ebpf::Context) -> Result<(), i32> {
         let len = ctx.read_here::<u64>(0x18);
-        self.enter(false, context::Variant::GetRandom {
-            _fd: 0,
-            data_ptr: ctx.read_here::<u64>(0x10),
-            data_len: len,
-        })
+        self.enter(
+            false,
+            context::Variant::GetRandom {
+                _fd: 0,
+                data_ptr: ctx.read_here::<u64>(0x10),
+                data_len: len,
+            },
+        )
     }
 
     #[inline(always)]
@@ -894,10 +934,7 @@ impl App {
     }
 
     #[inline(always)]
-    fn disable_connections(
-        &mut self,
-        ctx: ebpf::xdp::Context,
-    ) -> Result<ebpf::xdp::Action, i32> {
+    fn disable_connections(&mut self, ctx: ebpf::xdp::Context) -> Result<ebpf::xdp::Action, i32> {
         use network_types::{
             eth::{EthHdr, EtherType},
             ip::{Ipv4Hdr, Ipv6Hdr, IpProto},
@@ -916,102 +953,113 @@ impl App {
         //             core::ptr::write(p_buffer, event);
         //             (p_buffer.add(1) as *mut [u8; 4]).write(data);
         //         }
-    
+
         //         buffer.submit();
         //     }
         // }
 
-        // debug(self, line!());
-
         // whitelist is disabled
         if self.whitelist.get(&[0; 16]).is_some() {
-            // debug(self, line!());
             return Ok(Action::Pass);
         }
-
-        // debug(self, line!());
 
         let packet_ptr = ctx.data as usize as *const u8;
 
         let ethhdr = packet_ptr as *const EthHdr;
 
         if ethhdr as usize + EthHdr::LEN >= ctx.data_end as usize {
-            // debug(self, line!());
             return Ok(Action::Aborted);
         }
         let ethhdr = unsafe { &*(packet_ptr as *const EthHdr) };
 
-        // debug(self, line!());
-
         match ethhdr.ether_type {
             EtherType::Ipv4 => {
-                // debug(self, line!());
-
                 let ipv4hdr = unsafe { packet_ptr.add(EthHdr::LEN) } as *const Ipv4Hdr;
                 if ipv4hdr as usize + Ipv4Hdr::LEN >= ctx.data_end as usize {
-                    // debug(self, line!());
                     return Ok(Action::Aborted);
                 }
                 let ipv4hdr = unsafe { &*ipv4hdr };
 
                 // do not block non TCP packets
                 let IpProto::Tcp = ipv4hdr.proto else {
-                    // debug(self, line!());
                     return Ok(Action::Pass)
                 };
 
                 let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv4Hdr::LEN) } as *const TcpHdr;
-                if tcphdr as usize + TcpHdr::LEN >= ctx.data_end as usize {
-                    // debug(self, line!());
+                if tcphdr as usize + TcpHdr::LEN > ctx.data_end as usize {
                     return Ok(Action::Aborted);
                 }
+                let _packet_size = (ctx.data_end as usize) - tcphdr as usize + TcpHdr::LEN;
                 let tcphdr = unsafe { &*tcphdr };
 
                 let src_port = u16::from_be(tcphdr.source);
                 let dst_port = u16::from_be(tcphdr.dest);
 
                 // do not block such packet
-                if self.whitelist_ports.get(&src_port.to_be_bytes()).is_none() &&
-                    self.whitelist_ports.get(&dst_port.to_be_bytes()).is_none()
+                if self.whitelist_ports.get(&src_port.to_be_bytes()).is_none()
+                    && self.whitelist_ports.get(&dst_port.to_be_bytes()).is_none()
                 {
                     return Ok(Action::Pass);
                 }
-                // debug(self, line!());
 
-                let mut b = [0; 16];
-                b[10] = 0xff;
-                b[11] = 0xff;
-                b[12..].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_be_bytes());
-                if self.whitelist.get(&b).is_some() {
-                    // debug(self, line!());
+                let mut src_ip = {
+                    let mut b = [0; 16];
+                    b[10] = 0xff;
+                    b[11] = 0xff;
+                    b[12..].clone_from_slice(&u32::from_be(ipv4hdr.src_addr).to_be_bytes());
+                    b
+                };
+                if self.whitelist.get(&src_ip).is_some() {
                     return Ok(Action::Pass);
                 }
-                // debug(self, line!());
+
+                // let mut dst_ip = {
+                //     let mut b = [0; 16];
+                //     b[10] = 0xff;
+                //     b[11] = 0xff;
+                //     b[12..].clone_from_slice(&u32::from_be(ipv4hdr.dst_addr).to_be_bytes());
+                //     b
+                // };
+
+                // let key = {
+                //     let mut b = [0; 36];
+                //     b[0..16].clone_from_slice(&src_ip);
+                //     b[16..18].clone_from_slice(&src_port.to_be_bytes());
+                //     b[18..34].clone_from_slice(&dst_ip);
+                //     b[34..36].clone_from_slice(&dst_port.to_be_bytes());
+                //     b
+                // };
+                // struct Value {
+                //     packets: u32,
+                //     bytes: u32,
+                // }
+                // if let Some(value) = self.blocked.get_mut_unsafe::<Value>(&key) {
+                //     value.packets += 1;
+                //     value.bytes += packet_size as u32;
+                // } else {
+                //     let value = Value {
+                //         packets: 1,
+                //         bytes: packet_size as u32,
+                //     };
+                //     self.blocked.insert_unsafe(key, value)?;
+                // }
 
                 Ok(Action::Drop)
             }
             EtherType::Ipv6 => {
-                // debug(self, line!());
-
                 let ipv6hdr = unsafe { packet_ptr.add(EthHdr::LEN) } as *const Ipv6Hdr;
                 if ipv6hdr as usize + Ipv6Hdr::LEN >= ctx.data_end as usize {
-                    // debug(self, line!());
-
                     return Ok(Action::Aborted);
                 }
                 let ipv6hdr = unsafe { &*ipv6hdr };
 
                 // do not block non TCP packets
                 let IpProto::Tcp = ipv6hdr.next_hdr else {
-                    // debug(self, line!());
-
                     return Ok(Action::Pass)
                 };
 
                 let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv6Hdr::LEN) } as *const TcpHdr;
-                if tcphdr as usize + TcpHdr::LEN >= ctx.data_end as usize {
-                    // debug(self, line!());
-
+                if tcphdr as usize + TcpHdr::LEN > ctx.data_end as usize {
                     return Ok(Action::Aborted);
                 }
                 let tcphdr = unsafe { &*tcphdr };
@@ -1019,16 +1067,14 @@ impl App {
                 let src_port = u16::from_be(tcphdr.source);
                 let dst_port = u16::from_be(tcphdr.dest);
                 // do not block such packet
-                if self.whitelist_ports.get(&src_port.to_be_bytes()).is_none() &&
-                    self.whitelist_ports.get(&dst_port.to_be_bytes()).is_none()
+                if self.whitelist_ports.get(&src_port.to_be_bytes()).is_none()
+                    && self.whitelist_ports.get(&dst_port.to_be_bytes()).is_none()
                 {
                     return Ok(Action::Pass);
                 }
-                // debug(self, line!());
 
                 let ip = unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 };
                 if self.whitelist.get(&ip).is_some() {
-                    // debug(self, line!());
                     return Ok(Action::Pass);
                 }
 
@@ -1049,7 +1095,8 @@ fn main() {
         },
         time::{SystemTime, Duration},
         env, thread,
-        path::PathBuf, net::IpAddr,
+        path::PathBuf,
+        net::IpAddr,
     };
 
     use bpf_recorder::{
@@ -1059,8 +1106,10 @@ fn main() {
     use simulator::registry::messages::{DebuggerReport, ConnectionMetadata};
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
-        EventMetadata, ConnectionInfo, server, P2pRecorder, libp2p_helper::CapnpReader,
-        SnarkWorkerState, firewall::{FirewallCommand, EnableWhitelist},
+        EventMetadata, ConnectionInfo, server, P2pRecorder,
+        libp2p_helper::CapnpReader,
+        SnarkWorkerState,
+        firewall::{FirewallCommand, EnableWhitelist},
     };
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
@@ -1100,7 +1149,8 @@ fn main() {
     env_logger::init();
 
     let (tx, rx) = mpsc::sync_channel(100);
-    let (db, callback, server_thread) = server::spawn(port, db_path, tx.clone(), key_path, cert_path);
+    let (db, callback, server_thread) =
+        server::spawn(port, db_path, tx.clone(), key_path, cert_path);
     let terminating = Arc::new(AtomicBool::new(dry));
     {
         let terminating = terminating.clone();
@@ -1145,7 +1195,9 @@ fn main() {
             // remove all entries
             let mut key = std::ptr::null();
             let mut next_key = [0; 16];
-            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) } == 0 {
+            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) }
+                == 0
+            {
                 self.whitelist.remove(&next_key).unwrap();
                 key = &next_key as *const _ as _;
             }
@@ -1158,7 +1210,9 @@ fn main() {
             // remove all entries
             let mut key = std::ptr::null();
             let mut next_key = [0; 2];
-            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) } == 0 {
+            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) }
+                == 0
+            {
                 self.whitelist_ports.remove(&next_key).unwrap();
                 key = &next_key as *const _ as _;
             }
@@ -1183,7 +1237,9 @@ fn main() {
                 self.whitelist.insert(ipv6.octets(), [0, 0, 0, 1]).unwrap();
             }
             for &port in &ports {
-                self.whitelist_ports.insert(port.to_be_bytes(), [0, 0, 0, 1]).unwrap();
+                self.whitelist_ports
+                    .insert(port.to_be_bytes(), [0, 0, 0, 1])
+                    .unwrap();
             }
             log::info!("firewall: whitelist {ips:?}, ports: {ports:?}");
         }
@@ -1201,13 +1257,19 @@ fn main() {
                 .load()
                 .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
 
-            skeleton.app.whitelist.insert([0; 16], [0, 0, 0, 1]).unwrap();
+            skeleton
+                .app
+                .whitelist
+                .insert([0; 16], [0, 0, 0, 1])
+                .unwrap();
 
             interface.push('\0');
             let if_index = unsafe { libc::if_nametoindex(interface.as_ptr() as _) };
 
             const XDP_FLAGS_SKB_MODE: u32 = 1 << 1;
-            skeleton.attach_xdp("disable_connections", if_index as i32, XDP_FLAGS_SKB_MODE).unwrap();
+            skeleton
+                .attach_xdp("disable_connections", if_index as i32, XDP_FLAGS_SKB_MODE)
+                .unwrap();
 
             let (skeleton, mut app) = skeleton
                 .attach()
@@ -1272,7 +1334,7 @@ fn main() {
         let (source, blocker) = Source::initialize(terminating.clone(), interface);
         (
             Box::new(source) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>,
-            Some(blocker)
+            Some(blocker),
         )
     };
 
