@@ -1222,12 +1222,17 @@ fn main() {
             log::info!("firewall: whitelist disable");
         }
 
-        pub fn set_whitelist(&mut self, EnableWhitelist { ips, ports }: EnableWhitelist) {
+        pub fn set_whitelist(&mut self, EnableWhitelist { mut ips, ports }: EnableWhitelist) {
             self.clear_whitelist();
 
             // remove mark that whitelist is disabled
             self.whitelist.remove(&[0; 16]).unwrap_or_default();
 
+            if let Ok(list) = env::var("FIREWALL_DEFAULT_WHITELIST") {
+                for ip in list.split(',').filter_map(|s| s.parse::<IpAddr>().ok()) {
+                    ips.push(ip);
+                }
+            }
             for &addr in &ips {
                 let ipv6 = match addr {
                     IpAddr::V4(ip) => ip.to_ipv6_mapped(),
