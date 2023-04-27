@@ -53,5 +53,8 @@ libp2p-core = { version = "0.38.0", features = ["secp256k1", "ecdsa", "serde"] }
 
 pete = { version = "0.9.0" }
 
+ebpf-user = { git = "https://github.com/vlad9486/ebpf-tools" }
+libbpf-sys = { version = "1.0.4" }
+
 [dev-dependencies]
 temp-dir = "0.1.11"

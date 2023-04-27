@@ -5,6 +5,13 @@ pub mod proc;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
+pub struct StatsBlocked {
+    pub packets: u32,
+    pub bytes: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct Event {
     pub fd: u32,
     pub pid: u32,
@@ -204,7 +211,10 @@ pub mod sniffer_event {
                 ret(SnifferEventVariant::NewSnarkWorkerApp)
             } else if let DataTag::Debug = tag {
                 if data.len() == 4 {
-                    log::info!("DEBUG: line: {}", u32::from_ne_bytes(data.try_into().unwrap()));
+                    log::info!(
+                        "DEBUG: line: {}",
+                        u32::from_ne_bytes(data.try_into().unwrap())
+                    );
                 } else {
                     log::info!("DEBUG: hex: {}", hex::encode(data));
                 }

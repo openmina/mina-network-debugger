@@ -95,7 +95,7 @@ mod context;
 mod send;
 
 #[cfg(feature = "kern")]
-use bpf_recorder::{DataTag, Event};
+use bpf_recorder::{DataTag, Event, StatsBlocked};
 
 #[cfg(feature = "kern")]
 #[no_mangle]
@@ -989,7 +989,7 @@ impl App {
                 if tcphdr as usize + TcpHdr::LEN > ctx.data_end as usize {
                     return Ok(Action::Aborted);
                 }
-                let _packet_size = (ctx.data_end as usize) - tcphdr as usize + TcpHdr::LEN;
+                let packet_size = (ctx.data_end as usize) - tcphdr as usize + TcpHdr::LEN;
                 let tcphdr = unsafe { &*tcphdr };
 
                 let src_port = u16::from_be(tcphdr.source);
@@ -1013,36 +1013,32 @@ impl App {
                     return Ok(Action::Pass);
                 }
 
-                // let mut dst_ip = {
-                //     let mut b = [0; 16];
-                //     b[10] = 0xff;
-                //     b[11] = 0xff;
-                //     b[12..].clone_from_slice(&u32::from_be(ipv4hdr.dst_addr).to_be_bytes());
-                //     b
-                // };
+                let mut dst_ip = {
+                    let mut b = [0; 16];
+                    b[10] = 0xff;
+                    b[11] = 0xff;
+                    b[12..].clone_from_slice(&u32::from_be(ipv4hdr.dst_addr).to_be_bytes());
+                    b
+                };
 
-                // let key = {
-                //     let mut b = [0; 36];
-                //     b[0..16].clone_from_slice(&src_ip);
-                //     b[16..18].clone_from_slice(&src_port.to_be_bytes());
-                //     b[18..34].clone_from_slice(&dst_ip);
-                //     b[34..36].clone_from_slice(&dst_port.to_be_bytes());
-                //     b
-                // };
-                // struct Value {
-                //     packets: u32,
-                //     bytes: u32,
-                // }
-                // if let Some(value) = self.blocked.get_mut_unsafe::<Value>(&key) {
-                //     value.packets += 1;
-                //     value.bytes += packet_size as u32;
-                // } else {
-                //     let value = Value {
-                //         packets: 1,
-                //         bytes: packet_size as u32,
-                //     };
-                //     self.blocked.insert_unsafe(key, value)?;
-                // }
+                let key = {
+                    let mut b = [0; 36];
+                    b[0..16].clone_from_slice(&src_ip);
+                    b[16..18].clone_from_slice(&src_port.to_be_bytes());
+                    b[18..34].clone_from_slice(&dst_ip);
+                    b[34..36].clone_from_slice(&dst_port.to_be_bytes());
+                    b
+                };
+                if let Some(value) = self.blocked.get_mut_unsafe::<StatsBlocked>(&key) {
+                    value.packets += 1;
+                    value.bytes += packet_size as u32;
+                } else {
+                    let value = StatsBlocked {
+                        packets: 1,
+                        bytes: packet_size as u32,
+                    };
+                    self.blocked.insert_unsafe(key, value)?;
+                }
 
                 Ok(Action::Drop)
             }
@@ -1062,6 +1058,7 @@ impl App {
                 if tcphdr as usize + TcpHdr::LEN > ctx.data_end as usize {
                     return Ok(Action::Aborted);
                 }
+                let packet_size = (ctx.data_end as usize) - tcphdr as usize + TcpHdr::LEN;
                 let tcphdr = unsafe { &*tcphdr };
 
                 let src_port = u16::from_be(tcphdr.source);
@@ -1073,9 +1070,30 @@ impl App {
                     return Ok(Action::Pass);
                 }
 
-                let ip = unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 };
-                if self.whitelist.get(&ip).is_some() {
+                let src_ip = unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 };
+                if self.whitelist.get(&src_ip).is_some() {
                     return Ok(Action::Pass);
+                }
+
+                let dst_ip = unsafe { ipv6hdr.dst_addr.in6_u.u6_addr8 };
+
+                let key = {
+                    let mut b = [0; 36];
+                    b[0..16].clone_from_slice(&src_ip);
+                    b[16..18].clone_from_slice(&src_port.to_be_bytes());
+                    b[18..34].clone_from_slice(&dst_ip);
+                    b[34..36].clone_from_slice(&dst_port.to_be_bytes());
+                    b
+                };
+                if let Some(value) = self.blocked.get_mut_unsafe::<StatsBlocked>(&key) {
+                    value.packets += 1;
+                    value.bytes += packet_size as u32;
+                } else {
+                    let value = StatsBlocked {
+                        packets: 1,
+                        bytes: packet_size as u32,
+                    };
+                    self.blocked.insert_unsafe(key, value)?;
                 }
 
                 Ok(Action::Drop)
@@ -1109,7 +1127,7 @@ fn main() {
         EventMetadata, ConnectionInfo, server, P2pRecorder,
         libp2p_helper::CapnpReader,
         SnarkWorkerState,
-        firewall::{FirewallCommand, EnableWhitelist},
+        firewall::{FirewallCommand, EnableWhitelist, stats::StatsBlockedMap},
     };
     use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
 
@@ -1149,26 +1167,7 @@ fn main() {
     env_logger::init();
 
     let (tx, rx) = mpsc::sync_channel(100);
-    let (db, callback, server_thread) =
-        server::spawn(port, db_path, tx.clone(), key_path, cert_path);
     let terminating = Arc::new(AtomicBool::new(dry));
-    {
-        let terminating = terminating.clone();
-        let mut callback = Some(callback);
-        let user_handler = move || {
-            log::info!("ctrlc");
-            if let Some(cb) = callback.take() {
-                cb();
-            }
-            terminating.store(true, Ordering::SeqCst);
-        };
-        if let Err(err) = ctrlc::set_handler(user_handler) {
-            log::error!("failed to set ctrlc handler {err}");
-            return;
-        }
-    }
-
-    let db_capnp = db.core();
 
     let interface = env::var("FIREWALL_INTERFACE").unwrap_or("eth0".to_string());
 
@@ -1248,7 +1247,10 @@ fn main() {
     unsafe impl Send for Blocker {}
 
     impl Source {
-        pub fn initialize(terminating: Arc<AtomicBool>, mut interface: String) -> (Self, Blocker) {
+        pub fn initialize(
+            terminating: Arc<AtomicBool>,
+            mut interface: String,
+        ) -> (Self, Blocker, StatsBlockedMap) {
             static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
 
             let mut skeleton = Skeleton::<App>::open("bpf-recorder\0", CODE)
@@ -1300,6 +1302,8 @@ fn main() {
             let whitelist = app.whitelist.clone();
             let whitelist_ports = app.whitelist_ports.clone();
 
+            let stats = StatsBlockedMap(app.blocked.clone());
+
             (
                 Source {
                     _skeleton: skeleton,
@@ -1311,6 +1315,7 @@ fn main() {
                     whitelist,
                     whitelist_ports,
                 },
+                stats,
             )
         }
     }
@@ -1325,16 +1330,18 @@ fn main() {
         }
     }
 
-    let (mut source, blocker) = if dry {
+    let (mut source, blocker, stats) = if dry {
         (
             Box::new(std::iter::empty()) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>,
             None,
+            None,
         )
     } else {
-        let (source, blocker) = Source::initialize(terminating.clone(), interface);
+        let (source, blocker, stats) = Source::initialize(terminating.clone(), interface);
         (
             Box::new(source) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>,
             Some(blocker),
+            Some(stats),
         )
     };
 
@@ -1351,6 +1358,25 @@ fn main() {
             log::info!("firewall: terminate thread");
         }
     });
+
+    let (db, callback, server_thread) =
+        server::spawn(port, db_path, tx.clone(), stats, key_path, cert_path);
+    {
+        let terminating = terminating.clone();
+        let mut callback = Some(callback);
+        let user_handler = move || {
+            log::info!("ctrlc");
+            if let Some(cb) = callback.take() {
+                cb();
+            }
+            terminating.store(true, Ordering::SeqCst);
+        };
+        if let Err(err) = ctrlc::set_handler(user_handler) {
+            log::error!("failed to set ctrlc handler {err}");
+            return;
+        }
+    }
+    let db_capnp = db.core();
 
     let test = env::var("TEST").is_ok();
 
