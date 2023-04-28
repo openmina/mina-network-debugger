@@ -1307,7 +1307,7 @@ fn main() {
             let whitelist = app.whitelist.clone();
             let whitelist_ports = app.whitelist_ports.clone();
 
-            let stats = StatsBlockedMap(app.blocked.clone());
+            let stats = StatsBlockedMap::new(app.blocked.clone());
 
             (
                 Source {

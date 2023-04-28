@@ -17,6 +17,8 @@ pub mod stats {
     use std::{
         collections::BTreeMap,
         net::{SocketAddr, Ipv6Addr, IpAddr},
+        sync::{mpsc, Mutex},
+        thread,
     };
 
     use ebpf_user::{kind::AppItem, HashMapRef, kind::AppItemKind};
@@ -34,14 +36,46 @@ pub mod stats {
         dst: SocketAddr,
     }
 
-    pub struct StatsBlockedMap(pub HashMapRef<36, 8>);
-
-    unsafe impl Send for StatsBlockedMap {}
-
-    unsafe impl Sync for StatsBlockedMap {}
+    pub struct StatsBlockedMap {
+        c_tx: mpsc::SyncSender<()>,
+        d_rx: Mutex<mpsc::Receiver<BTreeMap<StatsItem, StatsBlocked>>>,
+    }
 
     impl StatsBlockedMap {
+        pub fn new(inner: HashMapRef<36, 8>) -> Self {
+            let (c_tx, c_rx) = mpsc::sync_channel(1);
+            let (d_tx, d_rx) = mpsc::sync_channel(1);
+
+            let u = Unsafe(inner);
+            thread::spawn(move || {
+                while let Ok(()) = c_rx.recv() {
+                    d_tx.send(u.list()).unwrap_or_default();
+                }
+            });
+            let d_rx = Mutex::new(d_rx);
+            StatsBlockedMap { c_tx, d_rx }
+        }
+
         pub fn list(&self) -> BTreeMap<StatsItem, StatsBlocked> {
+            self.c_tx.send(()).unwrap_or_default();
+            self.d_rx
+                .lock()
+                .expect("must not panic")
+                .recv()
+                .unwrap_or_default()
+        }
+    }
+
+    // TODO: create a single centralized event loop for queries from warp
+    // this loop must owe entire bpf application, so no need to introduce unsafe `Send`
+    // and no need to clone bpf map references.
+    // This is a big change.
+    struct Unsafe(HashMapRef<36, 8>);
+
+    unsafe impl Send for Unsafe {}
+
+    impl Unsafe {
+        fn list(&self) -> BTreeMap<StatsItem, StatsBlocked> {
             let mut list = BTreeMap::new();
 
             let fd = match self.0.kind() {
