@@ -1,7 +1,4 @@
-use std::{
-    time::Duration,
-    net::IpAddr,
-};
+use std::{time::Duration, net::IpAddr, collections::BTreeSet};
 
 use reqwest::{
     Url,
@@ -74,6 +71,7 @@ struct NodeInfo {
     ip: IpAddr,
     name: String,
     peers: Vec<IpAddr>,
+    head: Option<String>,
 }
 
 impl NodeInfo {
@@ -104,23 +102,11 @@ fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
 
     let left = graph
         .iter()
-        .filter_map(|x| {
-            if x.left() {
-                Some(x.ip)
-            } else {
-                None
-            }
-        })
+        .filter_map(|x| if x.left() { Some(x.ip) } else { None })
         .collect::<Vec<_>>();
     let right = graph
         .iter()
-        .filter_map(|x| {
-            if !x.left() {
-                Some(x.ip)
-            } else {
-                None
-            }
-        })
+        .filter_map(|x| if !x.left() { Some(x.ip) } else { None })
         .collect::<Vec<_>>();
 
     for node in graph {
@@ -165,7 +151,11 @@ fn disable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
 
 fn query_peer(client: &Client, url: &str, name: &str) -> anyhow::Result<NodeInfo> {
     fn graphql_url(url: &str, name: &str) -> Url {
-        format!("{url}/{name}/graphql")
+        format!("{url}/{name}/graphql").parse().unwrap()
+    }
+
+    fn debugger_url(url: &str, name: &str) -> Url {
+        format!("{url}/{name}/bpf-debugger/libp2p_ipc/block/latest")
             .parse()
             .unwrap()
     }
@@ -194,10 +184,44 @@ fn query_peer(client: &Client, url: &str, name: &str) -> anyhow::Result<NodeInfo
         _ => panic!("unexpected response"),
     };
 
+    #[derive(Deserialize)]
+    pub struct CapnpTableRow {
+        pub time_microseconds: u64,
+        pub real_time_microseconds: u64,
+        pub node_address: String,
+        pub events: Vec<CapnpEventDecoded>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[serde(tag = "type")]
+    pub enum CapnpEventDecoded {
+        ReceivedGossip { hash: String },
+        PublishGossip { hash: String },
+    }
+
+    let response = client
+        .get(debugger_url(url, &name))
+        .header("content-type", "application/json")
+        .send()?
+        .text()?;
+    let response = serde_json::from_str::<Vec<CapnpTableRow>>(&response)?;
+    let mut head = None;
+    for row in response {
+        for event in row.events {
+            let hash = match event {
+                CapnpEventDecoded::PublishGossip { hash } => hash,
+                CapnpEventDecoded::ReceivedGossip { hash } => hash,
+            };
+            head = Some(hash);
+        }
+    }
+
     Ok(NodeInfo {
         ip,
         name: name.to_owned(),
         peers,
+        head,
     })
 }
 
@@ -212,7 +236,10 @@ fn show_graph(graph: &[NodeInfo]) -> usize {
         .map(|NodeInfo { ip, name, .. }| (*ip, name.clone()))
         .collect::<BTreeMap<_, _>>();
 
-    for NodeInfo { ip, name, peers } in graph {
+    for NodeInfo {
+        ip, name, peers, ..
+    } in graph
+    {
         let ip_a = ip;
 
         let a = *ips
@@ -298,8 +325,21 @@ fn main() -> anyhow::Result<()> {
             expected_components,
         } => {
             let components = show_graph(&graph);
-            if let Some(expected_components) = expected_components {
+            if let Some(&expected_components) = expected_components.as_ref() {
                 if expected_components > components {
+                    log::error!("fail, expected components: {expected_components}, actual components: {components}");
+                }
+            }
+            let heads = graph
+                .iter()
+                .filter_map(|NodeInfo { name, head, .. }| {
+                    let head = head.clone()?;
+                    log::info!("{name}: {head}");
+                    Some(head)
+                })
+                .collect::<BTreeSet<String>>();
+            if let Some(&expected_components) = expected_components.as_ref() {
+                if expected_components != heads.len() {
                     log::error!("fail, expected components: {expected_components}, actual components: {components}");
                 }
             }
