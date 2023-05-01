@@ -133,15 +133,15 @@ fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
     }
 }
 
-fn disable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
+fn disable_firewall(client: &Client, url: String, graph: impl Iterator<Item = String>) {
     fn debugger_firewall_disable_url(url: &str, name: &str) -> Url {
         format!("{url}/{name}/bpf-debugger/firewall/whitelist/disable")
             .parse()
             .unwrap()
     }
 
-    for node in graph {
-        let url = debugger_firewall_disable_url(&url, &node.name);
+    for name in graph {
+        let url = debugger_firewall_disable_url(&url, &name);
         match client.post(url.clone()).send() {
             Ok(response) => log::info!("{url}: {}", response.status()),
             Err(err) => log::error!("{url}: {err}"),
@@ -308,28 +308,34 @@ fn main() -> anyhow::Result<()> {
         .chain(prod0s_names)
         .chain(seeds_names);
 
-    let graph = names
-        .filter_map(|name| match query_peer(&client, &url, &name) {
-            Ok(v) => Some(v),
-            Err(err) => {
-                log::error!("name {name}, error: {err}");
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
     match command {
-        Command::EnableFirewall => enable_firewall(&client, url, &graph),
-        Command::DisableFirewall => disable_firewall(&client, url, &graph),
+        Command::EnableFirewall => {
+            let graph = names
+                .filter_map(|name| match query_peer(&client, &url, &name) {
+                    Ok(v) => Some(v),
+                    Err(err) => {
+                        log::error!("name {name}, error: {err}");
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            enable_firewall(&client, url, &graph)
+        }
+        Command::DisableFirewall => disable_firewall(&client, url, names),
         Command::ShowGraph {
             expected_components,
         } => {
+            let graph = names
+                .filter_map(|name| match query_peer(&client, &url, &name) {
+                    Ok(v) => Some(v),
+                    Err(err) => {
+                        log::error!("name {name}, error: {err}");
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
             let components = show_graph(&graph);
-            if let Some(&expected_components) = expected_components.as_ref() {
-                if expected_components > components {
-                    log::error!("fail, expected components: {expected_components}, actual components: {components}");
-                }
-            }
             let heads = graph
                 .iter()
                 .filter_map(|NodeInfo { name, head, .. }| {
@@ -338,9 +344,23 @@ fn main() -> anyhow::Result<()> {
                     Some(head)
                 })
                 .collect::<BTreeSet<String>>();
+
+            let mut failed = false;
             if let Some(&expected_components) = expected_components.as_ref() {
-                if expected_components != heads.len() {
+                if expected_components == 1 && components != 1 || expected_components > components {
                     log::error!("fail, expected components: {expected_components}, actual components: {components}");
+                    failed = true;
+                }
+                if expected_components == 1 && heads.len() != 1 || expected_components > heads.len()
+                {
+                    log::error!(
+                        "fail, expected components: {expected_components}, actual components: {}",
+                        heads.len()
+                    );
+                    failed = true;
+                }
+                if failed {
+                    std::process::exit(1);
                 }
             }
         }
