@@ -205,15 +205,16 @@ fn query_peer(client: &Client, url: &str, name: &str) -> anyhow::Result<NodeInfo
         .header("content-type", "application/json")
         .send()?
         .text()?;
-    let response = serde_json::from_str::<Vec<CapnpTableRow>>(&response)?;
     let mut head = None;
-    for row in response {
-        for event in row.events {
-            let hash = match event {
-                CapnpEventDecoded::PublishGossip { hash } => hash,
-                CapnpEventDecoded::ReceivedGossip { hash } => hash,
-            };
-            head = Some(hash);
+    if let Ok(response) = serde_json::from_str::<Vec<CapnpTableRow>>(&response) {
+        for row in response {
+            for event in row.events {
+                let hash = match event {
+                    CapnpEventDecoded::PublishGossip { hash } => hash,
+                    CapnpEventDecoded::ReceivedGossip { hash } => hash,
+                };
+                head = Some(hash);
+            }
         }
     }
 
