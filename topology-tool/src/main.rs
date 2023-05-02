@@ -1,4 +1,8 @@
-use std::{time::Duration, net::IpAddr, collections::BTreeSet};
+use std::{
+    time::Duration,
+    net::IpAddr,
+    collections::{BTreeSet, BTreeMap},
+};
 
 use reqwest::{
     Url,
@@ -13,22 +17,26 @@ struct Args {
     #[structopt(long)]
     url: String,
     #[structopt(long)]
-    nodes: u16,
+    nodes: Option<u16>,
     #[structopt(long)]
-    snarkers: u16,
+    snarkers: Option<u16>,
     #[structopt(long)]
-    prods: u16,
+    prods: Option<u16>,
     #[structopt(long)]
-    prod0s: u16,
+    prod0s: Option<u16>,
     #[structopt(long)]
-    seeds: u16,
+    seeds: Option<u16>,
     #[structopt(subcommand)]
     command: Command,
 }
 
 #[derive(StructOpt)]
 enum Command {
-    EnableFirewall,
+    EnableFirewall {
+        // list of lists of name:ip
+        #[structopt(long)]
+        segments: Vec<String>,
+    },
     DisableFirewall,
     ShowGraph {
         #[structopt(long)]
@@ -80,24 +88,62 @@ impl NodeInfo {
     }
 }
 
-// fn parse_trailing_digits(s: &str) -> usize {
-//     let b = s.bytes().rev().take_while(|x| x.is_ascii_digit()).collect::<Vec<_>>();
-//     b.into_iter().rev().fold(0, |acc, n| acc * 10 + ((n - b'0') as usize))
-// }
+#[derive(Serialize, Debug)]
+pub struct EnableWhitelist {
+    pub ips: Vec<IpAddr>,
+    pub ports: Vec<u16>,
+}
+
+fn debugger_firewall_enable_url(url: &str, name: &str) -> Url {
+    format!("{url}/{name}/bpf-debugger/firewall/whitelist/enable")
+        .parse()
+        .unwrap()
+}
+
+fn enable_firewall_simple(client: &Client, url: String, segments: Vec<String>) {
+    let mut names = vec![];
+    let segments = segments
+        .into_iter()
+        .map(|s| {
+            s.split(',')
+                .filter_map(|s| {
+                    let mut it = s.split(':');
+                    let name = it.next()?.to_owned();
+                    let ip = it.next()?.parse::<IpAddr>().ok()?;
+                    names.push(name.clone());
+                    Some((name, ip))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .collect::<Vec<_>>();
+
+    let ports = [10909, 10001];
+
+    for name in names {
+        let Some(segment) = segments.iter().find(|x| x.contains_key(&name)) else {
+            log::error!("segment for {name} not found, split will not work");
+            continue;
+        };
+        let whitelist = EnableWhitelist {
+            ips: segment.values().copied().collect(),
+            ports: ports.to_vec(),
+        };
+        log::info!("{whitelist:?}");
+        let whitelist = serde_json::to_string(&whitelist).unwrap();
+        let url = debugger_firewall_enable_url(&url, &name);
+        match client
+            .post(url.clone())
+            .header("content-type", "application/json")
+            .body(whitelist)
+            .send()
+        {
+            Ok(response) => log::info!("{url}: {}", response.status()),
+            Err(err) => log::error!("{url}: {err}"),
+        }
+    }
+}
 
 fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
-    fn debugger_firewall_enable_url(url: &str, name: &str) -> Url {
-        format!("{url}/{name}/bpf-debugger/firewall/whitelist/enable")
-            .parse()
-            .unwrap()
-    }
-
-    #[derive(Serialize, Debug)]
-    pub struct EnableWhitelist {
-        pub ips: Vec<IpAddr>,
-        pub ports: Vec<u16>,
-    }
-
     let ports = [10909, 10001];
 
     let left = graph
@@ -133,14 +179,14 @@ fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
     }
 }
 
-fn disable_firewall(client: &Client, url: String, graph: impl Iterator<Item = String>) {
+fn disable_firewall(client: &Client, url: String, names: impl Iterator<Item = String>) {
     fn debugger_firewall_disable_url(url: &str, name: &str) -> Url {
         format!("{url}/{name}/bpf-debugger/firewall/whitelist/disable")
             .parse()
             .unwrap()
     }
 
-    for name in graph {
+    for name in names {
         let url = debugger_firewall_disable_url(&url, &name);
         match client.post(url.clone()).send() {
             Ok(response) => log::info!("{url}: {}", response.status()),
@@ -227,7 +273,6 @@ fn query_peer(client: &Client, url: &str, name: &str) -> anyhow::Result<NodeInfo
 }
 
 fn show_graph(graph: &[NodeInfo]) -> usize {
-    use std::collections::BTreeMap;
     use petgraph::{prelude::DiGraph, algo, dot};
 
     let mut pet = DiGraph::new();
@@ -298,11 +343,11 @@ fn main() -> anyhow::Result<()> {
         .build()
         .unwrap();
 
-    let nodes_names = (0..nodes).map(|i| format!("node{}", i + 1));
-    let snarkers_names = (0..snarkers).map(|i| format!("snarker{:03}", i + 1));
-    let prods_names = (1..prods).map(|i| format!("prod{}", i + 1));
-    let prod0s_names = (0..prod0s).map(|i| format!("prod0{}", i + 1));
-    let seeds_names = (0..seeds).map(|i| format!("seed{}", i + 1));
+    let nodes_names = (0..nodes.unwrap_or_default()).map(|i| format!("node{}", i + 1));
+    let snarkers_names = (0..snarkers.unwrap_or_default()).map(|i| format!("snarker{:03}", i + 1));
+    let prods_names = (1..prods.unwrap_or_default()).map(|i| format!("prod{}", i + 1));
+    let prod0s_names = (0..prod0s.unwrap_or_default()).map(|i| format!("prod0{}", i + 1));
+    let seeds_names = (0..seeds.unwrap_or_default()).map(|i| format!("seed{}", i + 1));
     let names = nodes_names
         .chain(snarkers_names)
         .chain(prods_names)
@@ -310,17 +355,21 @@ fn main() -> anyhow::Result<()> {
         .chain(seeds_names);
 
     match command {
-        Command::EnableFirewall => {
-            let graph = names
-                .filter_map(|name| match query_peer(&client, &url, &name) {
-                    Ok(v) => Some(v),
-                    Err(err) => {
-                        log::error!("name {name}, error: {err}");
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            enable_firewall(&client, url, &graph)
+        Command::EnableFirewall { segments } => {
+            if segments.is_empty() {
+                let graph = names
+                    .filter_map(|name| match query_peer(&client, &url, &name) {
+                        Ok(v) => Some(v),
+                        Err(err) => {
+                            log::error!("name {name}, error: {err}");
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                enable_firewall(&client, url, &graph)
+            } else {
+                enable_firewall_simple(&client, url, segments)
+            }
         }
         Command::DisableFirewall => disable_firewall(&client, url, names),
         Command::ShowGraph {
