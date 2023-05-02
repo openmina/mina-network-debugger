@@ -1,8 +1,4 @@
-use std::{
-    thread,
-    path::Path,
-    sync::{mpsc, Arc},
-};
+use std::{thread, path::Path};
 
 use warp::{
     Filter, Rejection, Reply,
@@ -10,10 +6,7 @@ use warp::{
     http::StatusCode,
 };
 
-use crate::{
-    meshsub_stats::BlockStat,
-    firewall::{FirewallCommand, stats::StatsBlockedMap},
-};
+use crate::{meshsub_stats::BlockStat, application::Application};
 
 use super::database::{DbCore, DbFacade, Params};
 
@@ -272,36 +265,46 @@ fn libp2p_ipc_latest(
 }
 
 fn firewall_whitelist_set(
-    tx: mpsc::SyncSender<Option<FirewallCommand>>,
+    app: Option<Application>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("firewall" / "whitelist" / "enable")
         .and(warp::body::json())
         .and(warp::post())
         .map(move |enable_whitelist| -> WithStatus<Json> {
-            tx.send(Some(FirewallCommand::EnableWhitelist(enable_whitelist)))
-                .unwrap_or_default();
-            reply::with_status(reply::json(&()), StatusCode::OK)
+            if let Some(app) = &app {
+                app.enable_firewall(enable_whitelist);
+                reply::with_status(reply::json(&()), StatusCode::OK)
+            } else {
+                reply::with_status(reply::json(&()), StatusCode::NOT_FOUND)
+            }
         })
 }
 
 fn firewall_whitelist_clear(
-    tx: mpsc::SyncSender<Option<FirewallCommand>>,
+    app: Option<Application>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("firewall" / "whitelist" / "disable")
         .and(warp::post())
         .map(move || -> WithStatus<Json> {
-            tx.send(Some(FirewallCommand::DisableWhitelist))
-                .unwrap_or_default();
-            reply::with_status(reply::json(&()), StatusCode::OK)
+            if let Some(app) = &app {
+                app.disable_firewall();
+                reply::with_status(reply::json(&()), StatusCode::OK)
+            } else {
+                reply::with_status(reply::json(&()), StatusCode::NOT_FOUND)
+            }
         })
 }
 
 fn firewall_stats(
-    stats_blocked: Option<Arc<StatsBlockedMap>>,
+    app: Option<Application>,
 ) -> impl Filter<Extract = (WithStatus<Json>,), Error = Rejection> + Clone + Sync + Send + 'static {
     warp::path!("firewall" / "stats").map(move || -> WithStatus<Json> {
-        let list = stats_blocked.as_ref().map(|s| s.list()).unwrap_or_default();
-        reply::with_status(reply::json(&list), StatusCode::OK)
+        if let Some(app) = &app {
+            let list = app.get_firewall_stats();
+            reply::with_status(reply::json(&list), StatusCode::OK)
+        } else {
+            reply::with_status(reply::json(&()), StatusCode::NOT_FOUND)
+        }
     })
 }
 
@@ -328,8 +331,7 @@ fn openapi(
 
 fn routes(
     db: DbCore,
-    tx: mpsc::SyncSender<Option<FirewallCommand>>,
-    stats_blocked: Option<StatsBlockedMap>,
+    app: Option<Application>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone + Sync + Send + 'static {
     use warp::reply::with;
 
@@ -379,11 +381,11 @@ fn routes(
             .or(capnp_latest(db.clone()))
             .or(libp2p_ipc_latest(db.clone()))
             .or(libp2p_ipc_all(db))
-            .or(firewall_stats(stats_blocked.map(Arc::new)))
+            .or(firewall_stats(app.clone()))
             .or(version().or(openapi())),
     );
     let posts =
-        warp::post().and(firewall_whitelist_set(tx.clone()).or(firewall_whitelist_clear(tx)));
+        warp::post().and(firewall_whitelist_set(app.clone()).or(firewall_whitelist_clear(app)));
 
     gets.or(posts)
         .with(with::header("Content-Type", "application/json"))
@@ -395,8 +397,7 @@ fn routes(
 pub fn spawn<P, Q, R>(
     port: u16,
     path: P,
-    blocker_tx: mpsc::SyncSender<Option<FirewallCommand>>,
-    stats_blocked: Option<StatsBlockedMap>,
+    app: Option<Application>,
     key_path: Option<Q>,
     cert_path: Option<R>,
 ) -> (DbFacade, impl FnOnce(), thread::JoinHandle<()>)
@@ -427,7 +428,7 @@ where
     };
     log::info!("using db {}", path.as_ref().display());
     let addr = ([0, 0, 0, 0], port);
-    let routes = routes(db.core(), blocker_tx, stats_blocked);
+    let routes = routes(db.core(), app);
     let shutdown = async move {
         rx.await.expect("corresponding sender should exist");
         log::info!("terminating http server...");
