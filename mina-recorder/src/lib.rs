@@ -37,7 +37,7 @@ pub mod server;
 /// Obsolete. Attempt to store all strace log in database.
 pub mod strace;
 
-/// Obsolete. Pausing the node if ring buffer between kernel and userspace is about to overflow. 
+/// Obsolete. Pausing the node if ring buffer between kernel and userspace is about to overflow.
 pub mod ptrace;
 
 /// Observers blocks, snarks and transactions and store metadata about it.
@@ -56,4 +56,4 @@ pub mod libp2p_ipc_capnp {
     include!(concat!(env!("OUT_DIR"), "/libp2p_ipc_capnp.rs"));
 }
 
-pub mod firewall;
+pub mod application;

@@ -1114,22 +1114,19 @@ fn main() {
         time::{SystemTime, Duration},
         env, thread,
         path::PathBuf,
-        net::IpAddr,
     };
 
     use bpf_recorder::{
-        sniffer_event::{SnifferEvent, SnifferEventVariant},
+        sniffer_event::{SnifferEventVariant, SnifferEvent},
         proc,
     };
     use simulator::registry::messages::{DebuggerReport, ConnectionMetadata};
     use bpf_ring_buffer::RingBuffer;
     use mina_recorder::{
-        EventMetadata, ConnectionInfo, server, P2pRecorder,
-        libp2p_helper::CapnpReader,
-        SnarkWorkerState,
-        firewall::{FirewallCommand, EnableWhitelist, stats::StatsBlockedMap},
+        EventMetadata, ConnectionInfo, server, P2pRecorder, libp2p_helper::CapnpReader,
+        SnarkWorkerState, application,
     };
-    use ebpf::{kind::AppItem, Skeleton, SkeletonEmpty};
+    use ebpf::{kind::AppItem, Skeleton};
 
     fn watch_pid(pid: u32, terminating: Arc<AtomicBool>) {
         thread::spawn(move || loop {
@@ -1166,251 +1163,121 @@ fn main() {
     // builder.try_init().expect("cannot setup logging");
     env_logger::init();
 
-    let (tx, rx) = mpsc::sync_channel(100);
     let terminating = Arc::new(AtomicBool::new(dry));
 
-    let interface = env::var("FIREWALL_INTERFACE").unwrap_or("eth0".to_string());
+    let mut interface = env::var("FIREWALL_INTERFACE").unwrap_or("eth0".to_string());
 
-    // It is the iterator that returns raw data intercepted by eBPF in the kernel
-    struct Source {
-        _skeleton: SkeletonEmpty,
-        _app: Box<App>,
-        rb: RingBuffer,
-        terminating: Arc<AtomicBool>,
-    }
+    static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
 
-    struct Blocker {
-        whitelist: ebpf::HashMapRef<16, 4>,
-        whitelist_ports: ebpf::HashMapRef<2, 4>,
-    }
+    let mut skeleton = Skeleton::<App>::open("bpf-recorder\0", CODE)
+        .unwrap_or_else(|code| panic!("failed to open bpf: {}", code));
+    skeleton
+        .load()
+        .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
 
-    impl Blocker {
-        pub fn clear_whitelist(&mut self) {
-            let fd = match self.whitelist.kind_mut() {
-                ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
-                _ => unreachable!(),
-            };
+    skeleton
+        .app
+        .whitelist
+        .insert([0; 16], [0, 0, 0, 1])
+        .unwrap();
 
-            // remove all entries
-            let mut key = std::ptr::null();
-            let mut next_key = [0; 16];
-            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) }
-                == 0
-            {
-                self.whitelist.remove(&next_key).unwrap();
-                key = &next_key as *const _ as _;
-            }
+    interface.push('\0');
+    let if_index = unsafe { libc::if_nametoindex(interface.as_ptr() as _) };
 
-            let fd = match self.whitelist_ports.kind_mut() {
-                ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
-                _ => unreachable!(),
-            };
+    const XDP_FLAGS_SKB_MODE: u32 = 1 << 1;
+    skeleton
+        .attach_xdp("disable_connections", if_index as i32, XDP_FLAGS_SKB_MODE)
+        .unwrap();
 
-            // remove all entries
-            let mut key = std::ptr::null();
-            let mut next_key = [0; 2];
-            while unsafe { libbpf_sys::bpf_map_get_next_key(fd, key, next_key.as_mut_ptr() as _) }
-                == 0
-            {
-                self.whitelist_ports.remove(&next_key).unwrap();
-                key = &next_key as *const _ as _;
-            }
+    let (skeleton, mut app) = skeleton
+        .attach()
+        .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
+    log::info!("attached bpf module");
 
-            // insert mark that whitelist is disabled
-            self.whitelist.insert([0; 16], [0, 0, 0, 1]).unwrap();
-
-            log::info!("firewall: whitelist disable");
-        }
-
-        pub fn set_whitelist(&mut self, EnableWhitelist { mut ips, ports }: EnableWhitelist) {
-            self.clear_whitelist();
-
-            // remove mark that whitelist is disabled
-            self.whitelist.remove(&[0; 16]).unwrap_or_default();
-
-            if let Ok(list) = env::var("FIREWALL_DEFAULT_WHITELIST") {
-                for ip in list.split(',').filter_map(|s| s.parse::<IpAddr>().ok()) {
-                    ips.push(ip);
-                }
-            }
-            for &addr in &ips {
-                let ipv6 = match addr {
-                    IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                    IpAddr::V6(ip) => ip,
-                };
-                self.whitelist.insert(ipv6.octets(), [0, 0, 0, 1]).unwrap();
-            }
-            for &port in &ports {
-                self.whitelist_ports
-                    .insert(port.to_be_bytes(), [0, 0, 0, 1])
-                    .unwrap();
-            }
-            log::info!("firewall: whitelist {ips:?}, ports: {ports:?}");
-        }
-    }
-
-    unsafe impl Send for Blocker {}
-
-    impl Source {
-        pub fn initialize(
-            terminating: Arc<AtomicBool>,
-            mut interface: String,
-        ) -> (Self, Blocker, StatsBlockedMap) {
-            static CODE: &[u8] = include_bytes!(concat!("../", env!("BPF_CODE_RECORDER")));
-
-            let mut skeleton = Skeleton::<App>::open("bpf-recorder\0", CODE)
-                .unwrap_or_else(|code| panic!("failed to open bpf: {}", code));
-            skeleton
-                .load()
-                .unwrap_or_else(|code| panic!("failed to load bpf: {}", code));
-
-            skeleton
-                .app
-                .whitelist
-                .insert([0; 16], [0, 0, 0, 1])
-                .unwrap();
-
-            interface.push('\0');
-            let if_index = unsafe { libc::if_nametoindex(interface.as_ptr() as _) };
-
-            const XDP_FLAGS_SKB_MODE: u32 = 1 << 1;
-            skeleton
-                .attach_xdp("disable_connections", if_index as i32, XDP_FLAGS_SKB_MODE)
-                .unwrap();
-
-            let (skeleton, mut app) = skeleton
-                .attach()
-                .unwrap_or_else(|code| panic!("failed to attach bpf: {}", code));
-            log::info!("attached bpf module");
-
-            let fd = match app.event_queue.kind_mut() {
-                ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
-                _ => unreachable!(),
-            };
-
-            let mut info = libbpf_sys::bpf_map_info::default();
-            let mut len = std::mem::size_of::<libbpf_sys::bpf_map_info>() as u32;
-            unsafe {
-                libbpf_sys::bpf_obj_get_info_by_fd(
-                    fd,
-                    &mut info as *mut libbpf_sys::bpf_map_info as *mut _,
-                    &mut len as _,
-                )
-            };
-            let rb = match RingBuffer::new(fd, info.max_entries as usize) {
-                Ok(v) => v,
-                Err(err) => {
-                    log::error!("failed to create userspace part of the ring buffer: {err}");
-                    std::process::exit(1);
-                }
-            };
-            let whitelist = app.whitelist.clone();
-            let whitelist_ports = app.whitelist_ports.clone();
-
-            let stats = StatsBlockedMap::new(app.blocked.clone());
-
-            (
-                Source {
-                    _skeleton: skeleton,
-                    _app: app,
-                    rb,
-                    terminating,
-                },
-                Blocker {
-                    whitelist,
-                    whitelist_ports,
-                },
-                stats,
-            )
-        }
-    }
-
-    impl Iterator for Source {
-        type Item = (Option<SnifferEvent>, usize);
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.rb
-                .read_blocking::<SnifferEvent>(&self.terminating)
-                .ok()
-        }
-    }
-
-    let (mut source, blocker, stats) = if dry {
-        (
-            Box::new(std::iter::empty()) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>,
-            None,
-            None,
-        )
-    } else {
-        let (source, blocker, stats) = Source::initialize(terminating.clone(), interface);
-        (
-            Box::new(source) as Box<dyn Iterator<Item = (Option<SnifferEvent>, usize)>>,
-            Some(blocker),
-            Some(stats),
-        )
+    let fd = match app.event_queue.kind_mut() {
+        ebpf::kind::AppItemKindMut::Map(map) => map.fd(),
+        _ => unreachable!(),
     };
 
-    let blocker = thread::spawn(move || {
-        if let Some(mut blocker) = blocker {
-            log::info!("firewall: start thread");
-            while let Ok(cmd) = rx.recv() {
-                match cmd {
-                    None => break,
-                    Some(FirewallCommand::DisableWhitelist) => blocker.clear_whitelist(),
-                    Some(FirewallCommand::EnableWhitelist(x)) => blocker.set_whitelist(x),
-                }
+    let mut info = libbpf_sys::bpf_map_info::default();
+    let mut len = std::mem::size_of::<libbpf_sys::bpf_map_info>() as u32;
+    unsafe {
+        libbpf_sys::bpf_obj_get_info_by_fd(
+            fd,
+            &mut info as *mut libbpf_sys::bpf_map_info as *mut _,
+            &mut len as _,
+        )
+    };
+    let mut rb = match RingBuffer::new(fd, info.max_entries as usize) {
+        Ok(v) => v,
+        Err(err) => {
+            log::error!("failed to create userspace part of the ring buffer: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    let (app_client, app_server) = application::new(
+        app.whitelist.clone(),
+        app.whitelist_ports.clone(),
+        app.blocked.clone(),
+    );
+
+    let (main_tx, main_rx) = mpsc::channel();
+    let main_thread = thread::spawn({
+        let terminating = terminating.clone();
+        move || {
+            while let Ok(event) = rb.read_blocking::<SnifferEvent>(&terminating) {
+                main_tx.send(event).unwrap_or_default();
             }
-            log::info!("firewall: terminate thread");
         }
     });
 
-    let (db, callback, server_thread) =
-        server::spawn(port, db_path, tx.clone(), stats, key_path, cert_path);
-    {
-        let terminating = terminating.clone();
-        let mut callback = Some(callback);
-        let user_handler = move || {
-            log::info!("ctrlc");
-            if let Some(cb) = callback.take() {
-                cb();
+    let consumer_thread = thread::spawn(move || {
+        let (db, callback, server_thread) =
+            server::spawn(port, db_path, Some(app_client.clone()), key_path, cert_path);
+        {
+            let terminating = terminating.clone();
+            let mut callback = Some(callback);
+            let user_handler = move || {
+                log::info!("ctrlc");
+                if let Some(cb) = callback.take() {
+                    cb();
+                }
+                terminating.store(true, Ordering::SeqCst);
+            };
+            if let Err(err) = ctrlc::set_handler(user_handler) {
+                log::error!("failed to set ctrlc handler {err}");
+                return;
             }
-            terminating.store(true, Ordering::SeqCst);
-        };
-        if let Err(err) = ctrlc::set_handler(user_handler) {
-            log::error!("failed to set ctrlc handler {err}");
-            return;
         }
-    }
-    let db_capnp = db.core();
+        let db_capnp = db.core();
 
-    let test = env::var("TEST").is_ok();
+        let test = env::var("TEST").is_ok();
 
-    let mut origin = proc::S::read().ok().and_then(|s| s.b_time);
-    if let Some(boot_time) = &origin {
-        log::info!("boot time: {boot_time:?}");
-    }
+        let mut origin = proc::S::read().ok().and_then(|s| s.b_time);
+        if let Some(boot_time) = &origin {
+            log::info!("boot time: {boot_time:?}");
+        }
 
-    let mut p2p_cns = BTreeMap::new();
-    let counter = db.messages.clone();
-    let mut pending_out_cns = BTreeMap::new();
-    let mut recorder = P2pRecorder::new(db, test);
-    let mut watching = BTreeMap::new();
-    let mut capnp_readers = BTreeMap::<_, CapnpReader>::new();
-    let mut capnp_blacklist = BTreeSet::new();
-    let mut max_buffered = 0;
-    let mut max_unordered_ns = BTreeMap::new();
-    let mut last_ts = BTreeMap::new();
-    let mut subscriptions = BTreeMap::new();
-    let mut chain_id = BTreeMap::new();
-    let mut max_lag = Duration::ZERO;
+        let mut p2p_cns = BTreeMap::new();
+        let counter = db.messages.clone();
+        let mut pending_out_cns = BTreeMap::new();
+        let mut recorder = P2pRecorder::new(db, test);
+        let mut watching = BTreeMap::new();
+        let mut capnp_readers = BTreeMap::<_, CapnpReader>::new();
+        let mut capnp_blacklist = BTreeSet::new();
+        let mut max_buffered = 0;
+        let mut max_unordered_ns = BTreeMap::new();
+        let mut last_ts = BTreeMap::new();
+        let mut subscriptions = BTreeMap::new();
+        let mut chain_id = BTreeMap::new();
+        let mut max_lag = Duration::ZERO;
 
-    let mut snark_workers = BTreeMap::new();
+        let mut snark_workers = BTreeMap::new();
 
-    while !terminating.load(Ordering::SeqCst) {
-        for (event, buffered) in source.by_ref() {
-            let event = match event {
-                Some(v) => v,
-                None => continue,
+        while let Ok((event, buffered)) = main_rx.recv() {
+            let Some(event) = event else {
+                continue;
             };
 
             if buffered > max_buffered {
@@ -1501,8 +1368,8 @@ fn main() {
                         continue;
                     }
                     let Some(addr) = pending_out_cns.remove(&(event.pid, event.fd)) else {
-                        continue;
-                    };
+                    continue;
+                };
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
                             addr,
@@ -1779,72 +1646,94 @@ fn main() {
                 }
             }
         }
-    }
 
-    if let Ok(host) = env::var("REGISTRY") {
-        if let Ok(client) = reqwest::blocking::ClientBuilder::new()
-            .timeout(Duration::from_secs(30))
-            .build()
-        {
-            let build_number = env::var("BUILD_NUMBER")
-                .ok()
-                .and_then(|s| s.parse::<u32>().ok())
-                .unwrap_or_default();
-            for (pid, report) in &watching {
-                let summary_json = match serde_json::to_string(report) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        log::error!("cannot post summary for pid: {pid}, error: {err}");
-                        continue;
-                    }
-                };
-
-                const TRIES_NUMBER: usize = 60;
-                let mut tries = TRIES_NUMBER;
-                loop {
-                    let r = client
-                        .post(format!(
-                            "http://{host}:80/report/debugger?build_number={build_number}"
-                        ))
-                        .body(summary_json.clone())
-                        .send();
-                    match r {
-                        Ok(v) => {
-                            drop(v.status());
-                            break;
-                        }
+        if let Ok(host) = env::var("REGISTRY") {
+            if let Ok(client) = reqwest::blocking::ClientBuilder::new()
+                .timeout(Duration::from_secs(30))
+                .build()
+            {
+                let build_number = env::var("BUILD_NUMBER")
+                    .ok()
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or_default();
+                for (pid, report) in &watching {
+                    let summary_json = match serde_json::to_string(report) {
+                        Ok(v) => v,
                         Err(err) => {
-                            tries -= 1;
-                            log::error!("try {}, {err}", TRIES_NUMBER - tries);
-                            if tries == 0 {
+                            log::error!("cannot post summary for pid: {pid}, error: {err}");
+                            continue;
+                        }
+                    };
+
+                    const TRIES_NUMBER: usize = 60;
+                    let mut tries = TRIES_NUMBER;
+                    loop {
+                        let r = client
+                            .post(format!(
+                                "http://{host}:80/report/debugger?build_number={build_number}"
+                            ))
+                            .body(summary_json.clone())
+                            .send();
+                        match r {
+                            Ok(v) => {
+                                drop(v.status());
                                 break;
-                            } else {
-                                thread::sleep(Duration::from_secs(2));
+                            }
+                            Err(err) => {
+                                tries -= 1;
+                                log::error!("try {}, {err}", TRIES_NUMBER - tries);
+                                if tries == 0 {
+                                    break;
+                                } else {
+                                    thread::sleep(Duration::from_secs(2));
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            if env::var("DEBUGGER_WAIT_FOREVER").is_ok() {
-                loop {
-                    std::hint::spin_loop();
-                    std::thread::yield_now();
+                if env::var("DEBUGGER_WAIT_FOREVER").is_ok() {
+                    loop {
+                        std::hint::spin_loop();
+                        std::thread::yield_now();
+                    }
                 }
             }
         }
+
+        // TODO: investigate stuck
+        // if server_thread.join().is_err() {
+        //     log::error!("server thread panic, this is a bug, must not happen");
+        // }
+        let _ = server_thread;
+
+        if let Err(err) = main_thread.join() {
+            let msg = match err.downcast_ref::<&'static str>() {
+                Some(s) => *s,
+                None => match err.downcast_ref::<String>() {
+                    Some(s) => &s[..],
+                    None => "unknown error type",
+                },
+            };
+            log::error!("join main thread error {msg}");
+        }
+        app_client.terminate();
+
+        log::info!("terminated");
+    });
+
+    // blocking
+    app_server.run();
+    if let Err(err) = consumer_thread.join() {
+        let msg = match err.downcast_ref::<&'static str>() {
+            Some(s) => *s,
+            None => match err.downcast_ref::<String>() {
+                Some(s) => &s[..],
+                None => "unknown error type",
+            },
+        };
+        log::error!("join consumer thread error {msg}");
     }
 
-    // TODO: investigate stuck
-    // if server_thread.join().is_err() {
-    //     log::error!("server thread panic, this is a bug, must not happen");
-    // }
-    let _ = server_thread;
-
-    log::info!("terminated");
-
-    tx.send(None).unwrap_or_default();
-    blocker.join().unwrap();
-
-    drop(source);
+    drop((skeleton, app));
 }
