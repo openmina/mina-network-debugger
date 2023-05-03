@@ -2,6 +2,8 @@ use std::{
     time::Duration,
     net::IpAddr,
     collections::{BTreeSet, BTreeMap},
+    fs::File,
+    io::{Write, self},
 };
 
 use reqwest::{
@@ -120,25 +122,33 @@ fn enable_firewall_simple(client: &Client, url: String, segments: Vec<String>) {
     let ports = [10909, 10001];
 
     for name in names {
-        let Some(segment) = segments.iter().find(|x| x.contains_key(&name)) else {
-            log::error!("segment for {name} not found, split will not work");
-            continue;
-        };
+        let (whitelist_names, ips) = segments
+            .iter()
+            .find(|x| x.contains_key(&name))
+            .map(|segment| {
+                (
+                    segment.keys().cloned().collect::<Vec<_>>(),
+                    segment.values().copied().collect(),
+                )
+            })
+            .unwrap_or_default();
         let whitelist = EnableWhitelist {
-            ips: segment.values().copied().collect(),
+            ips,
             ports: ports.to_vec(),
         };
-        log::info!("{whitelist:?}");
-        let whitelist = serde_json::to_string(&whitelist).unwrap();
+        let whitelist_str = serde_json::to_string(&whitelist).unwrap();
         let url = debugger_firewall_enable_url(&url, &name);
         match client
             .post(url.clone())
             .header("content-type", "application/json")
-            .body(whitelist)
+            .body(whitelist_str)
             .send()
         {
-            Ok(response) => log::info!("{url}: {}", response.status()),
-            Err(err) => log::error!("{url}: {err}"),
+            Ok(response) => {
+                let status = response.status();
+                log::info!("whitelist {whitelist_names:?} for {name}: {status}");
+            }
+            Err(err) => log::error!("whitelist {whitelist_names:?} for {name}: {err}"),
         }
     }
 }
@@ -146,14 +156,16 @@ fn enable_firewall_simple(client: &Client, url: String, segments: Vec<String>) {
 fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
     let ports = [10909, 10001];
 
-    let left = graph
+    let (left, left_names) = graph
         .iter()
-        .filter_map(|x| if x.left() { Some(x.ip) } else { None })
-        .collect::<Vec<_>>();
-    let right = graph
+        .filter_map(|x| if x.left() { Some(x) } else { None })
+        .map(|x| (x.ip, x.name.clone()))
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+    let (right, right_names) = graph
         .iter()
-        .filter_map(|x| if !x.left() { Some(x.ip) } else { None })
-        .collect::<Vec<_>>();
+        .filter_map(|x| if !x.left() { Some(x) } else { None })
+        .map(|x| (x.ip, x.name.clone()))
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
     for node in graph {
         let whitelist = EnableWhitelist {
@@ -164,7 +176,11 @@ fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
             },
             ports: ports.to_vec(),
         };
-        log::info!("{whitelist:?}");
+        let whitelist_names = if node.left() {
+            &left_names
+        } else {
+            &right_names
+        };
         let whitelist = serde_json::to_string(&whitelist).unwrap();
         let url = debugger_firewall_enable_url(&url, &node.name);
         match client
@@ -173,8 +189,11 @@ fn enable_firewall(client: &Client, url: String, graph: &[NodeInfo]) {
             .body(whitelist)
             .send()
         {
-            Ok(response) => log::info!("{url}: {}", response.status()),
-            Err(err) => log::error!("{url}: {err}"),
+            Ok(response) => {
+                let status = response.status();
+                log::info!("whitelist {whitelist_names:?} for {}: {status}", node.name);
+            }
+            Err(err) => log::error!("whitelist {whitelist_names:?} for {}: {err}", node.name),
         }
     }
 }
@@ -189,8 +208,8 @@ fn disable_firewall(client: &Client, url: String, names: impl Iterator<Item = St
     for name in names {
         let url = debugger_firewall_disable_url(&url, &name);
         match client.post(url.clone()).send() {
-            Ok(response) => log::info!("{url}: {}", response.status()),
-            Err(err) => log::error!("{url}: {err}"),
+            Ok(response) => log::info!("cleanup whitelist {name}: {}", response.status()),
+            Err(err) => log::error!("cleanup whitelist {name}: {err}"),
         }
     }
 }
@@ -272,10 +291,10 @@ fn query_peer(client: &Client, url: &str, name: &str) -> anyhow::Result<NodeInfo
     })
 }
 
-fn show_graph(graph: &[NodeInfo]) -> usize {
+fn show_graph(graph: &[NodeInfo]) -> (String, usize) {
     use petgraph::{prelude::DiGraph, algo, dot};
 
-    let mut pet = DiGraph::new();
+    let mut gr = DiGraph::new();
     let mut ips = BTreeMap::new();
     let ip_to_name = graph
         .iter()
@@ -290,30 +309,28 @@ fn show_graph(graph: &[NodeInfo]) -> usize {
 
         let a = *ips
             .entry(*ip_a)
-            .or_insert_with(|| pet.add_node(name.clone()));
+            .or_insert_with(|| gr.add_node(name.clone()));
 
         for &ip_b in peers {
             let Some(name) = ip_to_name.get(&ip_b) else {
                 continue;
             };
 
-            let b = *ips
-                .entry(ip_b)
-                .or_insert_with(|| pet.add_node(name.clone()));
-            pet.add_edge(a, b, ());
+            let b = *ips.entry(ip_b).or_insert_with(|| gr.add_node(name.clone()));
+            gr.add_edge(a, b, ());
         }
     }
 
     let config = [dot::Config::EdgeNoLabel];
 
-    println!("{:?}", dot::Dot::with_config(&pet, &config));
-    algo::connected_components(&pet)
+    let dot = format!("{:?}", dot::Dot::with_config(&gr, &config));
+    (dot, algo::connected_components(&gr))
 }
 
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::new()
         .format(|buf, record| {
-            use std::{io::Write, time::SystemTime};
+            use std::time::SystemTime;
             use time::OffsetDateTime;
 
             let (hour, minute, second, micro) = OffsetDateTime::from(SystemTime::now())
@@ -356,6 +373,7 @@ fn main() -> anyhow::Result<()> {
 
     match command {
         Command::EnableFirewall { segments } => {
+            log::info!("Splitting the network");
             if segments.is_empty() {
                 let graph = names
                     .filter_map(|name| match query_peer(&client, &url, &name) {
@@ -371,7 +389,10 @@ fn main() -> anyhow::Result<()> {
                 enable_firewall_simple(&client, url, segments)
             }
         }
-        Command::DisableFirewall => disable_firewall(&client, url, names),
+        Command::DisableFirewall => {
+            log::info!("Unifying the network");
+            disable_firewall(&client, url, names)
+        }
         Command::ShowGraph {
             expected_components,
         } => {
@@ -385,21 +406,48 @@ fn main() -> anyhow::Result<()> {
                 })
                 .collect::<Vec<_>>();
 
-            let components = show_graph(&graph);
-            let _heads = graph
+            let (dot, components) = show_graph(&graph);
+            let write =
+                || -> io::Result<()> { File::create("graph.dot")?.write_all(dot.as_bytes()) };
+            if let Err(err) = write() {
+                log::error!("error writting graph in file, err: {err}");
+            } else {
+                log::info!("written graph.dot, components: {components}");
+            }
+            let _heads: BTreeSet<String> = graph
                 .iter()
                 .filter_map(|NodeInfo { name, head, .. }| {
                     let head = head.clone()?;
-                    log::info!("{name}: {head}");
+                    log::debug!("{name}: {head}");
                     Some(head)
                 })
                 .collect::<BTreeSet<String>>();
 
-            let mut failed = false;
+            // if expected_components is present, do the test
             if let Some(&expected_components) = expected_components.as_ref() {
-                if expected_components == 1 && components != 1 || expected_components > components {
-                    log::error!("fail, expected components: {expected_components}, actual components: {components}");
-                    failed = true;
+                let mut failed = false;
+                if expected_components == 1 {
+                    log::info!(
+                        "Expects the network to be connected, graph has only one connected component"
+                    );
+                    if components == 1 {
+                        log::info!("Test passed");
+                    } else {
+                        log::error!("Test failed, components: {components}");
+                        failed = true;
+                    }
+                } else {
+                    log::info!(
+                        "Expects the network to be split, graph has more than one component"
+                    );
+                    if components == expected_components {
+                        log::info!("Test passed");
+                    } else if components > expected_components {
+                        log::warn!("Test passed, but network is more divided than expected, components: {components}");
+                    } else {
+                        log::error!("Test failed, components: {components}");
+                        failed = true;
+                    }
                 }
                 // if expected_components == 1 && heads.len() != 1 || expected_components > heads.len()
                 // {
