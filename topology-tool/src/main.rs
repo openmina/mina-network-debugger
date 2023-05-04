@@ -2,8 +2,6 @@ use std::{
     time::Duration,
     net::IpAddr,
     collections::{BTreeSet, BTreeMap},
-    fs::File,
-    io::{Write, self},
 };
 
 use reqwest::{
@@ -291,7 +289,7 @@ fn query_peer(client: &Client, url: &str, name: &str) -> anyhow::Result<NodeInfo
     })
 }
 
-fn show_graph(graph: &[NodeInfo]) -> (String, usize) {
+fn show_graph(graph: &[NodeInfo]) -> usize {
     use petgraph::{prelude::DiGraph, algo, dot};
 
     let mut gr = DiGraph::new();
@@ -323,14 +321,14 @@ fn show_graph(graph: &[NodeInfo]) -> (String, usize) {
 
     let config = [dot::Config::EdgeNoLabel];
 
-    let dot = format!("{:?}", dot::Dot::with_config(&gr, &config));
-    (dot, algo::connected_components(&gr))
+    println!("{:?}", dot::Dot::with_config(&gr, &config));
+    algo::connected_components(&gr)
 }
 
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::new()
         .format(|buf, record| {
-            use std::time::SystemTime;
+            use std::{time::SystemTime, io::Write};
             use time::OffsetDateTime;
 
             let (hour, minute, second, micro) = OffsetDateTime::from(SystemTime::now())
@@ -373,7 +371,7 @@ fn main() -> anyhow::Result<()> {
 
     match command {
         Command::EnableFirewall { segments } => {
-            log::info!("Splitting the network");
+            log::info!("Applying whitelists...");
             if segments.is_empty() {
                 let graph = names
                     .filter_map(|name| match query_peer(&client, &url, &name) {
@@ -384,14 +382,16 @@ fn main() -> anyhow::Result<()> {
                         }
                     })
                     .collect::<Vec<_>>();
-                enable_firewall(&client, url, &graph)
+                enable_firewall(&client, url, &graph);
             } else {
-                enable_firewall_simple(&client, url, segments)
+                enable_firewall_simple(&client, url, segments);
             }
+            log::info!("Waiting for the split to occur at the network level of abstraction...");
         }
         Command::DisableFirewall => {
-            log::info!("Unifying the network");
-            disable_firewall(&client, url, names)
+            log::info!("Removing whitelists...");
+            disable_firewall(&client, url, names);
+            log::info!("Whitelists removed. Waiting for network merge at the network level of abstraction...");
         }
         Command::ShowGraph {
             expected_components,
@@ -406,14 +406,7 @@ fn main() -> anyhow::Result<()> {
                 })
                 .collect::<Vec<_>>();
 
-            let (dot, components) = show_graph(&graph);
-            let write =
-                || -> io::Result<()> { File::create("graph.dot")?.write_all(dot.as_bytes()) };
-            if let Err(err) = write() {
-                log::error!("error writting graph in file, err: {err}");
-            } else {
-                log::info!("written graph.dot, components: {components}");
-            }
+            let components = show_graph(&graph);
             let _heads: BTreeSet<String> = graph
                 .iter()
                 .filter_map(|NodeInfo { name, head, .. }| {
@@ -428,24 +421,22 @@ fn main() -> anyhow::Result<()> {
                 let mut failed = false;
                 if expected_components == 1 {
                     log::info!(
-                        "Expects the network to be connected, graph has only one connected component"
+                        "Expects the network to be connected, and graph has only one connected component."
                     );
                     if components == 1 {
-                        log::info!("Test passed");
+                        log::info!("All nodes are connected. Network has only one component.");
                     } else {
-                        log::error!("Test failed, components: {components}");
+                        log::error!("Test failed, components: {components}. Network has more than one component.");
                         failed = true;
                     }
                 } else {
-                    log::info!(
-                        "Expects the network to be split, graph has more than one component"
-                    );
+                    log::info!("Expect the split to occur at the network level of abstraction.");
                     if components == expected_components {
-                        log::info!("Test passed");
+                        log::info!("Network has split. All nodes are still operational in their respective components.");
                     } else if components > expected_components {
-                        log::warn!("Test passed, but network is more divided than expected, components: {components}");
+                        log::warn!("Network has split. However netowrk has more components than expected, components: {components}.");
                     } else {
-                        log::error!("Test failed, components: {components}");
+                        log::error!("Test failed, components: {components}.");
                         failed = true;
                     }
                 }
