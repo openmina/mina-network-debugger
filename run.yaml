@@ -30,7 +30,7 @@ spec:
       containers:
         - name: bpf-debugger
           imagePullPolicy: Always
-          image: vladsimplestakingcom/mina-debugger:latest
+          image: openmina/mina-network-debugger:latest
           securityContext:
             privileged: true
           command: ["sh", "-ce", "bpf-recorder"]
@@ -49,7 +49,8 @@ spec:
             - mountPath: /proc
               name: proc
         - name: mina-daemon
-          image: tizoc/mina-daemon:tracing-optional-optimizations-focal-berkeley-current
+          imagePullPolicy: Always
+          image: minaprotocol/mina-daemon:2.0.0rampup2-42d2005-focal-berkeley
           command:
           command: ["sh", "-c"]
           args:
