@@ -64,15 +64,12 @@ pub fn parse(bytes: Vec<u8>, preview: bool) -> Result<serde_json::Value, DecodeE
     let msg = QueryHeader::binprot_read(&mut stream)?;
     let tag = msg.tag.to_string_lossy();
 
-    let r = match msg.version {
-        1 => JSONifyPayloadRegistry::v1(),
-        2 => JSONifyPayloadRegistry::v2(),
-        v => {
-            log::error!("unknown rpc version {v}");
-            return Ok(serde_json::Value::Null);
-        }
-    };
-    let reader = r.get(&tag, msg.version).unwrap_or(&DefaultReader);
+    let v1 = JSONifyPayloadRegistry::v1();
+    let v2 = JSONifyPayloadRegistry::v2();
+    let reader = None
+        .or_else(|| v2.get(&tag, msg.version))
+        .or_else(|| v1.get(&tag, msg.version))
+        .unwrap_or_else(|| &DefaultReader);
     match d {
         1 => {
             if preview {
