@@ -17,31 +17,31 @@ fn build_bpf() {
     let target_dir = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "../target".to_string());
     let target_dir = format!("{}/bpf", target_dir);
 
-    let args = &[
-        "+nightly-2022-10-10",
-        "rustc",
-        "--package=bpf-recorder",
-        "--bin=bpf-recorder-kern",
-        "--features=kern",
-        "--no-default-features",
-        "--target=bpfel-unknown-none",
-        "-Z",
-        "build-std=core",
-        "--release",
-        "--",
-        "-Cdebuginfo=2",
-        "-Clink-arg=--disable-memory-builtins",
-        "-Clink-arg=--keep-btf",
-    ];
-    let output = Command::new("cargo")
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .args(args)
-        .output()
-        .expect("failed to build bpf code");
-    if !output.status.success() {
-        let error = String::from_utf8(output.stderr).expect("malformed error message");
-        panic!("{}", error);
-    }
+    // let args = &[
+    //     "+nightly-2022-10-10",
+    //     "rustc",
+    //     "--package=bpf-recorder",
+    //     "--bin=bpf-recorder-kern",
+    //     "--features=kern",
+    //     "--no-default-features",
+    //     "--target=bpfel-unknown-none",
+    //     "-Z",
+    //     "build-std=core",
+    //     "--release",
+    //     "--",
+    //     "-Cdebuginfo=2",
+    //     "-Clink-arg=--disable-memory-builtins",
+    //     "-Clink-arg=--keep-btf",
+    // ];
+    // let output = Command::new("cargo")
+    //     .env("CARGO_TARGET_DIR", &target_dir)
+    //     .args(args)
+    //     .output()
+    //     .expect("failed to build bpf code");
+    // if !output.status.success() {
+    //     let error = String::from_utf8(output.stderr).expect("malformed error message");
+    //     panic!("{}", error);
+    // }
     Command::new("sed")
         .current_dir(&target_dir)
         .arg("-i")

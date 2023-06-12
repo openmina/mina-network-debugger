@@ -28,40 +28,40 @@ spec:
     spec:
       runtimeClassName: kata-qemu
       containers:
-        - name: bpf-debugger
-          imagePullPolicy: Always
-          image: vladsimplestakingcom/mina-debugger:latest
-          securityContext:
-            privileged: true
-          command: ["sh", "-ce", "bpf-recorder"]
-          env:
-            - name: RUST_LOG
-              value: "info"
-            - name: SERVER_PORT
-              value: "80"
-          ports:
-            - name: http
-              containerPort: 80
-              protocol: TCP
-          volumeMounts:
-            - mountPath: /sys/kernel/debug
-              name: sys-kernel-debug
-            - mountPath: /proc
-              name: proc
+        # - name: bpf-debugger
+        #   imagePullPolicy: Always
+        #   image: vladsimplestakingcom/mina-debugger:latest
+        #   securityContext:
+        #     privileged: true
+        #   command: ["sh", "-ce", "bpf-recorder"]
+        #   env:
+        #     - name: RUST_LOG
+        #       value: "info"
+        #     - name: SERVER_PORT
+        #       value: "80"
+        #   ports:
+        #     - name: http
+        #       containerPort: 80
+        #       protocol: TCP
+        #   volumeMounts:
+        #     - mountPath: /sys/kernel/debug
+        #       name: sys-kernel-debug
+        #     - mountPath: /proc
+        #       name: proc
         - name: mina-daemon
-          image: tizoc/mina-daemon:tracing-optional-optimizations-focal-berkeley-current
+          image: minaprotocol/mina-daemon:2.0.0rampup3-bfd1009-buster-berkeley
           command:
           command: ["sh", "-c"]
           args:
             - |
               sleep 10
-              curl https://raw.githubusercontent.com/MinaProtocol/mina/b1facec/genesis_ledgers/berkeley.json -o /berkeley.json
+              curl https://raw.githubusercontent.com/MinaProtocol/mina/bfd1009/genesis_ledgers/berkeley.json -o /berkeley.json
               mkdir -p /key
               chmod 700 /key
               mina libp2p generate-keypair --privkey-path /key/privkey
               # mina advanced generate-keypair --privkey-path /key/snark-producer.key
               # --run-snark-worker "$(cat /key/snark-producer.key.pub)"
-              mina daemon --external-port 8302 --config-file /berkeley.json --libp2p-keypair /key/privkey --peer-list-url https://storage.googleapis.com/seed-lists/berkeley_seeds.txt --insecure-rest-server --file-log-level Debug -log-level Info
+              mina daemon --external-port 8302 --config-file /berkeley.json --libp2p-keypair /key/privkey --peer /ip6/2a02:8308:b082:2500::7399/tcp/8302/p2p/12D3KooWRBPiZQbaEb7yqxi3WThWF3PNBMFE5gemSAW956XSeQLV --insecure-rest-server --file-log-level Debug -log-level Info
           ports:
             - name: external-ip
               containerPort: 8302

@@ -16,7 +16,7 @@ use radiation::{Absorb, Emit, nom, ParseError};
 
 use thiserror::Error;
 
-use mina_p2p_messages::rpc_kernel::JSONinifyError;
+use mina_p2p_messages::{binprot, rpc_kernel::JSONinifyError};
 
 use super::{connection::yamux as yamux_parser, database::LedgerHash};
 

@@ -4,7 +4,7 @@ use std::{
     io,
 };
 
-use binprot::{BinProtRead, BinProtWrite};
+use mina_p2p_messages::binprot::{BinProtRead, BinProtWrite};
 use radiation::{Absorb, Emit, nom, ParseError, RadiationBuffer};
 use libp2p_core::PeerId;
 

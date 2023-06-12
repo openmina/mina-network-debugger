@@ -9,3 +9,4 @@ members = [
     "simulator",
     "topology-tool",
 ]
+resolver = "2"

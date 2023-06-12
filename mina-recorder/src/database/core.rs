@@ -35,7 +35,8 @@ use crate::{
         meshsub_stats::{self, BlockStat, TxStat, Hash},
     },
     strace::StraceLine,
-    meshsub::{SnarkByHash, Event, SnarkWithHash}, ChunkHeader,
+    meshsub::{SnarkByHash, Event, SnarkWithHash},
+    ChunkHeader,
 };
 
 #[derive(Debug, Error)]
@@ -434,7 +435,8 @@ impl DbCore {
 
     pub fn fetch_blob(&self, cn: ConnectionId, offset: u64) -> Result<Vec<u8>, DbError> {
         let key = (cn, offset).chain(vec![]);
-        let data = self.inner
+        let data = self
+            .inner
             .get_cf(self.blobs(), key)?
             .ok_or(DbError::NoItemAtCursor(format!("{cn}, offset: {offset}")))?;
         Ok(data[ChunkHeader::SIZE..].to_vec())
@@ -979,8 +981,8 @@ impl DbCore {
                     if let Event::PublishV2 { message, hash, .. } = event {
                         use self::SnarkWithHash::*;
                         match &*message {
-                            GossipNetMessageV2::SnarkPoolDiff(snark) => {
-                                let snark = match SnarkWithHash::try_from_inner(snark) {
+                            GossipNetMessageV2::SnarkPoolDiff { message, .. } => {
+                                let snark = match SnarkWithHash::try_from_inner(message) {
                                     Some(v) => v,
                                     None => continue,
                                 };
@@ -1066,10 +1068,7 @@ impl DbCore {
 
     pub fn fetch_capnp_all(&self) -> impl Iterator<Item = CapnpTableRow> + '_ {
         self.inner
-            .iterator_cf(
-                self.capnp(),
-                rocksdb::IteratorMode::Start,
-            )
+            .iterator_cf(self.capnp(), rocksdb::IteratorMode::Start)
             .filter_map(Self::decode::<CapnpEventWithMetadataKey, CapnpEventWithMetadata>)
             .map(|(k, v)| CapnpTableRow::transform(k, v))
     }

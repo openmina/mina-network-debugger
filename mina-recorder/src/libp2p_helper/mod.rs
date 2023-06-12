@@ -1,7 +1,6 @@
 use std::{io, net::SocketAddr, time::SystemTime, collections::BTreeMap};
 
-use binprot::BinProtRead;
-use mina_p2p_messages::gossip::GossipNetMessageV2;
+use mina_p2p_messages::{binprot::BinProtRead, gossip::GossipNetMessageV2};
 use radiation::{Absorb, Emit};
 
 use crate::database::{DbCore, CapnpEventWithMetadataKey, CapnpEventWithMetadata};
@@ -103,7 +102,14 @@ impl CapnpReader {
                         }
                     } else if msg[0] == 3 {
                         let bytes = msg[1..].to_vec();
-                        let parse_block_height = |bytes| String::from_utf8(bytes).ok()?.split("slot: ").nth(1)?.parse().ok();
+                        let parse_block_height = |bytes| {
+                            String::from_utf8(bytes)
+                                .ok()?
+                                .split("slot: ")
+                                .nth(1)?
+                                .parse()
+                                .ok()
+                        };
                         parse_block_height(bytes)
                     } else {
                         None

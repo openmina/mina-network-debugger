@@ -1,7 +1,11 @@
-use std::{collections::BTreeMap, io::{Cursor, self}, borrow::Cow};
+use std::{
+    collections::BTreeMap,
+    io::{Cursor, self},
+    borrow::Cow,
+};
 
-use binprot::{BinProtRead, BinProtWrite};
 use mina_p2p_messages::{
+    binprot::{BinProtRead, BinProtWrite},
     string::CharString as BString,
     rpc_kernel::{QueryHeader, MessageHeader, ResponseHeader},
     utils,

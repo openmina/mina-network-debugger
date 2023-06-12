@@ -6,8 +6,7 @@ use std::{
     ops::AddAssign,
 };
 
-use binprot::BinProtRead;
-use mina_p2p_messages::{v2, gossip::GossipNetMessageV2};
+use mina_p2p_messages::{binprot::BinProtRead, v2, gossip::GossipNetMessageV2};
 use radiation::{Absorb, Emit};
 
 use serde::{Serialize, Deserialize};
@@ -338,7 +337,8 @@ impl Timestamp for serde_json::Value {
         }
 
         match inner(self) {
-            Some(timestamp) => timestamp.duration_since(SystemTime::UNIX_EPOCH)
+            Some(timestamp) => timestamp
+                .duration_since(SystemTime::UNIX_EPOCH)
                 .expect("timestamp cannot be earlier the `UNIX_EPOCH`"),
             None => Duration::ZERO,
         }
@@ -565,19 +565,21 @@ impl CapnpTableRow {
                                 let hash = Hash(hash);
                                 Some(CapnpEventDecoded::PublishGossip { msg, hash })
                             }
-                            Ok(GossipNetMessageV2::SnarkPoolDiff(_)) => {
+                            Ok(GossipNetMessageV2::SnarkPoolDiff { .. }) => {
                                 let msg = GossipNetMessageV2Short::SnarkPoolDiff;
                                 let hash = Hash(hash);
                                 Some(CapnpEventDecoded::PublishGossip { msg, hash })
                             }
-                            Ok(GossipNetMessageV2::TransactionPoolDiff(inner)) => {
-                                let msg = GossipNetMessageV2Short::TransactionPoolDiff { inner };
+                            Ok(GossipNetMessageV2::TransactionPoolDiff { message, .. }) => {
+                                let msg =
+                                    GossipNetMessageV2Short::TransactionPoolDiff { inner: message };
                                 let hash = Hash(hash);
                                 Some(CapnpEventDecoded::PublishGossip { msg, hash })
                             }
                             Err(err) => {
                                 if let Some(3) = msg.as_slice().first() {
-                                    let msg = GossipNetMessageV2Short::TestMessage { height: k.height };
+                                    let msg =
+                                        GossipNetMessageV2Short::TestMessage { height: k.height };
                                     let hash = Hash(hash);
                                     Some(CapnpEventDecoded::PublishGossip { msg, hash })
                                 } else {
@@ -613,7 +615,7 @@ impl CapnpTableRow {
                                     hash: Hash(hash),
                                 })
                             }
-                            Ok(GossipNetMessageV2::SnarkPoolDiff(_)) => {
+                            Ok(GossipNetMessageV2::SnarkPoolDiff { .. }) => {
                                 let msg = GossipNetMessageV2Short::SnarkPoolDiff;
                                 Some(CapnpEventDecoded::ReceivedGossip {
                                     peer_id,
@@ -622,8 +624,9 @@ impl CapnpTableRow {
                                     hash: Hash(hash),
                                 })
                             }
-                            Ok(GossipNetMessageV2::TransactionPoolDiff(inner)) => {
-                                let msg = GossipNetMessageV2Short::TransactionPoolDiff { inner };
+                            Ok(GossipNetMessageV2::TransactionPoolDiff { message, .. }) => {
+                                let msg =
+                                    GossipNetMessageV2Short::TransactionPoolDiff { inner: message };
                                 Some(CapnpEventDecoded::ReceivedGossip {
                                     peer_id,
                                     peer_address: format!("{peer_host}:{peer_port}"),
@@ -633,7 +636,8 @@ impl CapnpTableRow {
                             }
                             Err(err) => {
                                 if let Some(3) = msg.as_slice().first() {
-                                    let msg = GossipNetMessageV2Short::TestMessage { height: k.height };
+                                    let msg =
+                                        GossipNetMessageV2Short::TestMessage { height: k.height };
                                     let hash = Hash(hash);
                                     Some(CapnpEventDecoded::ReceivedGossip {
                                         peer_id,

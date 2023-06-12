@@ -109,16 +109,14 @@ impl StatsState {
                                 .body
                                 .consensus_state
                                 .blockchain_length
-                                .0
-                                 .0 as u32;
+                                .as_u32();
                             let global_slot = block
                                 .header
                                 .protocol_state
                                 .body
                                 .consensus_state
                                 .global_slot_since_genesis
-                                .0
-                                 .0 as u32;
+                                .as_u32();
                             if self.block_stat.height < block_height {
                                 self.first.clear();
                                 self.block_stat.clear();
@@ -242,8 +240,8 @@ impl StatsState {
                             self.block_stat.events.push(event);
                             block_stat_updated = true;
                         }
-                        GossipNetMessageV2::TransactionPoolDiff(transaction) => {
-                            for tx in &transaction.0 {
+                        GossipNetMessageV2::TransactionPoolDiff { message, .. } => {
+                            for tx in &message.0 {
                                 match tx {
                                     v2::MinaBaseUserCommandStableV2::SignedCommand(c) => {
                                         let mut signature = Signature([0; 32], [0; 32]);
@@ -259,7 +257,7 @@ impl StatsState {
                                 }
                             }
                         }
-                        GossipNetMessageV2::SnarkPoolDiff(snark) => match snark {
+                        GossipNetMessageV2::SnarkPoolDiff { message, .. } => match message {
                             v2::NetworkPoolSnarkPoolDiffVersionedStableV2::AddSolvedWork(s) => {
                                 let hash = match &s.1.proof {
                                     v2::TransactionSnarkWorkTStableV2Proofs::One(p) => {
@@ -317,7 +315,8 @@ impl StatsState {
                     }
                 }
                 meshsub::Event::PublishTestingMessage { from, message, .. } => {
-                    let parse_block_height = |message: &str| message.split("slot: ").nth(1)?.parse().ok();
+                    let parse_block_height =
+                        |message: &str| message.split("slot: ").nth(1)?.parse().ok();
                     if let Some(block_height) = parse_block_height(&message) {
                         let event = Event {
                             producer_id: from,
@@ -380,8 +379,8 @@ pub fn update_block_stats(
                     let (block_height, global_slot) = {
                         let consensus_state = &block.header.protocol_state.body.consensus_state;
                         (
-                            consensus_state.blockchain_length.0 .0 as u32,
-                            consensus_state.global_slot_since_genesis.0 .0 as u32,
+                            consensus_state.blockchain_length.0.as_u32(),
+                            consensus_state.global_slot_since_genesis.as_u32(),
                         )
                     };
                     let event = Event {
@@ -408,8 +407,14 @@ pub fn update_block_stats(
                 graft: _,
                 prune: _,
             } => {}
-            meshsub::Event::PublishTestingMessage { from, message, hash, .. } => {
-                let parse_block_height = |message: &str| message.split("slot: ").nth(1)?.parse().ok();
+            meshsub::Event::PublishTestingMessage {
+                from,
+                message,
+                hash,
+                ..
+            } => {
+                let parse_block_height =
+                    |message: &str| message.split("slot: ").nth(1)?.parse().ok();
                 if let Some(block_height) = parse_block_height(&message) {
                     let event = Event {
                         producer_id: from,

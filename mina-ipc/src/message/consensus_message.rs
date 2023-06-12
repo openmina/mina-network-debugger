@@ -1,7 +1,9 @@
 use std::fmt;
 
-use binprot::{BinProtRead, BinProtWrite};
-use mina_p2p_messages::gossip::GossipNetMessageV2;
+use mina_p2p_messages::{
+    binprot::{self, BinProtRead, BinProtWrite},
+    gossip::GossipNetMessageV2,
+};
 
 pub enum ConsensusMessage {
     Inner(GossipNetMessageV2),
@@ -88,8 +90,8 @@ impl fmt::Display for ConsensusMessage {
 
                 write!(f, "new state: {height}")
             }
-            Self::Inner(GossipNetMessageV2::SnarkPoolDiff(_)) => write!(f, "snark pool diff"),
-            Self::Inner(GossipNetMessageV2::TransactionPoolDiff(_)) => {
+            Self::Inner(GossipNetMessageV2::SnarkPoolDiff { .. }) => write!(f, "snark pool diff"),
+            Self::Inner(GossipNetMessageV2::TransactionPoolDiff { .. }) => {
                 write!(f, "transaction pool diff")
             }
             Self::Test(msg) => write!(f, "test: {msg}"),
