@@ -264,7 +264,7 @@ impl App {
             return Err(c as _);
         }
         // Prefix is 'coda-libp2p_helper'
-        let prefix = true
+        let prefix_coda = true
             && str_bytes.as_ref()[0] == b'c'
             && str_bytes.as_ref()[1] == b'o'
             && str_bytes.as_ref()[2] == b'd'
@@ -284,8 +284,19 @@ impl App {
             && str_bytes.as_ref()[16] == b'e'
             && str_bytes.as_ref()[17] == b'r';
 
+        // Prefix is 'coda-libp2p_helper'
+        let prefix_openmina = true
+            && str_bytes.as_ref()[0] == b'o'
+            && str_bytes.as_ref()[1] == b'p'
+            && str_bytes.as_ref()[2] == b'e'
+            && str_bytes.as_ref()[3] == b'n'
+            && str_bytes.as_ref()[4] == b'm'
+            && str_bytes.as_ref()[5] == b'i'
+            && str_bytes.as_ref()[6] == b'n'
+            && str_bytes.as_ref()[7] == b'a';
+
         str_bytes.discard();
-        if prefix {
+        if prefix_coda | prefix_openmina {
             Ok(())
         } else {
             Err(0)
@@ -982,7 +993,7 @@ impl App {
 
                 // do not block non TCP packets
                 let IpProto::Tcp = ipv4hdr.proto else {
-                    return Ok(Action::Pass)
+                    return Ok(Action::Pass);
                 };
 
                 let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv4Hdr::LEN) } as *const TcpHdr;
@@ -1051,7 +1062,7 @@ impl App {
 
                 // do not block non TCP packets
                 let IpProto::Tcp = ipv6hdr.next_hdr else {
-                    return Ok(Action::Pass)
+                    return Ok(Action::Pass);
                 };
 
                 let tcphdr = unsafe { packet_ptr.add(EthHdr::LEN + Ipv6Hdr::LEN) } as *const TcpHdr;
@@ -1368,8 +1379,8 @@ fn main() {
                         continue;
                     }
                     let Some(addr) = pending_out_cns.remove(&(event.pid, event.fd)) else {
-                    continue;
-                };
+                        continue;
+                    };
                     let metadata = EventMetadata {
                         id: ConnectionInfo {
                             addr,
