@@ -180,6 +180,12 @@ where
 {
     #[inline(never)]
     fn on_data(&mut self, id: DirectedId, bytes: &mut [u8], cx: &Cx, db: &Db) -> DbResult<()> {
+        log::debug!(
+            "{id}, {}, stream_id: {}, data: {}",
+            db.id(),
+            self.stream_id,
+            hex::encode(&*bytes)
+        );
         if self.error {
             return Ok(());
         }

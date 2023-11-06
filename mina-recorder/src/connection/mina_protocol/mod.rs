@@ -125,7 +125,6 @@ fn meshsub_sink(id: &DirectedId, db: &Db, stream: &DbStream, msg: &[u8], cx: &Cx
             );
             let block_stat = st.block_stat();
             let tx_state = st.tx_stat();
-            drop(st);
             drop(lock);
             // perform io, after lock is dropped and mutex unlock
             if let Some(aggregator) = &cx.aggregator {
