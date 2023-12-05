@@ -41,7 +41,7 @@ struct RingBufferObserver {
     consumer_pos: Box<AtomicUsize>,
     producer_pos: Box<AtomicUsize>,
     epfd: i32,
-    event: epoll::Event,
+    event: [epoll::Event; 1],
 }
 
 impl RingBufferObserver {
@@ -145,7 +145,7 @@ impl RingBuffer {
                     assert_eq!(data, 1);
                     epfd
                 },
-                event,
+                event: [event],
             },
             previous_distance: 0,
         })
@@ -248,12 +248,13 @@ impl RingBuffer {
         }
     }
 
-    fn wait_epoll(&self, terminating: &AtomicBool) {
+    fn wait_epoll(&mut self, terminating: &AtomicBool) {
         while !terminating.load(Ordering::SeqCst) {
-            match epoll::wait(self.observer.epfd, 50, &mut [self.observer.event]) {
+            self.observer.event[0].events = 0;
+            match epoll::wait(self.observer.epfd, 50, &mut self.observer.event) {
                 Ok(0) => log::debug!("ringbuf wait timeout"),
                 Ok(1) => {
-                    let e = self.observer.event.events;
+                    let e = self.observer.event[0].events;
                     if e & epoll::Events::EPOLLIN.bits() != 0 {
                         break;
                     } else {

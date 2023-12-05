@@ -284,7 +284,7 @@ impl App {
             && str_bytes.as_ref()[16] == b'e'
             && str_bytes.as_ref()[17] == b'r';
 
-        // Prefix is 'coda-libp2p_helper'
+        // Prefix is 'openmina'
         let prefix_openmina = true
             && str_bytes.as_ref()[0] == b'o'
             && str_bytes.as_ref()[1] == b'p'
@@ -1686,8 +1686,7 @@ fn main() {
                             .body(summary_json.clone())
                             .send();
                         match r {
-                            Ok(v) => {
-                                drop(v.status());
+                            Ok(_v) => {
                                 break;
                             }
                             Err(err) => {
