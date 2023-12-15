@@ -259,7 +259,7 @@ impl App {
         };
 
         // Too short or too long
-        if !(18..=0x200).contains(&c) {
+        if !(8..=0x200).contains(&c) {
             str_bytes.discard();
             return Err(c as _);
         }
@@ -296,7 +296,7 @@ impl App {
             && str_bytes.as_ref()[7] == b'a';
 
         str_bytes.discard();
-        if prefix_coda | prefix_openmina {
+        if prefix_coda || prefix_openmina {
             Ok(())
         } else {
             Err(0)
@@ -1013,7 +1013,7 @@ impl App {
                     return Ok(Action::Pass);
                 }
 
-                let mut src_ip = {
+                let src_ip = {
                     let mut b = [0; 16];
                     b[10] = 0xff;
                     b[11] = 0xff;
@@ -1024,7 +1024,7 @@ impl App {
                     return Ok(Action::Pass);
                 }
 
-                let mut dst_ip = {
+                let dst_ip = {
                     let mut b = [0; 16];
                     b[10] = 0xff;
                     b[11] = 0xff;
