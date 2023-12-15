@@ -413,6 +413,10 @@ where
                         if let Some(s) = self.inners.get_mut(&stream_id) {
                             s.as_mut().on_data(id.clone(), bytes.to_mut(), cx, db)?;
                         } else if !self.recent_reset.contains(&stream_id) {
+                            let mut stream = Inner::from(stream_id);
+                            stream.on_data(id.clone(), bytes.to_mut(), cx, db)?;
+                            self.inners.insert(stream_id, Status::Duplex(stream));
+
                             log::warn!("{id} {} doesn't exist {stream_id}", db.id());
                         }
                     } else {
