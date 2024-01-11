@@ -27,6 +27,12 @@ pub fn parse_types(bytes: &[u8]) -> Result<Vec<MessageType>, DecodeError> {
     Ok(vec![ty])
 }
 
+pub fn payload(bytes: &[u8]) -> Result<Vec<u8>, DecodeError> {
+    let buf = Bytes::from(bytes.to_vec());
+    let msg = pb::Envelope::decode(buf).map_err(DecodeError::Protobuf)?;
+    Ok(msg.payload)
+}
+
 pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> {
     #[derive(Serialize)]
     struct T {

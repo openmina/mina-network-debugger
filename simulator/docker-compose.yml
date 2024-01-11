@@ -1,0 +1,27 @@
+version: "3"
+
+services:
+  registry:
+    image: mina-tester-k:local
+    entrypoint: mina-simulator registry --nodes=2
+    environment:
+      - RUST_LOG=info
+
+  peer0:
+    image: mina-tester-k:local
+    entrypoint: ["sh", "-c", "sleep 10 && mina-simulator peer-main --blocks=10 --delay=6"]
+    environment:
+      - RUST_LOG=info
+      - REGISTRY=registry
+      - BUILD_NUMBER=0
+      - MY_POD_IP=1.2.3.4
+
+  peer1:
+    image: mina-tester-k:local
+    entrypoint: ["sh", "-c", "sleep 10 && mina-simulator peer-main --blocks=10 --delay=6"]
+    environment:
+      - RUST_LOG=info
+      - REGISTRY=registry
+      - BUILD_NUMBER=0
+      - MY_POD_IP=1.2.3.4
+      - BPF_ALIAS=/coda/0.0.1/00000000000000000000000066616b65206e6574776f726b00000000deadbeef-0.0.0.0

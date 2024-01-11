@@ -13,9 +13,7 @@ use vru_noise::{
 };
 use thiserror::Error;
 
-use crate::{
-    database::{StreamId, StreamKind, RandomnessDatabase, ConnectionStats},
-};
+use crate::database::{StreamId, StreamKind, RandomnessDatabase, ConnectionStats};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -161,10 +159,18 @@ where
                         Msg::Second => {
                             db.get(StreamId::Handshake)
                                 .add(&id, StreamKind::Handshake, bytes)?;
+                            let mut payload = super::super::decode::noise::payload(bytes)?;
+                            if !payload.is_empty() {
+                                self.inner.on_data(id, &mut payload[1..], cx, db)?;
+                            }
                         }
                         Msg::Third => {
                             db.get(StreamId::Handshake)
                                 .add(&id, StreamKind::Handshake, bytes)?;
+                            let mut payload = super::super::decode::noise::payload(bytes)?;
+                            if !payload.is_empty() {
+                                self.inner.on_data(id, &mut payload[1..], cx, db)?;
+                            }
                         }
                         Msg::Other => {
                             self.inner.on_data(id, bytes, cx, db)?;
