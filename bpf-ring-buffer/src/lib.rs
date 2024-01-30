@@ -2,7 +2,7 @@ use std::{
     fmt, io, mem,
     os::unix::io::AsRawFd,
     ptr, slice,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 pub trait RingBufferData
@@ -37,9 +37,9 @@ impl AsRawFd for RingBuffer {
 
 struct RingBufferObserver {
     page_size: usize,
-    data: Box<[AtomicUsize]>,
-    consumer_pos: Box<AtomicUsize>,
-    producer_pos: Box<AtomicUsize>,
+    data: Box<[usize]>,
+    consumer_pos: Box<usize>,
+    producer_pos: Box<usize>,
     epfd: i32,
     event: [epoll::Event; 1],
 }
@@ -47,7 +47,7 @@ struct RingBufferObserver {
 impl RingBufferObserver {
     #[allow(clippy::len_without_is_empty)]
     fn len(&self) -> usize {
-        self.data.len() * mem::size_of::<AtomicUsize>()
+        self.data.len() * mem::size_of::<usize>()
     }
 }
 
@@ -89,7 +89,7 @@ impl RingBuffer {
                 return Err(io::Error::last_os_error());
             }
 
-            Box::from_raw(p as *mut AtomicUsize)
+            Box::from_raw(p as *mut usize)
         };
 
         // producers page and the buffer itself,
@@ -112,12 +112,12 @@ impl RingBuffer {
                 return Err(io::Error::last_os_error());
             }
 
-            let length = max_length * 2 / mem::size_of::<AtomicUsize>();
+            let length = max_length * 2 / mem::size_of::<usize>();
             let q = (p as usize) + page_size;
-            let q = slice::from_raw_parts_mut(q as *mut AtomicUsize, length);
+            let q = slice::from_raw_parts_mut(q as *mut usize, length);
             (
-                Box::from_raw(p as *mut AtomicUsize),
-                Box::from_raw(q as *mut [AtomicUsize]),
+                Box::from_raw(p as *mut usize),
+                Box::from_raw(q as *mut [usize]),
             )
         };
 
@@ -163,9 +163,7 @@ impl RingBuffer {
     }
 
     fn read_finish(&mut self) {
-        self.observer
-            .consumer_pos
-            .store(self.consumer_pos_value, Ordering::Release);
+        *self.observer.consumer_pos = self.consumer_pos_value;
     }
 
     fn read_slice<D>(&mut self) -> Result<(Option<D>, usize), Error>
@@ -176,7 +174,7 @@ impl RingBuffer {
         const BUSY_BIT: usize = 1 << 31;
         const DISCARD_BIT: usize = 1 << 30;
 
-        let pr_pos = self.observer.producer_pos.load(Ordering::Acquire);
+        let pr_pos = *self.observer.producer_pos;
         if self.consumer_pos_value < pr_pos {
             // determine how far we are, how many unseen data is in the buffer
             let distance = pr_pos - self.consumer_pos_value;
@@ -194,8 +192,8 @@ impl RingBuffer {
             // the first 8 bytes of the memory slice is a header (length and flags)
             let (header, data_offset) = {
                 let masked_pos = self.consumer_pos_value & self.mask;
-                let index_in_array = masked_pos / mem::size_of::<AtomicUsize>();
-                let header = self.observer.data[index_in_array].load(Ordering::Acquire);
+                let index_in_array = masked_pos / mem::size_of::<usize>();
+                let header = self.observer.data[index_in_array];
                 // keep only 32 bits
                 (header & 0xffffffff, masked_pos + HEADER_SIZE)
             };
@@ -334,8 +332,8 @@ impl Drop for RingBufferObserver {
     fn drop(&mut self) {
         epoll::close(self.epfd).unwrap_or_default();
         let len = self.len();
-        let p = mem::replace(&mut self.consumer_pos, Box::new(AtomicUsize::new(0)));
-        let q = mem::replace(&mut self.producer_pos, Box::new(AtomicUsize::new(0)));
+        let p = mem::replace(&mut self.consumer_pos, Box::new(0));
+        let q = mem::replace(&mut self.producer_pos, Box::new(0));
         let data = mem::replace(&mut self.data, Box::new([]));
         unsafe {
             libc::munmap(Box::into_raw(p) as *mut _, self.page_size);
