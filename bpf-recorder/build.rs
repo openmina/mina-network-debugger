@@ -58,4 +58,6 @@ fn build_bpf() {
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=src/context.rs");
     println!("cargo:rerun-if-changed=src/send.rs");
+    // Since build is commented out above, if changes to that dir happen this script should be rerun
+    println!("cargo:rerun-if-changed={}", target_dir);
 }
