@@ -1519,7 +1519,7 @@ dependencies = [
 [[package]]
 name = "mina-p2p-messages"
 version = "0.6.4"
-source = "git+https://github.com/openmina/mina-p2p-messages-rs.git?branch=main#3b697aecb61428205d5c7b4e86375790bad4f9a9"
+source = "git+https://github.com/openmina/openmina.git?rev=6fb148ba06153a6497173e62bae1a67323fe5f92#6fb148ba06153a6497173e62bae1a67323fe5f92"
 dependencies = [
  "base64 0.13.1",
  "binprot",
@@ -1527,6 +1527,7 @@ dependencies = [
  "bs58",
  "derive_more",
  "hex",
+ "rsexp",
  "serde",
  "serde_json",
  "thiserror",
@@ -2323,6 +2324,12 @@ checksum = "862340e351ce1b271a378ec53f304a5558f7db87f3769dc655a8f6ecbb68b302"
 dependencies = [
  "xmlparser",
 ]
+
+[[package]]
+name = "rsexp"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3df9a9b6491d42c0fc527e92a87525c17e45c6b9c22345702a6dc0400320bf1"
 
 [[package]]
 name = "rustc-demangle"

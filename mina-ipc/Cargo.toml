@@ -11,7 +11,7 @@ capnpc = { version = "0.15.2" }
 
 [dependencies]
 crc64 = { version = "2.0" }
-mina-p2p-messages = { git = "https://github.com/openmina/mina-p2p-messages-rs.git", branch = "main" }
+mina-p2p-messages = { git = "https://github.com/openmina/openmina.git", rev = "6fb148ba06153a6497173e62bae1a67323fe5f92" }
 capnp = { version = "0.15.2" }
 blake2 = { version = "0.10.5" }
 hex = { version = "0.4.3" }
