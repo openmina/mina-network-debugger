@@ -85,7 +85,13 @@ curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
 
 ## Build and Run
 
+Build code that gets injected into eBPF:
+```sh
+CARGO_TARGET_DIR=target/bpf cargo +nightly-2022-10-10 rustc --package=bpf-recorder --bin=bpf-recorder-kern --features=kern --no-default-features --target=bpfel-unknown-none -Z build-std=core --release -- -Cdebuginfo=2 -Clink-arg=--disable-memory-builtins -Clink-arg=--keep-btf
 ```
+
+After that, build `bpf-recorder` binary:
+```sh
 cargo build --bin bpf-recorder --release
 ```
 
