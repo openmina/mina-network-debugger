@@ -249,97 +249,6 @@ impl App {
         Err(0)
     }
 
-    #[inline(never)]
-    fn check_arg_entry(&mut self, entry: *const u8) -> Result<(), i32> {
-        use ebpf::helpers;
-
-        let mut str_bytes = self.event_queue.reserve(0x200)?;
-        let c = unsafe {
-            helpers::probe_read_user_str(str_bytes.as_mut().as_mut_ptr() as _, 0x200, entry as _)
-        };
-
-        // Too short or too long
-        if !(8..=0x200).contains(&c) {
-            str_bytes.discard();
-            return Err(c as _);
-        }
-        // Prefix is 'coda-libp2p_helper'
-        let prefix_coda = true
-            && str_bytes.as_ref()[0] == b'c'
-            && str_bytes.as_ref()[1] == b'o'
-            && str_bytes.as_ref()[2] == b'd'
-            && str_bytes.as_ref()[3] == b'a'
-            && str_bytes.as_ref()[4] == b'-'
-            && str_bytes.as_ref()[5] == b'l'
-            && str_bytes.as_ref()[6] == b'i'
-            && str_bytes.as_ref()[7] == b'b'
-            && str_bytes.as_ref()[8] == b'p'
-            && str_bytes.as_ref()[9] == b'2'
-            && str_bytes.as_ref()[10] == b'p'
-            && str_bytes.as_ref()[11] == b'_'
-            && str_bytes.as_ref()[12] == b'h'
-            && str_bytes.as_ref()[13] == b'e'
-            && str_bytes.as_ref()[14] == b'l'
-            && str_bytes.as_ref()[15] == b'p'
-            && str_bytes.as_ref()[16] == b'e'
-            && str_bytes.as_ref()[17] == b'r';
-
-        // Prefix is 'openmina'
-        let prefix_openmina = true
-            && str_bytes.as_ref()[0] == b'o'
-            && str_bytes.as_ref()[1] == b'p'
-            && str_bytes.as_ref()[2] == b'e'
-            && str_bytes.as_ref()[3] == b'n'
-            && str_bytes.as_ref()[4] == b'm'
-            && str_bytes.as_ref()[5] == b'i'
-            && str_bytes.as_ref()[6] == b'n'
-            && str_bytes.as_ref()[7] == b'a';
-
-        str_bytes.discard();
-        if prefix_coda || prefix_openmina {
-            Ok(())
-        } else {
-            Err(0)
-        }
-    }
-
-    fn check_name(&mut self, argv: *const *const u8) -> Result<(), i32> {
-        use ebpf::helpers;
-
-        if argv.is_null() {
-            return Err(0);
-        }
-
-        let mut arg_str = self.event_queue.reserve(8)?;
-        loop {
-            let c = unsafe {
-                helpers::probe_read_user(arg_str.as_mut().as_mut_ptr() as _, 8, argv as _)
-            };
-
-            if c != 0 {
-                break;
-            }
-
-            let entry = unsafe { *(arg_str.as_ref().as_ptr() as *const *const u8) };
-            if entry.is_null() {
-                break;
-            }
-
-            if let Ok(()) = self.check_arg_entry(entry) {
-                arg_str.discard();
-
-                return Ok(());
-            }
-
-            // only first argument is relevant
-            break;
-        }
-
-        arg_str.discard();
-
-        Err(0)
-    }
-
     fn check_snark_worker(&mut self, argv: *const *const u8) -> Result<bool, i32> {
         use core::ptr;
         use ebpf::helpers;
@@ -426,7 +335,6 @@ impl App {
         if let Ok(true) = self.check_snark_worker(argv) {
             return Ok(());
         }
-        self.check_name(argv)?;
         let env = ctx.read_here::<*const *const u8>(0x20);
         self.check_env_flag(env)
     }
@@ -437,7 +345,6 @@ impl App {
         if let Ok(true) = self.check_snark_worker(argv) {
             return Ok(());
         }
-        self.check_name(argv)?;
         let env = ctx.read_here::<*const *const u8>(0x28);
         self.check_env_flag(env)
     }
