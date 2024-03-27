@@ -39,7 +39,7 @@ pub enum DecodeError {
     #[error("RSA key not supported")]
     Rsa,
     #[error("{0}")]
-    IdentityDecoding(#[from] libp2p_core::identity::error::DecodingError),
+    IdentityDecoding(#[from] libp2p_identity::DecodingError),
 }
 
 impl<'pa> From<nom::Err<ParseError<&'pa [u8]>>> for DecodeError {
