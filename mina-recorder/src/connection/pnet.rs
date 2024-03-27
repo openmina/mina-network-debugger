@@ -72,7 +72,7 @@ where
                 bytes,
             )?;
             self.inner.on_data(id, bytes, cx, db)?;
-        } else if bytes.len() != 24 {
+        } else if bytes.len() < 24 {
             self.skip = true;
             log::warn!(
                 "{id} {} skip connection, bytes: {}",
@@ -82,8 +82,11 @@ where
         } else {
             *cipher = Some(XSalsa20::new(
                 &self.shared_secret,
-                GenericArray::from_slice(bytes),
+                GenericArray::from_slice(&bytes[..24]),
             ));
+            if bytes.len() > 24 {
+                self.on_data(id, &mut bytes[24..], cx, db)?;
+            }
         }
 
         Ok(())
