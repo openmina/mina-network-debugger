@@ -30,7 +30,7 @@ spec:
       # shareProcessNamespace: true
       containers:
         - name: mock-registry
-          image: vladsimplestakingcom/mina-tester-k:latest
+          image: vladsimplestakingcom/mina-tester-k:2.0.0berkeley-rc1
           imagePullPolicy: Always
           command: [ "sh", "-c" ]
           args:
@@ -100,7 +100,7 @@ spec:
           #   limits:
           #     memory: 8G
         - name: mock-node
-          image: vladsimplestakingcom/mina-tester-k:latest
+          image: vladsimplestakingcom/mina-tester-k:2.0.0berkeley-rc1
           imagePullPolicy: Always
           securityContext:
             privileged: true

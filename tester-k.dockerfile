@@ -1,8 +1,8 @@
-# docker build -t mina-tester-k:local -f tester-k.dockerfile --build-arg mina_daemon_image=minaprotocol/mina-daemon:2.0.0rampup4-14047c5-buster-berkeley .
+# docker build -t mina-tester-k:local -f tester-k.dockerfile --build-arg mina_daemon_image=minaprotocol/mina-daemon:2.0.0berkeley-rc1-hardfork-automation-umt-f57f6db-bullseye-devnet-hardfork .
 
 ARG mina_daemon_image
 
-FROM rust:1.67-buster as builder
+FROM rust:1.67-bullseye as builder
 
 RUN curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
   && cd capnproto-c++-0.10.2 \
