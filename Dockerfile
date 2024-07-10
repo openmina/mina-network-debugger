@@ -21,17 +21,14 @@ RUN curl -sSL https://capnproto.org/capnproto-c++-0.10.2.tar.gz | tar -zxf - \
   && cd .. \
   && rm -rf capnproto-c++-0.10.2
 
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-    | sh -s -- --default-toolchain nightly-2023-06-01 -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH=/root/.cargo/bin:$PATH
-RUN rustup update nightly-2022-10-10
+RUN rustup update nightly-2022-10-10 && rustup update nightly-2022-12-10 && rustup default stable
 
-RUN rustup component add rust-src \
-        --toolchain nightly-2023-06-01-x86_64-unknown-linux-gnu
 RUN rustup component add rust-src \
         --toolchain nightly-2022-10-10-x86_64-unknown-linux-gnu
 
-RUN cargo install bpf-linker --git ${linker_src} --branch ${linker_branch}
+RUN cargo +nightly-2022-12-10 install bpf-linker --git ${linker_src} --branch ${linker_branch}
 
 # RUN cargo install --git https://github.com/openmina/mina-network-debugger bpf-recorder --bin bpf-recorder
 COPY . .
