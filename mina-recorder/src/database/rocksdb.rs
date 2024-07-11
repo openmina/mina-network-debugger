@@ -27,10 +27,7 @@ use crate::{
 
 use super::{
     core::{DbCore, DbError},
-    types::{
-        Connection, ConnectionId, Message, MessageId, StreamId, StreamKind,
-        ConnectionStats,
-    },
+    types::{Connection, ConnectionId, Message, MessageId, StreamId, StreamKind, ConnectionStats},
 };
 
 pub struct DbFacade {
@@ -109,7 +106,7 @@ impl DbFacade {
         })
     }
 
-    pub fn add_randomness(&self, bytes: Vec<u8>) -> Result<(), DbError> {
+    pub fn add_randomness(&self, bytes: [u8; 32]) -> Result<(), DbError> {
         let id = self.rnd_cnt.fetch_add(1, SeqCst);
         self.inner.put_randomness(id, bytes)?;
 
@@ -222,7 +219,12 @@ impl DbStream {
     ) -> Result<MessageId, DbError> {
         let index_ledger_hash = std::env::var("DEBUGGER_INDEX_LEDGER_HASH").is_ok();
 
-        let offset = self.group.add_raw(EncryptionStatus::DecryptedNoise, did.incoming, did.metadata.time, bytes)?;
+        let offset = self.group.add_raw(
+            EncryptionStatus::DecryptedNoise,
+            did.incoming,
+            did.metadata.time,
+            bytes,
+        )?;
 
         let mut ledger_hashes = vec![];
         let tys = match stream_kind {
@@ -258,9 +260,12 @@ impl DbStream {
             size: bytes.len() as u32,
             brief: tys.iter().map(|ty| ty.to_string()).join(","),
         };
-        self.group.inner
+        self.group
+            .inner
             .put_message(&self.group.addr, id, v, tys, ledger_hashes)?;
-        self.group.inner.set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
+        self.group
+            .inner
+            .set_total::<{ DbCore::MESSAGES_CNT }>(id.0)?;
 
         Ok(id)
     }

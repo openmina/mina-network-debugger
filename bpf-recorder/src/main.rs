@@ -1653,7 +1653,9 @@ fn main() {
                     }
                 }
                 SnifferEventVariant::Random(random) => {
-                    recorder.on_randomness(event.pid, random, time);
+                    if let Ok(random) = <[u8; 32]>::try_from(random) {
+                        recorder.on_randomness(event.pid, random, time);
+                    }
                 }
             }
         }
