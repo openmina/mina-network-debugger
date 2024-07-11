@@ -16,6 +16,6 @@ pub use self::index::LedgerHash;
 mod sorted_intersect;
 
 mod core;
-pub use self::core::{DbError, DbCore, RandomnessDatabase};
+pub use self::core::{DbError, DbCore, RandomnessDatabase, KeyDatabase};
 
 pub type DbResult<T> = Result<T, DbError>;

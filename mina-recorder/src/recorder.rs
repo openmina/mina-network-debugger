@@ -344,7 +344,7 @@ impl P2pRecorder {
         }
     }
 
-    pub fn on_randomness(&mut self, pid: u32, bytes: Vec<u8>, time: SystemTime) {
+    pub fn on_randomness(&mut self, pid: u32, bytes: [u8; 32], time: SystemTime) {
         use time::OffsetDateTime;
 
         let (hour, minute, second, nano) = OffsetDateTime::from(time).time().as_hms_nano();

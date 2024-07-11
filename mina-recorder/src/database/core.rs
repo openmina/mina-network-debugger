@@ -94,7 +94,7 @@ pub struct DbCore {
 }
 
 impl DbCore {
-    const CFS: [&'static str; 15] = [
+    const CFS: [&'static str; 16] = [
         Self::CONNECTIONS,
         Self::MESSAGES,
         Self::RANDOMNESS,
@@ -104,6 +104,7 @@ impl DbCore {
         Self::CAPNP,
         Self::STATS_BLOCK_V2,
         Self::BLOBS,
+        Self::KEYS,
         Self::CONNECTION_ID_INDEX,
         Self::STREAM_ID_INDEX,
         Self::STREAM_KIND_INDEX,
@@ -139,6 +140,8 @@ impl DbCore {
     const STATS_BLOCK_V2: &'static str = "stats_block_v2";
 
     const BLOBS: &'static str = "blobs";
+
+    const KEYS: &'static str = "keys";
 
     // indexes
 
@@ -182,13 +185,15 @@ impl DbCore {
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[7], opts_with_prefix_extractor(4)),
             // BLOBS
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[8], Default::default()),
+            // KEYS
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], Default::default()),
             // INDEXES
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[9], opts_with_prefix_extractor(8)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(16)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[11], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[10], opts_with_prefix_extractor(8)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[11], opts_with_prefix_extractor(16)),
             rocksdb::ColumnFamilyDescriptor::new(Self::CFS[12], opts_with_prefix_extractor(2)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[13], opts_with_prefix_extractor(18)),
-            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[14], opts_with_prefix_extractor(32)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[13], opts_with_prefix_extractor(2)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[14], opts_with_prefix_extractor(18)),
+            rocksdb::ColumnFamilyDescriptor::new(Self::CFS[15], opts_with_prefix_extractor(32)),
         ];
         let inner =
             rocksdb::DB::open_cf_descriptors_with_ttl(&opts, path.join("rocksdb"), cfs, Self::TTL)?;
@@ -237,6 +242,10 @@ impl DbCore {
     #[allow(dead_code)]
     fn blobs(&self) -> &rocksdb::ColumnFamily {
         self.inner.cf_handle(Self::BLOBS).expect("must exist")
+    }
+
+    fn keys(&self) -> &rocksdb::ColumnFamily {
+        self.inner.cf_handle(Self::KEYS).expect("must exist")
     }
 
     fn connection_id_index(&self) -> &rocksdb::ColumnFamily {
@@ -341,7 +350,7 @@ impl DbCore {
         Ok(())
     }
 
-    pub fn put_randomness(&self, id: u64, bytes: Vec<u8>) -> Result<(), DbError> {
+    pub fn put_randomness(&self, id: u64, bytes: [u8; 32]) -> Result<(), DbError> {
         self.inner
             .put_cf(self.randomness(), id.to_be_bytes(), bytes)?;
 
@@ -1116,6 +1125,74 @@ impl RandomnessDatabase for DbCore {
             .filter_map(Result::ok)
             .map(|(_, v)| v);
         Box::new(it)
+    }
+}
+
+pub trait KeyDatabase {
+    fn reproduced_sk<const EPHEMERAL: bool>(&self, pk: [u8; 32]) -> Option<[u8; 32]>;
+}
+
+impl KeyDatabase for DbCore {
+    fn reproduced_sk<const EPHEMERAL: bool>(&self, pk: [u8; 32]) -> Option<[u8; 32]> {
+        use sha3::{
+            Shake256,
+            digest::{Update, ExtendableOutput, XofReader},
+        };
+
+        // try lookup the key
+        self.inner
+            .get_cf(self.keys(), pk)
+            .ok()?
+            .and_then(|x| x.try_into().ok())
+            .or_else(|| {
+                // If the key is not found in cache, reconstruct it.
+                // Already have this number of keys
+                let count = self
+                    .inner
+                    .iterator_cf(self.keys(), rocksdb::IteratorMode::Start)
+                    .count();
+                // The seed
+                self.iterate_randomness()
+                    .take(4)
+                    .filter_map(|x| <[u8; 32]>::try_from(x.to_vec()).ok())
+                    .find_map(|seed| {
+                        log::debug!("try seed {}, ephemeral: {EPHEMERAL}", hex::encode(&seed));
+                        let mut generator = Shake256::default()
+                            .chain(seed)
+                            .chain(if EPHEMERAL {
+                                b"ephemeral".as_ref()
+                            } else {
+                                b"static".as_ref()
+                            })
+                            .finalize_xof();
+
+                        use curve25519_dalek::{
+                            montgomery::MontgomeryPoint, constants::ED25519_BASEPOINT_TABLE,
+                            scalar::Scalar,
+                        };
+                        let point = MontgomeryPoint(pk);
+                        // search further
+                        (0..(count + 1))
+                            .find_map(|_| {
+                                let _ = (point, &mut generator);
+                                let mut sk_bytes = [0; 32];
+                                generator.read(&mut sk_bytes);
+                                log::debug!("sk bytes: {}", hex::encode(sk_bytes));
+                                sk_bytes[0] &= 248;
+                                sk_bytes[31] |= 64;
+                                let sk = Scalar::from_bits(sk_bytes);
+
+                                if (&ED25519_BASEPOINT_TABLE * &sk).to_montgomery().eq(&point) {
+                                    Some(sk_bytes)
+                                } else {
+                                    None
+                                }
+                            })
+                            .inspect(|sk| {
+                                self.inner.put_cf(self.keys(), pk, sk).unwrap_or_default();
+                            })
+                    })
+            })
     }
 }
 

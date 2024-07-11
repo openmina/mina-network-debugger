@@ -13,7 +13,7 @@ use vru_noise::{
 };
 use thiserror::Error;
 
-use crate::database::{StreamId, StreamKind, RandomnessDatabase, ConnectionStats};
+use crate::database::{StreamId, StreamKind, RandomnessDatabase, KeyDatabase, ConnectionStats};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -284,8 +284,15 @@ impl<Inner> NoiseState<Inner> {
         &mut self,
         incoming: bool,
         bytes: &'a mut [u8],
-        cx: &impl RandomnessDatabase,
+        cx: &(impl RandomnessDatabase + KeyDatabase),
     ) -> Result<Range<usize>, NoiseError> {
+        // TODO: provide hint is it should be ephemeral or static
+        fn find_sk_openmina(pk: &MontgomeryPoint, cx: &impl KeyDatabase) -> Option<Scalar> {
+            cx.reproduced_sk::<true>(pk.0)
+                .or_else(|| cx.reproduced_sk::<false>(pk.0))
+                .map(Scalar::from_bits)
+        }
+
         fn find_sk(pk: &MontgomeryPoint, cx: &impl RandomnessDatabase) -> Option<Scalar> {
             let sk = cx.iterate_randomness().find_map(|rand| {
                 if rand.len() != 32 {
@@ -309,11 +316,16 @@ impl<Inner> NoiseState<Inner> {
         fn try_dh(
             a: &MontgomeryPoint,
             b: &MontgomeryPoint,
-            cx: &impl RandomnessDatabase,
+            cx: &(impl RandomnessDatabase + KeyDatabase),
         ) -> Option<[u8; 32]> {
             find_sk(a, cx)
+                .or_else(|| find_sk_openmina(a, cx))
                 .map(|sk| b * sk)
-                .or_else(|| find_sk(b, cx).map(|sk| a * sk))
+                .or_else(|| {
+                    find_sk(b, cx)
+                        .or_else(|| find_sk_openmina(b, cx))
+                        .map(|sk| a * sk)
+                })
                 .map(|ss| ss.to_bytes())
         }
 
@@ -447,6 +459,12 @@ fn noise() {
     impl RandomnessDatabase for Randomness {
         fn iterate_randomness<'a>(&'a self) -> Box<dyn Iterator<Item = Box<[u8]>> + 'a> {
             Box::new(self.0.iter().map(|x| x.clone().into_boxed_slice()))
+        }
+    }
+
+    impl KeyDatabase for Randomness {
+        fn reproduced_sk<const EPHEMERAL: bool>(&self, _pk: [u8; 32]) -> Option<[u8; 32]> {
+            None
         }
     }
 
