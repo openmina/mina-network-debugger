@@ -87,6 +87,7 @@ pub struct NoiseState<Inner> {
     inner: Inner,
     decrypted: usize,
     failed_to_decrypt: usize,
+    mux_proposed: Option<(DirectedId, Vec<u8>)>,
 }
 
 impl<Inner> DynamicProtocol for NoiseState<Inner>
@@ -101,6 +102,7 @@ where
             inner: Inner::from(stream_id),
             decrypted: 0,
             failed_to_decrypt: 0,
+            mux_proposed: None,
         }
     }
 }
@@ -159,9 +161,9 @@ where
                         Msg::Second => {
                             db.get(StreamId::Handshake)
                                 .add(&id, StreamKind::Handshake, bytes)?;
-                            let mut payload = super::super::decode::noise::payload(bytes)?;
+                            let payload = super::super::decode::noise::payload(bytes)?;
                             if !payload.is_empty() {
-                                self.inner.on_data(id, &mut payload[1..], cx, db)?;
+                                self.mux_proposed = Some((id, payload[1..].to_vec()));
                             }
                         }
                         Msg::Third => {
@@ -169,7 +171,12 @@ where
                                 .add(&id, StreamKind::Handshake, bytes)?;
                             let mut payload = super::super::decode::noise::payload(bytes)?;
                             if !payload.is_empty() {
-                                self.inner.on_data(id, &mut payload[1..], cx, db)?;
+                                if let Some((prev_id, mut prev_payload)) = self.mux_proposed.take()
+                                {
+                                    self.inner
+                                        .on_data(prev_id, &mut prev_payload[1..], cx, db)?;
+                                    self.inner.on_data(id, &mut payload[1..], cx, db)?;
+                                }
                             }
                         }
                         Msg::Other => {
@@ -301,7 +308,6 @@ impl<Inner> NoiseState<Inner> {
                 let mut sk_bytes = [0; 32];
                 sk_bytes.clone_from_slice(&rand);
                 sk_bytes[0] &= 248;
-                sk_bytes[31] &= 127;
                 sk_bytes[31] |= 64;
                 let sk = Scalar::from_bits(sk_bytes);
                 if (&ED25519_BASEPOINT_TABLE * &sk).to_montgomery().eq(pk) {
