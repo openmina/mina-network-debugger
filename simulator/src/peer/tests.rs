@@ -305,6 +305,7 @@ pub fn test_order(client: &Client) -> DbTestOrderReport {
 
 pub fn test_events(events: Vec<DbEventWithMetadata>, peer_id: String) -> DbTestEventsReport {
     #[derive(Clone, Deserialize)]
+    #[allow(dead_code)]
     pub struct BlockStat {
         pub height: u32,
         pub events: Vec<BlockNetworkEvent>,

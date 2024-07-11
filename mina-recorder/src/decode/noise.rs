@@ -2,10 +2,7 @@ use prost::{bytes::Bytes, Message};
 use radiation::{Absorb, AbsorbExt, ParseError};
 use serde::Serialize;
 
-use libp2p_core::{
-    PublicKey, PeerId,
-    identity::{ed25519, secp256k1, ecdsa},
-};
+use libp2p_identity::{PeerId, ed25519, secp256k1, ecdsa};
 
 use super::{DecodeError, MessageType};
 
@@ -68,14 +65,12 @@ pub fn parse(bytes: Vec<u8>, _: bool) -> Result<serde_json::Value, DecodeError> 
             let libp2p_pk = match pk.r#type() {
                 keys_proto::KeyType::Rsa => return Err(DecodeError::Rsa),
                 keys_proto::KeyType::Ed25519 => {
-                    PublicKey::Ed25519(ed25519::PublicKey::decode(&pk.data)?)
+                    ed25519::PublicKey::try_from_bytes(&pk.data)?.into()
                 }
                 keys_proto::KeyType::Secp256k1 => {
-                    PublicKey::Secp256k1(secp256k1::PublicKey::decode(&pk.data)?)
+                    secp256k1::PublicKey::try_from_bytes(&pk.data)?.into()
                 }
-                keys_proto::KeyType::Ecdsa => {
-                    PublicKey::Ecdsa(ecdsa::PublicKey::from_bytes(&pk.data)?)
-                }
+                keys_proto::KeyType::Ecdsa => ecdsa::PublicKey::try_from_bytes(&pk.data)?.into(),
             };
             let id = PeerId::from_public_key(&libp2p_pk);
             (
