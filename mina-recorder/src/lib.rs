@@ -10,6 +10,8 @@ pub use self::chunk::{ChunkHeader, EncryptionStatus, ChunkParser};
 mod recorder;
 pub use self::recorder::P2pRecorder;
 
+mod key_recover;
+
 /// State machine that manages snark worker processes.
 mod snark_worker;
 pub use self::snark_worker::*;

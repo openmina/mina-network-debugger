@@ -13,6 +13,7 @@ use super::{
     event::{EventMetadata, ConnectionInfo, DirectedId},
     connection::{HandleData, pnet, multistream_select, noise, mux, mina_protocol},
     database::{DbFacade, DbGroup},
+    key_recover::KeyGeneratorWithCache,
     tester::Tester,
     stats::{Stats, StatsState},
 };
@@ -68,6 +69,7 @@ const CHAINS: [(&str, &str); 3] = [
 pub struct Cx {
     pub apps: Mutex<BTreeMap<u32, (String, SocketAddr)>>,
     pub stats_state: Mutex<BTreeMap<SocketAddr, StatsState>>,
+    pub keygen: KeyGeneratorWithCache,
     pub db: DbFacade,
     pub stats: Stats,
     pub aggregator: Option<Aggregator>,
@@ -148,6 +150,7 @@ impl P2pRecorder {
             cns_main_thread: BTreeMap::default(),
             cx: Arc::new(Cx {
                 apps: Mutex::default(),
+                keygen: KeyGeneratorWithCache::new(db.core()),
                 db,
                 stats: Stats::default(),
                 stats_state: Mutex::default(),

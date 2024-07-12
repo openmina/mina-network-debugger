@@ -13,7 +13,10 @@ use vru_noise::{
 };
 use thiserror::Error;
 
-use crate::database::{StreamId, StreamKind, RandomnessDatabase, KeyDatabase, ConnectionStats};
+use crate::{
+    database::{StreamId, StreamKind, RandomnessDatabase, ConnectionStats},
+    key_recover::KeyDatabase,
+};
 
 use super::{HandleData, DirectedId, DynamicProtocol, Cx, Db, DbResult};
 
@@ -142,7 +145,7 @@ where
             Some(_) => Msg::Other,
         };
         if !self.error {
-            match self.on_data_(id.incoming, bytes, &cx.db.core()) {
+            match self.on_data_(id.incoming, bytes, &cx.keygen) {
                 Ok(range) => {
                     let bytes = &mut bytes[range];
                     self.decrypted += bytes.len();
