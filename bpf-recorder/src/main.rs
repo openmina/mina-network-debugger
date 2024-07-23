@@ -1244,8 +1244,13 @@ fn main() {
     });
 
     let consumer_thread = thread::spawn(move || {
-        let (db, callback, server_thread) =
-            server::spawn(port, db_path, Some(app_client.clone()), key_path, cert_path);
+        let (db, callback, server_thread) = server::spawn(
+            port,
+            db_path.clone(),
+            Some(app_client.clone()),
+            key_path,
+            cert_path,
+        );
         {
             let terminating = terminating.clone();
             let mut callback = Some(callback);
@@ -1657,6 +1662,21 @@ fn main() {
                         recorder.on_randomness(event.pid, random, time);
                     }
                 }
+            }
+        }
+
+        let list = || -> std::io::Result<Vec<String>> {
+            let mut res = vec![];
+            let r = std::fs::read_dir(db_path)?;
+            for entry in r {
+                let entry = entry?;
+                res.push(String::from(entry.file_name().to_string_lossy()));
+            }
+            Ok(res)
+        };
+        if let Ok(list) = list() {
+            for item in list {
+                log::info!("{item}");
             }
         }
 
