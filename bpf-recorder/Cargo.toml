@@ -24,7 +24,7 @@ required-features = ["user"]
 ebpf-kern = { git = "https://github.com/vlad9486/ebpf-tools", optional = true }
 typenum = { version = "1.17", optional = true }
 ebpf-user = { git = "https://github.com/vlad9486/ebpf-tools", optional = true }
-ctrlc = { version = "3.4.4", optional = true }
+ctrlc = { version = "3.4.4", features = ["termination"], optional = true }
 log = { version = "0.4.22", optional = true }
 env_logger = { version = "0.11.3", default-features = false, optional = true }
 hex = { version = "0.4.3", optional = true }
