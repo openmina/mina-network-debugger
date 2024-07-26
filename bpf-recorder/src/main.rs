@@ -1734,10 +1734,10 @@ fn main() {
         }
 
         // TODO: investigate stuck
-        // if server_thread.join().is_err() {
-        //     log::error!("server thread panic, this is a bug, must not happen");
-        // }
-        let _ = server_thread;
+        if server_thread.join().is_err() {
+            log::error!("server thread panic, this is a bug, must not happen");
+        }
+        // let _ = server_thread;
 
         if let Err(err) = main_thread.join() {
             let msg = match err.downcast_ref::<&'static str>() {
